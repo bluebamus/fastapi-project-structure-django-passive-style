@@ -88,3 +88,29 @@
 4. dev 바인드 기본값 127.0.0.1 변경 — README uvicorn CLI 예시(--host 0.0.0.0)와 정책 정합 확인 필요.
 5. 저장소 전역 ruff format 미적용(58파일) — 감사 diff 오염 방지로 미적용, CI/일괄 포맷 권고.
 6. 문서 경미 드리프트: README `/by-ip/{ip}` ↔ 코드 `{ip_address}`.
+
+---
+
+## 실행 #1 후속 — 승인 기반 개선 적용 (2026-07-08)
+
+사용자 승인 범위: A(CI/pre-commit) + B(전역 포맷) + C1(믹스인 채택). **CORS 가드는 제외**
+(리버스 프록시 nginx 계층에서 처리 가능한 설정이라 앱 레벨 미적용). C2(믹스인 제거)는
+C1과 상호배타 → C1이 대체(supersede).
+
+#### [a63dcbd] refactor(models): 믹스인 채택 (설계 결정 #1 해소)
+- 대상: 5개 도메인 models.py. UUIDMixin/TimestampMixin 을 실제 상속 → 미사용 죽은코드 + id/created_at 중복 제거.
+- 회귀 검수: 이전 감사엔 관련 결정 없음(신규). 컬럼 정의 동일, 물리 순서만 이동(이름 접근이라 무관, Alembic 이름 비교로 드리프트 없음).
+- 검증: ruff clean, mypy 0, pytest 68(회귀 0).
+
+#### [161fc0a] style: 전역 ruff format (설계 결정 #5 해소)
+- 대상: 56파일 재포맷(포맷 전용). CI 의 format --check 게이트 선행.
+- 검증: ruff/format clean, mypy 0, pytest 68.
+
+#### [a24cecd] ci: 품질 게이트 + pre-commit (다음 단계 #1 이행)
+- 대상: .github/workflows/ci.yml, .pre-commit-config.yaml, pyproject(bandit dev편입 + ruff S룰 + tests S101 예외), uv.lock.
+- 검증(CI 동등): ruff clean, format clean, mypy 0, bandit 0, pytest 68.
+
+### 잔여 설계 결정(미적용, 사용자 판단 대기)
+- #2 미사용 eager-loading/pagination 제네릭(관계 0개) — 템플릿 스캐폴딩 유지 판단.
+- #3 CORS 런타임 가드 — **nginx 계층 처리로 제외 확정**(앱 미적용).
+- #6 README `{ip}`↔`{ip_address}` 표기차 — 문서 경미 드리프트(대량 편집 회피).
