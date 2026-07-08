@@ -37,6 +37,7 @@ dev = [
     "aiosqlite>=0.20.0,<0.21.0",
     "ruff>=0.8.0,<0.9.0",
     "mypy>=1.14.0,<2.0.0",
+    "bandit>=1.8.0,<2.0.0",
 ]
 
 
@@ -174,6 +175,7 @@ select = [
     "B",      # flake8-bugbear
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
+    "S",      # flake8-bandit (보안)
 ]
 
 # 무시할 규칙
@@ -181,6 +183,11 @@ ignore = [
     "E501",   # line too long (ruff format이 처리)
     "B008",   # function call in argument defaults (FastAPI Depends)
 ]
+
+# 파일별 예외
+[tool.ruff.lint.per-file-ignores]
+# 테스트에서는 assert 사용이 정상 (pytest 관용).
+"**/tests/**" = ["S101"]
 
 [tool.ruff.lint.isort]
 # import 정렬 설정

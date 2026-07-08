@@ -1,0 +1,33 @@
+# pre-commit 설정 — 커밋 전 로컬 품질 게이트.
+# uv 프로젝트이므로 local(system) 훅으로 `uv run` 을 재사용해 CI 와 동일한
+# 가상환경/버전으로 실행한다. 설치: `uv run pre-commit install`
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (--fix)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy
+        entry: uv run mypy .
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: bandit
+        name: bandit
+        entry: uv run bandit -r app config.py main.py -x */tests/* -q
+        language: system
+        types: [python]
+        pass_filenames: false
