@@ -111,6 +111,15 @@ C1과 상호배타 → C1이 대체(supersede).
 - 검증(CI 동등): ruff clean, format clean, mypy 0, bandit 0, pytest 68.
 
 ### 잔여 설계 결정(미적용, 사용자 판단 대기)
-- #2 미사용 eager-loading/pagination 제네릭(관계 0개) — 템플릿 스캐폴딩 유지 판단.
+- #2a **pagination** — **적용**: app/utils 로 이전 + dataclass화(아래 70295ba).
+- #2b **eager-loading 8메서드**(관계 0개) — 여전히 판단 대기(유지+주석 / 제거 / 현행).
 - #3 CORS 런타임 가드 — **nginx 계층 처리로 제외 확정**(앱 미적용).
 - #6 README `{ip}`↔`{ip_address}` 표기차 — 문서 경미 드리프트(대량 편집 회피).
+
+#### [70295ba] refactor(pagination): utils 이전 + dataclass화 (설계결정 #2a 해소)
+- 대상: app/utils/pagination.py(신규), app/shared/**(제거), tests/utils/test_pagination.py(신규 10케이스).
+- 사용자 결정: PaginatedResponse 를 **표준 @dataclass**로 구현(안티패턴 경고 인지 후 선택).
+  안티패턴(제네릭 stdlib dataclass 를 FastAPI response_model 로 직접 노출 시 OpenAPI
+  스키마/검증 약화)은 모듈 docstring 에 경계 변환 권고로 명시. Paginator 는 인스턴스화형.
+- 회귀 검수: 이전(미사용 스캐폴딩) → 현재(테스트된 유틸). 외부 참조 없어 삭제 안전. 회귀 없음.
+- 검증: ruff clean, format clean, mypy 0/133, pytest 78 passed(기존 68 + 신규 10).
