@@ -128,7 +128,8 @@
 | 설계결정 #5 전역 포맷 | **적용(B)**: `ruff format` 저장소 전역(56파일), CI format 게이트 선행 | `161fc0a` |
 | 다음단계 CI/pre-commit | **적용(A)**: GitHub Actions(ruff+format+mypy+bandit+pytest) + pre-commit + bandit dev편입 + ruff S룰(tests S101 예외) | `a24cecd` |
 | 설계결정 #3 CORS 가드 | **제외**: nginx 계층 처리 영역 → 앱 미적용 | — |
-| 설계결정 #2 미사용 eager-loading | **보류**: 템플릿 스캐폴딩, 관계 도입 시 재검토 | — |
+| 설계결정 #2a pagination | **적용**: app/utils 로 이전 + 표준 @dataclass 컨테이너(초기값·`return cls()` 필드만) + 인스턴스화형 `Paginator` + 테스트 10케이스. app/shared 제거 | `70295ba` |
+| 설계결정 #2b 미사용 eager-loading 8메서드 | **보류**: 관계 0개 템플릿 스캐폴딩, 방향 결정 대기 | — |
 | 설계결정 #6 README `{ip}` 표기차 | **보류**: 문서 경미 드리프트 | — |
 
 검증(CI 동등, 최종): ruff clean · ruff format clean · mypy 0/135 · bandit 0 · pytest 68 passed(회귀 0).
