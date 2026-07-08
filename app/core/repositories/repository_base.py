@@ -670,12 +670,7 @@ class BaseRepository(CRUDBase[ModelType]):
         offset = 0
 
         while True:
-            stmt = (
-                select(self.model)
-                .filter_by(**filters)
-                .offset(offset)
-                .limit(batch_size)
-            )
+            stmt = select(self.model).filter_by(**filters).offset(offset).limit(batch_size)
             stmt = self._apply_eager_loading(stmt, relations)
 
             result = await self.session.execute(stmt)
@@ -797,11 +792,7 @@ class BaseRepository(CRUDBase[ModelType]):
             user = await repo.update("user-123", {"name": "New Name"})
         """
         try:
-            stmt = (
-                update(self.model)
-                .where(self.model.id == id)
-                .values(**data)
-            )
+            stmt = update(self.model).where(self.model.id == id).values(**data)
             result = cast("CursorResult[Any]", await self.session.execute(stmt))
             await self.session.flush()
 
@@ -843,11 +834,7 @@ class BaseRepository(CRUDBase[ModelType]):
                 data={"is_active": False}
             )
         """
-        stmt = (
-            update(self.model)
-            .where(self.model.id.in_(ids))
-            .values(**data)
-        )
+        stmt = update(self.model).where(self.model.id.in_(ids)).values(**data)
         result = cast("CursorResult[Any]", await self.session.execute(stmt))
         await self.session.flush()
         return result.rowcount
@@ -873,11 +860,7 @@ class BaseRepository(CRUDBase[ModelType]):
                 role="guest"
             )
         """
-        stmt = (
-            update(self.model)
-            .filter_by(**filters)
-            .values(**data)
-        )
+        stmt = update(self.model).filter_by(**filters).values(**data)
         result = cast("CursorResult[Any]", await self.session.execute(stmt))
         await self.session.flush()
         return result.rowcount
