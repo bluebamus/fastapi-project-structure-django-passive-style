@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eager-Loading 독립성 유지 설계안</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#f7f8fa; --surface:#ffffff; --surface-2:#eef1f6; --border:#dde2ea;
+    --text:#1c2330; --muted:#5b6472; --brand:#3b6ef5; --brand-weak:#e8effd;
+    --ok:#1a9d63; --ok-weak:#e3f6ec; --warn:#c9860a; --warn-weak:#fdf3df;
+    --danger:#d8493f; --danger-weak:#fdeceb; --code-bg:#0f1626; --code-text:#e6ecf7;
+    --radius:14px; --shadow:0 1px 2px rgba(20,30,60,.06),0 8px 24px rgba(20,30,60,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0d1117; --surface:#151b24; --surface-2:#1b222d; --border:#2a323f;
+      --text:#e6ecf5; --muted:#9aa5b4; --brand:#5b8bff; --brand-weak:#17233d;
+      --ok:#3fca86; --ok-weak:#12271c; --warn:#e0a640; --warn-weak:#2a2312;
+      --danger:#ef6b60; --danger-weak:#2c1615; --code-bg:#0b1020; --code-text:#e6ecf7;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f7f8fa; --surface:#fff; --surface-2:#eef1f6; --border:#dde2ea; --text:#1c2330; --muted:#5b6472;
+    --brand-weak:#e8effd; --ok-weak:#e3f6ec; --warn-weak:#fdf3df; --danger-weak:#fdeceb;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1117; --surface:#151b24; --surface-2:#1b222d; --border:#2a323f; --text:#e6ecf5; --muted:#9aa5b4;
+    --brand-weak:#17233d; --ok-weak:#12271c; --warn-weak:#2a2312; --danger-weak:#2c1615;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Pretendard",-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    line-height:1.7; font-size:16px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:32px 20px 96px}
+  header.hero{
+    background:linear-gradient(135deg,var(--brand-weak),var(--surface));
+    border:1px solid var(--border); border-radius:var(--radius); padding:34px 30px; margin-bottom:28px; box-shadow:var(--shadow);
+  }
+  .kicker{display:inline-block; font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--brand); background:var(--brand-weak); padding:5px 11px; border-radius:999px; margin-bottom:14px}
+  h1{margin:.1em 0 .35em; font-size:30px; line-height:1.25; letter-spacing:-.01em}
+  header.hero p{margin:.2em 0; color:var(--muted); font-size:15.5px}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px}
+  .chip{font-size:12.5px; color:var(--muted); background:var(--surface-2); border:1px solid var(--border);
+    padding:4px 10px; border-radius:999px}
+  h2{margin:46px 0 14px; font-size:22px; letter-spacing:-.01em; padding-bottom:8px; border-bottom:2px solid var(--border)}
+  h2 .num{color:var(--brand); font-variant-numeric:tabular-nums; margin-right:8px}
+  h3{margin:28px 0 10px; font-size:17.5px}
+  p{margin:.6em 0}
+  a{color:var(--brand)}
+  code{font-family:"SFMono-Regular",Consolas,"JetBrains Mono",monospace; font-size:.9em;
+    background:var(--surface-2); border:1px solid var(--border); padding:1px 6px; border-radius:6px}
+  pre{background:var(--code-bg); color:var(--code-text); padding:16px 18px; border-radius:12px; overflow-x:auto;
+    font-size:13.5px; line-height:1.6; border:1px solid rgba(255,255,255,.06)}
+  pre code{background:none; border:none; padding:0; color:inherit; font-size:inherit}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:22px 24px;
+    margin:16px 0; box-shadow:var(--shadow)}
+  .callout{border-radius:12px; padding:14px 18px; margin:16px 0; border:1px solid; display:flex; gap:12px; align-items:flex-start}
+  .callout .ic{font-size:18px; line-height:1.5}
+  .callout.info{background:var(--brand-weak); border-color:color-mix(in srgb,var(--brand) 30%,transparent)}
+  .callout.ok{background:var(--ok-weak); border-color:color-mix(in srgb,var(--ok) 32%,transparent)}
+  .callout.warn{background:var(--warn-weak); border-color:color-mix(in srgb,var(--warn) 34%,transparent)}
+  .callout.danger{background:var(--danger-weak); border-color:color-mix(in srgb,var(--danger) 34%,transparent)}
+  .callout b{font-weight:700}
+  .diagram{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; margin:16px 0;
+    overflow-x:auto; box-shadow:var(--shadow)}
+  .diagram .cap{font-size:13px; color:var(--muted); margin-bottom:10px; font-weight:600}
+  .mermaid{display:flex; justify-content:center; min-width:min-content}
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:14.5px; overflow:hidden; border-radius:10px;
+    border:1px solid var(--border)}
+  th,td{padding:10px 13px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+  th{background:var(--surface-2); font-weight:700; font-size:13px}
+  tr:last-child td{border-bottom:none}
+  td code{white-space:nowrap}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .toc{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 22px; margin-bottom:24px}
+  .toc h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
+  .toc ol{margin:0; padding-left:20px; columns:2; column-gap:30px}
+  .toc li{margin:4px 0}
+  @media(max-width:620px){.toc ol{columns:1}}
+  .pill{display:inline-block; font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:6px; vertical-align:middle}
+  .pill.ok{background:var(--ok-weak); color:var(--ok)} .pill.no{background:var(--danger-weak); color:var(--danger)}
+  .pill.mid{background:var(--warn-weak); color:var(--warn)}
+  .legend{font-size:13px; color:var(--muted); margin-top:6px}
+  .theme-toggle{position:fixed; top:14px; right:14px; z-index:50; background:var(--surface); border:1px solid var(--border);
+    color:var(--text); border-radius:999px; padding:7px 13px; font-size:13px; cursor:pointer; box-shadow:var(--shadow)}
+  footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:13px}
+  .step{counter-reset:none; display:flex; gap:14px; margin:12px 0}
+  .step .n{flex:0 0 28px; height:28px; border-radius:50%; background:var(--brand); color:#fff; font-weight:700;
+    display:flex; align-items:center; justify-content:center; font-size:14px}
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="(function(){var r=document.documentElement;var d=(r.getAttribute('data-theme')|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))==='dark';r.setAttribute('data-theme',d?'light':'dark');})()">◐ 테마</button>
+<div class="wrap">
+
+<header class="hero">
+  <span class="kicker">Design Note · FastAPI Django-passive Template</span>
+  <h1>Eager-Loading 독립성 유지 설계안</h1>
+  <p>도메인 앱의 <b>탈착 가능성(INSTALLED_APPS pluggability)</b>을 지키면서, <code>BaseRepository</code>의 eager-loading 8메서드를 <b>실사용·검증되는 살아있는 코드</b>로 전환하는 설계.</p>
+  <div class="meta">
+    <span class="chip">대상: app/core/repositories/repository_base.py</span>
+    <span class="chip">원칙: intra-domain relationship</span>
+    <span class="chip">예시: blog · Post 1:N Comment</span>
+    <span class="chip">성격: 기능추가(비파괴)</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h4>목차</h4>
+  <ol>
+    <li><a href="#s1">문제 정의</a></li>
+    <li><a href="#s2">근본 원인 — 관계의 부재</a></li>
+    <li><a href="#s3">설계 원칙 (intra-domain)</a></li>
+    <li><a href="#s4">핵심 설계 · 데이터 모델</a></li>
+    <li><a href="#s5">동작 흐름 (시퀀스)</a></li>
+    <li><a href="#s6">메서드 선택 흐름도</a></li>
+    <li><a href="#s7">8메서드 실사용 매핑</a></li>
+    <li><a href="#s8">독립성 보장 증명</a></li>
+    <li><a href="#s9">전략(selectin/joined) 비교</a></li>
+    <li><a href="#s10">대안 비교</a></li>
+    <li><a href="#s11">구현 체크리스트·영향</a></li>
+  </ol>
+</nav>
+
+<div class="callout info">
+  <span class="ic">🎯</span>
+  <div><b>한 줄 요약.</b> 자연 관계가 전부 <b>도메인 간</b>이라 관계를 배선하면 앱 독립성이 깨진다. 해법은 <b>한 도메인 안에서 닫히는 관계</b>(예: blog의 <code>Post 1:N Comment</code>)를 하나 도입하는 것 — 그러면 8메서드가 실제로 쓰이면서도 FK가 도메인 경계를 넘지 않아 탈착성이 유지된다.</div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s1"><span class="num">01</span>문제 정의</h2>
+<p><code>BaseRepository</code>는 N+1 쿼리를 막기 위한 eager-loading 메서드 8종을 제공한다. 그러나 이들은 SQLAlchemy <code>relationship()</code>이 정의돼 있어야 동작하는데, <b>현재 어떤 도메인 모델에도 관계가 없어</b> 전부 호출 불가능한 "스캐폴딩" 상태다.</p>
+
+<div class="card">
+  <h3>eager-loading 8메서드 (관계 필요)</h3>
+  <table>
+    <thead><tr><th>메서드</th><th>목적</th><th>현재</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_by_id_with</code></td><td>PK 단건 + 관계 로드</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>get_one_with</code></td><td>조건 단건 + 관계 로드</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>get_by_ids_with</code></td><td>다중 ID(IN) + 관계 로드</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>get_many_with</code></td><td>필터 목록 + 관계 로드</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>get_all_with</code></td><td>전체 목록 + 관계 로드</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>get_in_batches</code></td><td>대용량 배치 스트림</td><td><span class="pill mid">부분</span></td></tr>
+      <tr><td><code>get_with_join</code></td><td>명시적 JOIN + contains_eager</td><td><span class="pill no">미사용</span></td></tr>
+      <tr><td><code>count_with_relation</code></td><td>관계 개수 집계</td><td><span class="pill no">미사용</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s2"><span class="num">02</span>근본 원인 — 자연 관계가 전부 "도메인 간"</h2>
+<p>도메인 모델에는 관계가 될 만한 필드가 실제로 존재한다. 하지만 전부 <b>느슨한 문자열 참조</b>(FK/relationship 없음)이며, 가리키는 대상이 <b>다른 도메인</b>이다.</p>
+
+<div class="diagram">
+  <div class="cap">그림 2-1 · 현재의 암묵적 관계는 모두 도메인 경계를 가로지른다 (점선 = 느슨한 문자열 참조)</div>
+  <pre class="mermaid">
+flowchart LR
+  subgraph USER["user 앱"]
+    U["User"]
+  end
+  subgraph BLOG["blog 앱"]
+    P["Post"]
+  end
+  subgraph REPLY["reply 앱"]
+    R["Reply"]
+  end
+  subgraph SNS["sns 앱"]
+    S["SnsPost"]
+  end
+  subgraph HOME["home 앱"]
+    A["UserAccessLog"]
+  end
+  R -. "post_id" .-> P
+  R -. "author" .-> U
+  P -. "author" .-> U
+  S -. "author" .-> U
+  A -. "user_id" .-> U
+  </pre>
+</div>
+
+<div class="callout warn">
+  <span class="ic">⚠️</span>
+  <div><b>딜레마.</b> 이 관계들에 <code>ForeignKey</code>+<code>relationship()</code>을 걸면 eager-loading은 쓸 수 있게 되지만, 예컨대 <code>reply.post_id → blog_posts.id</code> FK가 생겨 <b>reply 앱이 blog 앱에 DB 레벨로 결합</b>된다. 그러면 "<code>blog</code>를 빼면 <code>reply</code> 스키마가 깨지는" 상태가 되어 <b>INSTALLED_APPS 탈착성</b>이라는 이 템플릿의 정체성과 정면충돌한다.</div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s3"><span class="num">03</span>설계 원칙 — Intra-Domain Relationship</h2>
+<div class="callout ok">
+  <span class="ic">✅</span>
+  <div><b>원칙.</b> 관계를 <b>한 도메인 내부에서 닫히도록</b> 만든다. 관계의 양쪽 테이블이 같은 도메인 소유이면, FK가 그 도메인 자기 테이블끼리만 걸려 다른 도메인과 결합이 생기지 않는다.</div>
+</div>
+
+<div class="grid2">
+  <div class="diagram">
+    <div class="cap">그림 3-1 · ❌ Cross-domain (결합 발생)</div>
+    <pre class="mermaid">
+flowchart TB
+  subgraph REPLY["reply 앱"]
+    R["Reply"]
+  end
+  subgraph BLOG["blog 앱"]
+    P["Post"]
+  end
+  R ==>|"FK 넘나듦"| P
+  style R fill:#fdeceb,stroke:#d8493f
+  style P fill:#fdeceb,stroke:#d8493f
+    </pre>
+  </div>
+  <div class="diagram">
+    <div class="cap">그림 3-2 · ✅ Intra-domain (경계 내부에서 닫힘)</div>
+    <pre class="mermaid">
+flowchart TB
+  subgraph BLOG["blog 앱 · 자기 완결"]
+    P["Post"]
+    C["Comment"]
+    P ==>|"1:N (FK 내부)"| C
+  end
+  style P fill:#e3f6ec,stroke:#1a9d63
+  style C fill:#e3f6ec,stroke:#1a9d63
+    </pre>
+  </div>
+</div>
+<p class="legend">→ intra-domain 관계는 relationship을 실제로 쓰면서도 도메인 경계를 넘지 않으므로, eager-loading을 살리는 동시에 앱 독립성을 지킨다.</p>
+
+<!-- ============================================================= -->
+<h2 id="s4"><span class="num">04</span>핵심 설계 · 데이터 모델</h2>
+<p><code>blog</code> 도메인 내부에 1:N 관계를 하나 추가한다: <b>게시글(Post) 1 : N 댓글(Comment)</b>. 두 테이블 모두 blog 소유다.</p>
+
+<div class="diagram">
+  <div class="cap">그림 4-1 · ER 다이어그램 (blog 도메인 내부)</div>
+  <pre class="mermaid">
+erDiagram
+  POST ||--o{ COMMENT : "comments (1:N)"
+  POST {
+    string  id PK "UUIDMixin"
+    string  title
+    text    content
+    string  author "느슨참조(문자열)"
+    datetime created_at "TimestampMixin"
+  }
+  COMMENT {
+    string  id PK "UUIDMixin"
+    string  post_id FK "→ blog_posts.id (도메인 내부)"
+    text    content
+    datetime created_at "TimestampMixin"
+  }
+  </pre>
+</div>
+
+<div class="card">
+<h3>모델 스케치</h3>
+<pre><code># app/domains/blog/models/models.py  (동일 도메인 · 동일 패키지)
+from sqlalchemy import ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.core.db.session import Base
+from app.core.models.models_base import TimestampMixin, UUIDMixin
+
+class Post(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "blog_posts"
+    title:   Mapped[str]
+    content: Mapped[str] = mapped_column(Text)
+    author:  Mapped[str | None]                      # 기존 느슨참조 유지
+    # ▼ intra-domain 관계
+    comments: Mapped[list["Comment"]] = relationship(
+        back_populates="post", cascade="all, delete-orphan",
+    )
+
+class Comment(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "blog_comments"
+    post_id: Mapped[str] = mapped_column(
+        ForeignKey("blog_posts.id"), index=True,     # FK는 blog 내부에서만 성립
+    )
+    content: Mapped[str] = mapped_column(Text)
+    post: Mapped["Post"] = relationship(back_populates="comments")</code></pre>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s5"><span class="num">05</span>동작 흐름 — eager-loading이 실제로 하는 일</h2>
+<p>계층은 기존 아키텍처(Router → Service → Repository → DB)를 그대로 따른다. 아래는 <code>get_by_id_with(post_id, ["comments"])</code>를 <code>selectin</code> 전략으로 호출했을 때의 실제 흐름이다.</p>
+
+<div class="diagram">
+  <div class="cap">그림 5-1 · 시퀀스 — 게시글 상세 + 댓글(N+1 없이 2쿼리)</div>
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor Client
+  participant RT as "Router (blog/v1)"
+  participant SV as "BlogService"
+  participant RP as "PostRepository"
+  participant DB as "Database"
+  Client->>RT: GET /api/v1/blog/posts/{id}?with_comments=true
+  RT->>SV: get_post_with_comments(id)
+  SV->>RP: get_by_id_with(id, ["comments"], "selectin")
+  RP->>DB: SELECT * FROM blog_posts WHERE id = :id
+  DB-->>RP: Post 1행
+  RP->>DB: SELECT * FROM blog_comments WHERE post_id IN (:id)
+  DB-->>RP: Comment N행
+  RP-->>SV: Post (post.comments 로드 완료)
+  SV-->>RT: PostDetail 스키마
+  RT-->>Client: 200 OK (JSON)
+  Note over RP,DB: 총 2쿼리 — 댓글 접근 시 추가 쿼리 없음
+  </pre>
+</div>
+
+<div class="callout info">
+  <span class="ic">🧭</span>
+  <div><b>N+1이 왜 사라지나?</b> 순진한 구현은 게시글 1건을 읽고, 화면에서 <code>post.comments</code>를 만질 때마다 매번 <code>SELECT ... WHERE post_id = ?</code>를 날린다(글이 많으면 N번). <code>selectin</code>은 <b>관련 댓글을 한 번의 <code>IN (...)</code> 쿼리로 미리</b> 가져와 이 반복을 없앤다.</div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s6"><span class="num">06</span>메서드 선택 흐름도</h2>
+<p>"무엇을, 어떤 형태로 조회하느냐"에 따라 8메서드 중 하나로 갈린다.</p>
+<div class="diagram">
+  <div class="cap">그림 6-1 · 의사결정 흐름도</div>
+  <pre class="mermaid">
+flowchart TD
+  Q0{"관계 데이터도<br/>함께 필요?"} -->|"아니오"| BASE["기본 CRUD<br/>(get_by_id / get_all …)"]
+  Q0 -->|"예"| Q1{"몇 건을<br/>어떻게?"}
+  Q1 -->|"PK 1건"| M1["get_by_id_with"]
+  Q1 -->|"조건 1건"| M2["get_one_with"]
+  Q1 -->|"여러 ID"| M3["get_by_ids_with"]
+  Q1 -->|"필터 목록"| M4["get_many_with"]
+  Q1 -->|"전체 목록"| M5["get_all_with"]
+  Q1 -->|"대용량 순회"| M6["get_in_batches"]
+  Q1 -->|"커스텀 JOIN"| M7["get_with_join"]
+  Q1 -->|"개수 집계"| M8["count_with_relation"]
+  </pre>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s7"><span class="num">07</span>8메서드 실사용 매핑 (blog Post/Comment)</h2>
+<p>하나의 intra-domain 관계만으로 8메서드 전부를 실제 사용·테스트할 수 있다.</p>
+<table>
+  <thead><tr><th>#</th><th>메서드</th><th>blog에서의 구체 용도</th><th>실행 SQL 개요</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>get_by_id_with</code></td><td>게시글 상세 + 댓글</td><td>posts WHERE id + comments WHERE post_id IN(id)</td></tr>
+    <tr><td>2</td><td><code>get_one_with</code></td><td>slug 등 조건으로 글 1건 + 댓글</td><td>posts WHERE slug + comments IN(...)</td></tr>
+    <tr><td>3</td><td><code>get_by_ids_with</code></td><td>여러 글 + 각 댓글(N+1 제거)</td><td>posts WHERE id IN(...) + comments IN(...)</td></tr>
+    <tr><td>4</td><td><code>get_many_with</code></td><td>작성자 필터 목록 + 댓글</td><td>posts WHERE author LIMIT + comments IN(...)</td></tr>
+    <tr><td>5</td><td><code>get_all_with</code></td><td>전체 글 목록 + 댓글</td><td>posts LIMIT/OFFSET + comments IN(...)</td></tr>
+    <tr><td>6</td><td><code>get_in_batches</code></td><td>대량 글 배치 처리(집계/마이그레이션)</td><td>posts LIMIT :n OFFSET :k 반복</td></tr>
+    <tr><td>7</td><td><code>get_with_join</code></td><td>댓글 달린 글만 조인 조회</td><td>posts JOIN comments ON post_id=id</td></tr>
+    <tr><td>8</td><td><code>count_with_relation</code></td><td>글별 댓글 수 통계</td><td>posts LEFT JOIN comments GROUP BY id</td></tr>
+  </tbody>
+</table>
+
+<div class="diagram">
+  <div class="cap">그림 7-1 · 시퀀스 — <code>count_with_relation("comments")</code> (집계 1쿼리)</div>
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant SV as "BlogService"
+  participant RP as "PostRepository"
+  participant DB as "Database"
+  SV->>RP: count_with_relation("comments")
+  RP->>DB: SELECT posts.*, COUNT(comments.id) AS cnt<br/>FROM blog_posts LEFT JOIN blog_comments<br/>ON posts.id = comments.post_id GROUP BY posts.id
+  DB-->>RP: [(Post, cnt), ...]
+  RP-->>SV: [(글, 댓글수), ...]
+  </pre>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s8"><span class="num">08</span>독립성 보장 — "blog를 빼도 나머지는 무손상"</h2>
+<div class="diagram">
+  <div class="cap">그림 8-1 · INSTALLED_APPS 탈착 시나리오</div>
+  <pre class="mermaid">
+flowchart TB
+  subgraph BEFORE["INSTALLED_APPS = [home, blog, reply, sns, user]"]
+    direction LR
+    h1["home"]
+    b1["blog<br/>(Post + Comment · FK 내부)"]
+    r1["reply"]
+    s1["sns"]
+    u1["user"]
+  end
+  BEFORE --> ACT["blog 앱 제거<br/>(목록에서 빼고 디렉터리 삭제)"]
+  ACT --> AFTER["INSTALLED_APPS = [home, reply, sns, user]<br/>blog_posts · blog_comments 만 함께 사라짐<br/>→ 나머지 앱/스키마 무손상 ✅"]
+  style b1 fill:#e8effd,stroke:#3b6ef5
+  style AFTER fill:#e3f6ec,stroke:#1a9d63
+  </pre>
+</div>
+<table>
+  <thead><tr><th>검증 항목</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>다른 도메인이 blog의 <code>Post</code>/<code>Comment</code>를 import 하나?</td><td><span class="pill ok">아니오</span></td></tr>
+    <tr><td>FK가 도메인 경계를 넘나?</td><td><span class="pill ok">아니오 (blog_comments → blog_posts)</span></td></tr>
+    <tr><td>blog를 INSTALLED_APPS에서 빼면?</td><td>두 테이블 함께 제거, 타 도메인 <b>무영향</b></td></tr>
+    <tr><td>reply 도메인(cross-domain 느슨참조)과 충돌?</td><td><span class="pill ok">없음</span> — 두 패턴을 대비 사례로 병존</td></tr>
+  </tbody>
+</table>
+<div class="callout ok">
+  <span class="ic">🧩</span>
+  <div><b>교육적 이점.</b> <code>reply</code>는 "cross-domain 느슨참조(독립성 우선)", <code>blog.Comment</code>는 "intra-domain 관계(ORM 기능 시연)"로 남아, 템플릿이 <b>두 가지 결합 전략을 동시에 예시</b>하게 된다.</div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s9"><span class="num">09</span>부록 — 로딩 전략 비교 (selectin / joined / subquery)</h2>
+<p>같은 "관계 로드"라도 <code>strategy</code>에 따라 실행 SQL이 다르다. 1~5번 메서드가 공통으로 받는 파라미터다.</p>
+<table>
+  <thead><tr><th>전략</th><th>쿼리 수</th><th>방식</th><th>권장 상황</th></tr></thead>
+  <tbody>
+    <tr><td><code>selectin</code> (기본)</td><td>2</td><td>본체 조회 후 <code>… WHERE fk IN (…)</code></td><td>1:N 컬렉션(댓글 등)</td></tr>
+    <tr><td><code>joined</code></td><td>1</td><td><code>LEFT JOIN</code> 한 방에</td><td>1:1 · N:1 (단일 연관)</td></tr>
+    <tr><td><code>subquery</code></td><td>2</td><td>2번째를 서브쿼리로</td><td>selectin 유사, 특정 상황</td></tr>
+  </tbody>
+</table>
+<div class="diagram">
+  <div class="cap">그림 9-1 · selectin(2쿼리) vs joined(1쿼리)</div>
+  <pre class="mermaid">
+flowchart LR
+  subgraph SI["selectin (2쿼리)"]
+    A1["① posts 조회"] --> A2["② comments<br/>WHERE post_id IN(...)"]
+  end
+  subgraph JO["joined (1쿼리)"]
+    B1["① posts LEFT JOIN comments"]
+  end
+  </pre>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="s10"><span class="num">10</span>대안 비교</h2>
+<table>
+  <thead><tr><th>방향</th><th>eager-loading 사용</th><th>도메인 독립성</th><th>비용/리스크</th><th>평가</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>A. intra-domain 관계</b><br/>(본 설계)</td>
+      <td><span class="pill ok">전부 실사용</span></td>
+      <td><span class="pill ok">유지</span></td>
+      <td>모델 1개 추가, 마이그레이션, 테스트</td>
+      <td><b>권장</b></td>
+    </tr>
+    <tr>
+      <td>B. cross-domain 관계<br/>+ FK 제약 제거<br/>(<code>primaryjoin</code>/<code>foreign()</code>)</td>
+      <td><span class="pill ok">사용 가능</span></td>
+      <td><span class="pill mid">부분 훼손</span><br/>(DB FK 없음, 그러나 import 결합)</td>
+      <td>도메인 간 파이썬 import 의존</td>
+      <td>차선</td>
+    </tr>
+    <tr>
+      <td>C. 관계 미도입 + eager-loading 삭제</td>
+      <td><span class="pill no">불가(삭제)</span></td>
+      <td><span class="pill ok">유지</span></td>
+      <td>표면 최소화, 추후 재작성</td>
+      <td>기능 상실</td>
+    </tr>
+    <tr>
+      <td>D. 현행 유지</td>
+      <td><span class="pill no">미사용 방치</span></td>
+      <td><span class="pill ok">유지</span></td>
+      <td>죽은 코드 지속</td>
+      <td>비권장</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================= -->
+<h2 id="s11"><span class="num">11</span>구현 체크리스트 · 영향 범위</h2>
+<div class="card">
+  <div class="step"><div class="n">1</div><div><b>모델</b> — <code>blog/models</code>에 <code>Comment</code> 추가, <code>Post.comments</code>/<code>Comment.post</code> 관계 정의. (믹스인 <code>UUIDMixin</code>/<code>TimestampMixin</code> 재사용)</div></div>
+  <div class="step"><div class="n">2</div><div><b>레포지토리</b> — 기존 <code>PostRepository</code>가 <code>BaseRepository</code>의 eager-loading을 그대로 상속·사용(추가 코드 최소).</div></div>
+  <div class="step"><div class="n">3</div><div><b>서비스</b> — <code>get_post_with_comments</code>, <code>list_posts_with_comment_counts</code> 등에서 <code>get_by_id_with</code>/<code>count_with_relation</code> 호출.</div></div>
+  <div class="step"><div class="n">4</div><div><b>스키마·라우터(선택)</b> — 댓글 포함 상세, 글별 댓글수 등 <b>신규 엔드포인트</b>(기존 계약 불변, 추가만).</div></div>
+  <div class="step"><div class="n">5</div><div><b>마이그레이션</b> — DEBUG는 <code>create_all</code>이 처리, 운영은 Alembic 리비전 1건.</div></div>
+  <div class="step"><div class="n">6</div><div><b>테스트</b> — eager-loading 실경로 + 글별 댓글수 + (선택)중첩 로딩 검증. 현재 미검증 경로를 <b>실측 커버</b>.</div></div>
+</div>
+
+<div class="callout info">
+  <span class="ic">📦</span>
+  <div><b>영향 요약.</b> 성격은 <b>기능추가(비파괴)</b>. 기존 엔드포인트·응답 스키마는 불변이고 <b>추가</b>만 발생한다. 도메인 독립성·INSTALLED_APPS 탈착성은 그대로 보존된다.</div>
+</div>
+
+<footer>
+  <p>이 문서는 감사 실행 #1의 설계 결정 항목 <b>#2b (eager-loading)</b>에 대한 설계 제안이다. 관련: <code>AUDIT_REPORT.md</code> · <code>AUDIT_LEDGER.md</code>. 다이어그램은 Mermaid로 렌더된다(오프라인 시 코드 원문 표시).</p>
+</footer>
+
+</div>
+
+<script>
+  (function(){
+    var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    var cur = document.documentElement.getAttribute('data-theme');
+    var isDark = cur ? cur === 'dark' : dark;
+    if (window.mermaid) {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        securityLevel: 'loose',
+        themeVariables: {
+          fontFamily: 'inherit',
+          primaryColor: isDark ? '#1b2a4a' : '#e8effd',
+          primaryTextColor: isDark ? '#e6ecf5' : '#1c2330',
+          primaryBorderColor: isDark ? '#5b8bff' : '#3b6ef5',
+          lineColor: isDark ? '#7f8ea3' : '#94a1b8',
+          secondaryColor: isDark ? '#1b222d' : '#eef1f6',
+          tertiaryColor: isDark ? '#151b24' : '#f7f8fa'
+        }
+      });
+    }
+  })();
+</script>
+</body>
+</html>
