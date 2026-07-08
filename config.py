@@ -175,6 +175,20 @@ class AppSettings(BaseSettings):
         description="실행 환경",
     )
 
+    # 개발용 uvicorn 실행 바인드 주소 (main.py __main__ 진입점 전용)
+    # 안전 기본값은 루프백(127.0.0.1). 컨테이너/외부 노출이 필요하면 배포 환경에서
+    # HOST=0.0.0.0 을 env 로 주입한다(코드에 all-interfaces 리터럴을 두지 않는다).
+    HOST: str = Field(
+        default="127.0.0.1",
+        description="개발 서버 바인드 주소",
+    )
+
+    # 개발용 uvicorn 실행 포트 (main.py __main__ 진입점 전용)
+    PORT: int = Field(
+        default=8000,
+        description="개발 서버 포트",
+    )
+
 
 # =============================================================================
 # 데이터베이스 설정
