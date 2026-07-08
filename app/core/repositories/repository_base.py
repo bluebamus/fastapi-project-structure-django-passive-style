@@ -805,6 +805,12 @@ class BaseRepository(CRUDBase[ModelType]):
         Example:
             user = await repo.update("user-123", {"name": "New Name"})
         """
+        # 빈 patch(변경 컬럼 없음)는 no-op 로 처리한다. 빈 dict 를 values() 에 넘기면
+        # SQLAlchemy 가 "empty SET clause" CompileError 를 던져 500 이 되므로, 대상이
+        # 존재하면 현재 상태를 그대로 반환하고(→200) 없으면 None(→404) 을 반환한다.
+        if not data:
+            return await self.get_by_id(id)
+
         try:
             stmt = update(self.model).where(self.model.id == id).values(**data)
             result = cast("CursorResult[Any]", await self.session.execute(stmt))
