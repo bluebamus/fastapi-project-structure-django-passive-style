@@ -2,7 +2,7 @@
 
 Django의 `INSTALLED_APPS`처럼 **앱을 명시적으로 수동 등록(passive)** 하는 FastAPI 프로젝트 템플릿입니다. Repository 패턴과 계층 분리 아키텍처를 적용했으며, 트랜잭션 경계는 **기능 의존성(dependency)** 이 담당합니다(UnitOfWork 미사용).
 
-> 자매 저장소: 앱을 디렉토리 스캔으로 자동 발견하는 [active-style](https://github.com/bluebamus/bluebamus-fastapi-project-structure-django-active-style) 버전도 있습니다. 두 저장소는 **앱 목록의 출처만 다르고** 결선 로직은 동일합니다.
+> 자매 저장소: 앱을 디렉토리 스캔으로 자동 발견하는 [active-style](https://github.com/bluebamus/fastapi-project-structure-django-active-style) 버전도 있습니다. 두 저장소는 **앱 목록의 출처만 다르고** 결선 로직은 동일합니다.
 
 ## 목차
 

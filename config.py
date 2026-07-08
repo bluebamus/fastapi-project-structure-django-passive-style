@@ -85,7 +85,7 @@ class TimezoneSettings(BaseSettings):
 # API 설명 (Scalar 문서에 표시)
 # =============================================================================
 API_DESCRIPTION = """
-## FastAPI Default Project Structure
+## FastAPI Project Structure — Django Passive App Registration
 
 Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
 트랜잭션 경계는 기능 의존성(dependency)이 담당합니다(UnitOfWork 미사용).
