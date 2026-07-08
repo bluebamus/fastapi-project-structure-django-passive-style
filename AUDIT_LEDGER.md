@@ -48,6 +48,16 @@
 - 코드 ↔ 문서 정합성: 대체로 높음(README/config API_DESCRIPTION 이 실제 구조와 일치).
 - 드리프트: UUIDMixin/TimestampMixin 이 문서엔 사용 예시가 있으나 실제 모델은 미사용(중복 정의).
 
+### 전수 재검수 (실행 #1 추가 — 사용자 요청 "확실히 검수")
+사용자 확인 요청에 따라 (1)ARCHITECTURE 정정 (2)미정독 파일 전수 로직 리뷰 (3)런타임 스모크 수행.
+
+- **리뷰 방식**: blog/sns/reply + utils/core 잡파일을 병렬 리뷰 서브에이전트 2기로 전수 정독, home/스키마/예외는 직접 확인.
+- **발견(수정)**: `[86c8410]` 빈 PATCH 바디 `{}` → HTTP 500 (BaseRepository.update 빈 SET 절 CompileError). 전 도메인 공통 latent 버그 → no-op 가드 + 회귀 테스트.
+- **발견(수정)**: `[c7dcc9b]` 문서 드리프트 — docs/ARCHITECTURE.md 전면 재작성(pre-refactor 서술: app/apps.py·UoW·app/shared·worker/), main.py·new_app.py docstring 정정.
+- **저위험 관찰(미조치)**: auth.py·redis.py 빈 스텁(미import), 로깅 3건 Low(config.py:47 파일명 날짜 startup 고정 / setup.py `_configured` 락없음 / formatters DST 경계) — 동작 무해, 의도 확인 대상.
+- **스모크(3)**: docker/compose/Dockerfile 없음 + MySQL 3306·Redis 6379 미리슨 → 실스택 부팅 불가. **달성 최선**: (a) create_app() DB없이 조립 성공(라우터 5·경로 15), (b) 인프로세스 E2E(httpx ASGI, sqlite) **13/13 통과**(health·user CRUD happy+409+422+404·blog·home stats·204). 한계: sqlite 백엔드(MySQL 방언 미검증).
+- **미해결(대규모, 결정 대기)**: docs/concepts/ 3개 dated 문서(+HTML 쌍둥이)가 현행 main과 불일치(UoW/app/apps.py/auto-discovery). 처리 방향(갱신/아카이브 배너/삭제) 사용자 결정 필요.
+
 ### 작업 로그
 
 #### [94a6894] 2026-07-08 · fix(types): mypy 49건 해소
