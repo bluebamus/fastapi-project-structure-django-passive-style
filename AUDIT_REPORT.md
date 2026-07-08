@@ -136,6 +136,20 @@
 
 ---
 
+## 6-C. 전수 재검수 결과 (사용자 요청 "확실히 검수")
+
+미정독 파일까지 라인 단위 리뷰(병렬 서브에이전트 2기 + 직접) + 런타임 스모크 수행.
+
+- **수정된 실버그**: `PATCH {}`(빈 바디) → HTTP 500. `BaseRepository.update`의 빈 SET 절 CompileError. 전 도메인 공통. no-op 가드 + 회귀 테스트로 수정(`86c8410`).
+- **수정된 문서 드리프트**: `docs/ARCHITECTURE.md`가 pre-refactor 설계(app/apps.py·UnitOfWork·app/shared·worker/)를 서술 → 현행에 맞게 전면 재작성. `main.py`·`scripts/new_app.py` docstring 정정(`c7dcc9b`).
+- **런타임 스모크**: 실스택(MySQL/Redis) 부재로 부팅 불가 → **인프로세스 E2E(ASGI, sqlite) 13/13 통과** + `create_app()` 조립 성공(경로 15개). 한계: sqlite 백엔드(MySQL 방언·실DB 연결 미검증).
+- **저위험 미조치**: `auth.py`/`redis.py` 빈 스텁, 로깅 Low 3건(파일명 날짜 고정 등) — 동작 무해.
+- **남은 대규모 항목(결정 대기)**: `docs/concepts/` 3개 dated 문서(+HTML)가 제거된 UoW/app/apps.py/auto-discovery를 현행처럼 서술 → 갱신/아카이브/삭제 방향 결정 필요.
+
+> ⚠️ 정직성 명시: "정적·테스트로 잡히는 결함"은 전수 클린이나, **실 DB(MySQL/Redis) 대상 런타임 검증은 환경 부재로 미수행**. sqlite 기반 인프로세스 E2E까지가 이번 검증의 한계다.
+
+---
+
 ## 7. 다음 단계 제안
 
 - ✅ **CI 게이트 도입** — 적용됨(`a24cecd`): ruff+format+mypy+bandit+pytest.
