@@ -7,10 +7,12 @@ record 에 두 필드를 주입한다.
     · 방식 A — 없으면 호출 프레임에서 self/cls 를 찾아 클래스명을 자동 추출.
   자유 함수(클래스 없음)는 '-'.
 """
+
 from __future__ import annotations
 
 import logging
 import sys
+from types import FrameType
 
 
 def _app_from_path(pathname: str) -> str:
@@ -27,7 +29,7 @@ def _app_from_path(pathname: str) -> str:
 
 def _class_from_stack() -> str:
     """호출 스택에서 logging/이 패키지 프레임을 건너뛰고 첫 사용자 프레임의 클래스명을 찾는다."""
-    frame = sys._getframe(0)
+    frame: FrameType | None = sys._getframe(0)
     while frame is not None:
         filename = frame.f_code.co_filename.replace("\\", "/")
         if "/logging/" not in filename and "/utils/logs/" not in filename:

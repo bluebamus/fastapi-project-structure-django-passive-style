@@ -13,7 +13,7 @@ SQLAlchemy Base 클래스
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from sqlalchemy import DateTime, String
@@ -33,6 +33,13 @@ class Base(DeclarativeBase):
     type_annotation_map = {
         datetime: DateTime(timezone=True),
     }
+
+    if TYPE_CHECKING:
+        # 타입 전용 계약: BaseRepository/pagination 등 제네릭 코드는 모든
+        # Repository 대상 모델이 String(36) UUID 기본키 `id` 를 갖는다고 전제한다.
+        # 실제 매핑은 각 도메인 모델(또는 UUIDMixin)이 제공하므로 여기서는
+        # 런타임 컬럼을 만들지 않고(타입 검사 시에만 노출) 그 불변식만 선언한다.
+        id: Mapped[str]
 
     def to_dict(self) -> dict[str, Any]:
         """모델을 딕셔너리로 변환합니다."""
