@@ -118,10 +118,31 @@
 
 ---
 
+## 6-B. 후속 개선 적용 결과 (사용자 승인 기반)
+
+실행 #1 이후, 승인 범위에 따라 아래를 적용했습니다(**CORS 가드는 nginx 리버스 프록시 계층에서 처리 가능하므로 앱 레벨 제외**).
+
+| 항목 | 조치 | 커밋 |
+|---|---|---|
+| 설계결정 #1 미사용 믹스인 | **적용(C1)**: 5개 모델이 UUIDMixin/TimestampMixin 상속 → 죽은코드·중복 해소. 동작 보존(컬럼 순서만 이동) | `a63dcbd` |
+| 설계결정 #5 전역 포맷 | **적용(B)**: `ruff format` 저장소 전역(56파일), CI format 게이트 선행 | `161fc0a` |
+| 다음단계 CI/pre-commit | **적용(A)**: GitHub Actions(ruff+format+mypy+bandit+pytest) + pre-commit + bandit dev편입 + ruff S룰(tests S101 예외) | `a24cecd` |
+| 설계결정 #3 CORS 가드 | **제외**: nginx 계층 처리 영역 → 앱 미적용 | — |
+| 설계결정 #2 미사용 eager-loading | **보류**: 템플릿 스캐폴딩, 관계 도입 시 재검토 | — |
+| 설계결정 #6 README `{ip}` 표기차 | **보류**: 문서 경미 드리프트 | — |
+
+검증(CI 동등, 최종): ruff clean · ruff format clean · mypy 0/135 · bandit 0 · pytest 68 passed(회귀 0).
+
+---
+
 ## 7. 다음 단계 제안
 
-- **CI 게이트 도입**: `ruff check` + `ruff format --check` + `mypy .` + `bandit -r app config.py main.py -x '*/tests/*'` + `pytest` 를 PR 필수 체크로.
-- **pre-commit**: ruff(check+format), mypy, bandit 훅.
-- **ruff 보안 룰(S) 상시화**: `pyproject [tool.ruff.lint].select` 에 `S` 추가하고 테스트 디렉터리는 `S101` 예외 처리(`per-file-ignores`).
-- **bandit 을 dev 의존성으로 정식 편입**(현재는 임시 실행).
-- **mypy 점진적 strict 화**: 현재 `strict=false`. 신규 코드부터 `disallow_untyped_defs` 상향 검토.
+- ✅ **CI 게이트 도입** — 적용됨(`a24cecd`): ruff+format+mypy+bandit+pytest.
+- ✅ **pre-commit** — 적용됨(`a24cecd`).
+- ✅ **ruff 보안 룰(S) 상시화** — 적용됨(`a24cecd`, tests S101 예외).
+- ✅ **bandit dev 의존성 편입** — 적용됨(`a24cecd`).
+- ⬜ **mypy 점진적 strict 화**: 현재 `strict=false`. 신규 코드부터 `disallow_untyped_defs` 상향 검토(권장).
+- ⬜ **README 미세 드리프트 정정**(`{ip}`) 및 미사용 eager-loading/pagination 스캐폴딩 정책 결정.
+- ⬜ **`pre-commit install`** 을 온보딩 문서(README)에 안내.
+
+> pre-commit 훅 활성화: `uv run pre-commit install` (최초 1회).
