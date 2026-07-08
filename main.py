@@ -1,4 +1,4 @@
-"""FastAPI 진입점. 모든 조립은 create_app() 안에서 수행한다(app/apps.py 등록 기반)."""
+"""FastAPI 진입점. 모든 조립은 create_app() 안에서 수행한다(config.INSTALLED_APPS 등록 기반)."""
 
 from app.core.bootstrap import create_app
 from config import app_settings

@@ -124,8 +124,9 @@ def scaffold(
         with_admin: If True, create ``admin.py`` (with empty ``admin_views``).
 
     Note:
-        생성된 앱은 디렉터리 컨벤션만으로 AppRegistry 에 자동 발견된다.
-        중앙 파일(config.py / app/apps.py 등) 수정이 필요 없다.
+        이 브랜치(main)는 수동 등록 방식이다. 스캐폴딩 생성 후
+        config.INSTALLED_APPS 목록에 앱 이름을 추가해야 AppRegistry 가
+        라우터/모델/Admin 을 컨벤션으로 결선한다.
     """
     class_name = "".join(part.capitalize() for part in name.split("_"))
     base = root / "app" / "domains" / name
