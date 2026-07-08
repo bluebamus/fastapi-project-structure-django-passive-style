@@ -129,7 +129,7 @@
 | 다음단계 CI/pre-commit | **적용(A)**: GitHub Actions(ruff+format+mypy+bandit+pytest) + pre-commit + bandit dev편입 + ruff S룰(tests S101 예외) | `a24cecd` |
 | 설계결정 #3 CORS 가드 | **제외**: nginx 계층 처리 영역 → 앱 미적용 | — |
 | 설계결정 #2a pagination | **적용**: app/utils 로 이전 + 표준 @dataclass 컨테이너(초기값·`return cls()` 필드만) + 인스턴스화형 `Paginator` + 테스트 10케이스. app/shared 제거 | `70295ba` |
-| 설계결정 #2b 미사용 eager-loading 8메서드 | **설계안 도출**: 독립성 유지 방안(intra-domain 관계) 상세 설계를 `EAGER_LOADING_DESIGN.html`(다이어그램 포함)로 문서화. 코드 구현은 승인 대기 | 문서 |
+| 설계결정 #2b 미사용 eager-loading 8메서드 | **의결·종결**: `BaseRepository`는 기반(foundation) 계층으로 "미래 비즈니스 코드용 primitives" → 미사용은 결함이 아닌 확장점. **현행 유지 + 목적 주석 추가**(동작 무변경). 관계 도입 확장법은 `EAGER_LOADING_DESIGN.html` 참조 | `(아래 커밋)` |
 | 설계결정 #6 README `{ip}` 표기차 | **보류**: 문서 경미 드리프트 | — |
 
 검증(CI 동등, 최종): ruff clean · ruff format clean · mypy 0/135 · bandit 0 · pytest 68 passed(회귀 0).

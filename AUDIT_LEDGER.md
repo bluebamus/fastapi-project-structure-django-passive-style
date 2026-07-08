@@ -112,8 +112,9 @@ C1과 상호배타 → C1이 대체(supersede).
 
 ### 잔여 설계 결정(미적용, 사용자 판단 대기)
 - #2a **pagination** — **적용**: app/utils 로 이전 + dataclass화(아래 70295ba).
-- #2b **eager-loading 8메서드**(관계 0개) — **설계안 문서화 완료**: `EAGER_LOADING_DESIGN.html`
-  (intra-domain 관계로 독립성 유지하며 8메서드 실사용하는 설계, 블록/ER/시퀀스/흐름도 포함). 코드 구현은 승인 대기.
+- #2b **eager-loading 8메서드** — **의결·종결**: BaseRepository는 기반 계층이라 미사용이 정상(확장점).
+  **현행 유지 + 목적 주석**으로 결정. 설계안(`EAGER_LOADING_DESIGN.html`)은 향후 관계 도입 가이드로 존속.
+  검증: ruff/format/mypy clean, pytest 78 passed(동작 무변경).
 - #3 CORS 런타임 가드 — **nginx 계층 처리로 제외 확정**(앱 미적용).
 - #6 README `{ip}`↔`{ip_address}` 표기차 — 문서 경미 드리프트(대량 편집 회피).
 
