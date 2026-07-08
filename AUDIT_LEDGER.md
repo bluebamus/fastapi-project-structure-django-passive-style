@@ -49,4 +49,42 @@
 - 드리프트: UUIDMixin/TimestampMixin 이 문서엔 사용 예시가 있으나 실제 모델은 미사용(중복 정의).
 
 ### 작업 로그
-(이하 append)
+
+#### [94a6894] 2026-07-08 · fix(types): mypy 49건 해소
+- 대상: models_base.py, repository_base.py, pagination.py, filters.py,
+  user_info_middleware.py, celery/task.py, home/admin.py, 5개 도메인 라우터, pyproject.toml(mypy override)
+- 변경 전 문제: mypy 49 errors(제네릭 id 미선언, Result.rowcount, no-any-return, 무바운드 TypeVar, responses dict 등)
+- 설계 결정: (1) `id` 는 실제로 모든 모델이 갖는 불변식이므로 Base 에 TYPE_CHECKING 전용 계약 선언(런타임 무변경).
+  (2) rowcount 는 DML 에서 CursorResult 로 cast. (3) type:ignore 미사용 원칙 준수.
+- 변경 후 상태: mypy 0/135. 인지 사항: 중첩 eager-loading·pagination 자동변환은 관계/사용처가 없어 실사용 테스트 불가(타입만 정합).
+- 검증: mypy 0, ruff clean, pytest 68 passed(베이스라인 68 동일 → 회귀 없음).
+- 관계: 신규(정적 품질 개선). 회귀 위험 없음(동작 보존).
+
+#### [0087fbc] 2026-07-08 · fix(security): B104 dev-server 바인드 이전
+- 대상: config.py(AppSettings HOST/PORT), main.py, .env.example, (pyproject 포함)
+- 변경 전 문제: main.py 하드코딩 host="0.0.0.0" → bandit B104(all-interfaces).
+- 설계 결정: 안전 기본값(127.0.0.1)을 설정으로 두고 배포는 HOST=0.0.0.0 env 주입.
+  코드에서 all-interfaces 리터럴 제거 → B104 소멸.
+- 변경 후 상태: bandit 0. 인지 사항: `python main.py` 기본 바인드가 루프백으로 바뀜(동작 변경, 보고서 명시).
+- 검증: bandit 0, mypy 0, ruff clean, pytest 68 passed(회귀 없음).
+- 관계: 신규(보안 하드닝). 회귀 위험: 개발 편의(외부 접속) 축소 — 배포 env 로 복원 가능.
+
+> 참고: 커밋 5c7b6cc(chore: align project name)는 감사 시작 전 사용자 본인 커밋으로 감사 범위 밖.
+
+### 5.6.2 회귀 방지 비교 검수 표
+
+| 항목 | 이전 작업의 상태·문제 인식 | 현재 방향의 상태·문제 인식 | 회귀 여부 | 판단·근거 |
+|---|---|---|---|---|
+| 백그라운드 로그 drain (W1) | 이전 감사에서 shutdown drain 도입(유실 방지) | 변경 없음 — 그대로 유지 | 없음 | 건드리지 않음 |
+| Celery 영속 이벤트 루프 (C1) | asyncio.run 매회 → loop closed 오류 해결 | run_async 제네릭化(타입만) — 루프 로직 불변 | 없음 | 런타임 동작 보존 |
+| UnitOfWork 제거 | 이전에 UoW 제거, dependency 가 트랜잭션 경계 | 변경 없음 | 없음 | 구조 유지 |
+| dev 서버 바인드 | 이전엔 main.py 하드코딩 0.0.0.0 | 설정 기반 + 기본 127.0.0.1 | 없음(개선) | 보안 하드닝, 배포 env 로 복원 가능 |
+| mypy 미적용 | 이전엔 49건 방치(strict=false) | 0건 — 타입 계약 보강 | 없음 | 동작 보존, type:ignore 미사용 |
+
+### 설계 결정 필요(자동 미적용) 목록
+1. UUIDMixin/TimestampMixin 미사용(각 모델이 id/created_at 중복 정의) — 채택 or 제거 결정 필요.
+2. eager-loading/pagination 제네릭 기계 미사용(관계 0개) — 템플릿 스캐폴딩 유지 vs 축소.
+3. CORS origins=["*"]+credentials=True 런타임 가드 부재 — validator 추가 권고(기본값은 안전).
+4. dev 바인드 기본값 127.0.0.1 변경 — README uvicorn CLI 예시(--host 0.0.0.0)와 정책 정합 확인 필요.
+5. 저장소 전역 ruff format 미적용(58파일) — 감사 diff 오염 방지로 미적용, CI/일괄 포맷 권고.
+6. 문서 경미 드리프트: README `/by-ip/{ip}` ↔ 코드 `{ip_address}`.
