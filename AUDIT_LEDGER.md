@@ -56,7 +56,7 @@
 - **발견(수정)**: `[c7dcc9b]` 문서 드리프트 — docs/ARCHITECTURE.md 전면 재작성(pre-refactor 서술: app/apps.py·UoW·app/shared·worker/), main.py·new_app.py docstring 정정.
 - **저위험 관찰(미조치)**: auth.py·redis.py 빈 스텁(미import), 로깅 3건 Low(config.py:47 파일명 날짜 startup 고정 / setup.py `_configured` 락없음 / formatters DST 경계) — 동작 무해, 의도 확인 대상.
 - **스모크(3)**: docker/compose/Dockerfile 없음 + MySQL 3306·Redis 6379 미리슨 → 실스택 부팅 불가. **달성 최선**: (a) create_app() DB없이 조립 성공(라우터 5·경로 15), (b) 인프로세스 E2E(httpx ASGI, sqlite) **13/13 통과**(health·user CRUD happy+409+422+404·blog·home stats·204). 한계: sqlite 백엔드(MySQL 방언 미검증).
-- **미해결(대규모, 결정 대기)**: docs/concepts/ 3개 dated 문서(+HTML 쌍둥이)가 현행 main과 불일치(UoW/app/apps.py/auto-discovery). 처리 방향(갱신/아카이브 배너/삭제) 사용자 결정 필요.
+- **종결(삭제)**: docs/concepts/ 3개 dated 문서(+HTML, 총 5파일)가 현행 main과 불일치(제거된 UoW / 없는 app/apps.py / 다른 브랜치 auto-discovery). 유지가치 없음(정확 정보는 ARCHITECTURE.md/README, 이력은 git) → **폴더 전체 삭제**, README 트리 참조 정리. git 이력에 보존됨.
 
 ### 작업 로그
 
