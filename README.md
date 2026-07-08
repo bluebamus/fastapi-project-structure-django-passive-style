@@ -787,7 +787,7 @@ ACCESS_LOG_EXCLUDE_EXTENSIONS=[".css", ".js", ".ico", ".png", ".woff2", ".map"]
 |--------|------|------|
 | GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
 | GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip_address}` | IP별 접속 로그 |
 | GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
 | GET | `/api/v1/home/access-logs/stats` | 접속 통계 (장치, OS, 브라우저별) |
 
@@ -932,7 +932,7 @@ INSTALLED_APPS: list[str] = [
 |--------|------|------|
 | GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
 | GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip_address}` | IP별 접속 로그 |
 | GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
 | GET | `/api/v1/home/access-logs/stats` | 접속 통계 |
 
