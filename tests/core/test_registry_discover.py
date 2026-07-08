@@ -8,7 +8,7 @@ def test_discover_reads_installed_apps_in_order(monkeypatch):
     monkeypatch.setattr(config, "INSTALLED_APPS", ["beta", "alpha"])
     reg = AppRegistry()
     apps = reg.discover(package="tests.core._fakeapps")
-    assert [a.name for a in apps] == ["beta", "alpha"]   # 목록 순서 보존
+    assert [a.name for a in apps] == ["beta", "alpha"]  # 목록 순서 보존
     assert reg.enabled_apps == apps
     assert all(a.package.startswith("tests.core._fakeapps.") for a in apps)
 
@@ -19,4 +19,4 @@ def test_discover_uses_real_installed_apps():
     names = [a.name for a in reg.discover()]
     assert "home" in names
     assert "blog" in names
-    assert names[0] == "home"        # INSTALLED_APPS 의 첫 항목(명시적 순서)
+    assert names[0] == "home"  # INSTALLED_APPS 의 첫 항목(명시적 순서)
