@@ -48,7 +48,7 @@ fastapi-project-structure-django-passive-style/
 │   │   ├── task.py                 # run_async() — 워커용 영속 이벤트루프 브릿지
 │   │   └── tasks.py                # 중앙 태스크 정의
 │   │
-│   ├── domains/                    # 기능 단위 앱 (config.INSTALLED_APPS 에 이름 등록)
+│   ├── features/                    # 기능 단위 앱 (config.INSTALLED_APPS 에 이름 등록)
 │   │   └── <name>/                 # home · blog · reply · sns · user
 │   │       ├── api/routers/
 │   │       │   ├── router.py        # <name>_router: APIRouter (컨벤션 진입점, /v1/<name> 프리픽스)
@@ -75,10 +75,10 @@ fastapi-project-structure-django-passive-style/
 ### 의존 방향
 
 ```
-domains → core → utils
+features → core → utils
 ```
 
-`domains`는 `core`(와 `utils`)를 사용하고, `core`는 절대로 `domains`를 import 하지 않는다.
+`features`는 `core`(와 `utils`)를 사용하고, `core`는 절대로 `features`를 import 하지 않는다.
 도메인 간에도 하드 결합을 피한다(도메인 간 참조는 느슨한 문자열, FK/relationship 없음 → INSTALLED_APPS 탈착성 보존).
 
 ---
@@ -100,7 +100,7 @@ INSTALLED_APPS: list[str] = ["home", "blog", "reply", "sns", "user"]
 
 ```
 create_app()
- ├─ registry.discover()          # INSTALLED_APPS 읽고 각 app.domains.<name> 패키지 import(부수효과 실행)
+ ├─ registry.discover()          # INSTALLED_APPS 읽고 각 app.features.<name> 패키지 import(부수효과 실행)
  ├─ registry.import_models()     # 각 앱 models 패키지 import → Base.metadata 채움
  ├─ FastAPI(...) 생성 + 미들웨어(CORS, UserInfo) + 글로벌 예외핸들러 4종
  ├─ registry.install_routers(app)   # 각 앱 <name>_router 를 prefix "/api" 로 마운트
@@ -108,7 +108,7 @@ create_app()
  └─ if ADMIN: registry.install_admin(admin)  # 각 앱 admin.py 의 admin_views 등록
 ```
 
-### 3.3 컨벤션 (`app/domains/<name>/`)
+### 3.3 컨벤션 (`app/features/<name>/`)
 
 | 구성요소 | 위치 | 규칙 |
 |---|---|---|

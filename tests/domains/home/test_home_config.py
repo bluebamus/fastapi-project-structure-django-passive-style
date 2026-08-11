@@ -10,7 +10,7 @@ def test_register_sink_installs_home_sink():
         get_access_log_sink,
         set_access_log_sink,
     )
-    from app.domains.home.access_log_sink import HomeAccessLogSink, register_sink
+    from app.features.home.access_log_sink import HomeAccessLogSink, register_sink
 
     original = get_access_log_sink()
     try:
@@ -23,10 +23,10 @@ def test_register_sink_installs_home_sink():
 
 def test_registry_discovers_home_router_by_convention():
     from app.core.registry import AppRegistry
-    from app.domains.home.api.routers.router import home_router
+    from app.features.home.api.routers.router import home_router
 
     apps = AppRegistry().discover()
     home = next((m for m in apps if m.name == "home"), None)
     assert home is not None
-    assert home.package == "app.domains.home"
+    assert home.package == "app.features.home"
     assert home.load_router() is home_router

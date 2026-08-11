@@ -1,6 +1,6 @@
 """SQLAdmin 배선 테스트 (AppRegistry 구조).
 
-``AppRegistry.install_admin`` 은 발견된 각 앱의 ``app.domains.<name>.admin`` 을 직접
+``AppRegistry.install_admin`` 은 발견된 각 앱의 ``app.features.<name>.admin`` 을 직접
 import 하여 ``admin_views`` 를 SQLAdmin 에 등록한다. 뷰가 없는 앱은 예외 없이 건너뛰므로
 (``load_admin_views`` 의 ``getattr(module, "admin_views", [])``), 등록 누락은 조용히
 지나간다. 여기서 실제 등록 개수와 대상 모델을 고정해 그 침묵을 막는다.

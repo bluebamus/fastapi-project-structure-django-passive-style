@@ -218,7 +218,7 @@ async def create_db_tables() -> None:
     모델을 Base.metadata에 등록한 후 테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱은 app/domains/<name>/ 를 만들고 config.INSTALLED_APPS 에
+        새로운 도메인 앱은 app/features/<name>/ 를 만들고 config.INSTALLED_APPS 에
         이름을 추가하면 라우터/모델이 컨벤션으로 결선됩니다(수동 등록).
     """
     import asyncio

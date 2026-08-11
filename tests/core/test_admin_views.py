@@ -33,34 +33,34 @@ from sqlalchemy import String
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-DOMAINS_PACKAGE = "app.domains"
-DOMAINS_DIR = Path(__file__).resolve().parents[2] / "app" / "domains"
+FEATURES_PACKAGE = "app.features"
+FEATURES_DIR = Path(__file__).resolve().parents[2] / "app" / "features"
 
 # 비밀번호 자격증명으로 취급하여 어떤 화면에도 노출을 금지하는 컬럼명.
 SECRET_COLUMNS = frozenset({"hashed_password", "password"})
 
 # 콘텐츠 도메인(전체 CRUD 대상). home 의 접속 로그는 불변이므로 제외한다.
-CONTENT_DOMAINS = ("blog", "reply", "sns")
+CONTENT_FEATURES = ("blog", "reply", "sns")
 
 
 # =============================================================================
 # 헬퍼
 # =============================================================================
-def _domains_with_models() -> list[str]:
-    """``app/domains/<name>/models/`` 를 가진 도메인 이름(정렬).
+def _features_with_models() -> list[str]:
+    """``app/features/<name>/models/`` 를 가진 도메인 이름(정렬).
 
     모델이 없는 도메인(예: default 의 auth)은 관리할 대상이 없으므로 제외한다.
     """
     return sorted(
         path.name
-        for path in DOMAINS_DIR.iterdir()
+        for path in FEATURES_DIR.iterdir()
         if path.is_dir() and not path.name.startswith("_") and (path / "models").is_dir()
     )
 
 
 def _models_of(domain: str) -> list[type]:
     """해당 도메인의 models 모듈에서 *직접 정의된* 매핑 클래스."""
-    module = importlib.import_module(f"{DOMAINS_PACKAGE}.{domain}.models.models")
+    module = importlib.import_module(f"{FEATURES_PACKAGE}.{domain}.models.models")
     return [
         obj
         for _, obj in inspect.getmembers(module, inspect.isclass)
@@ -70,13 +70,13 @@ def _models_of(domain: str) -> list[type]:
 
 def _admin_views_of(domain: str) -> list[type]:
     """해당 도메인 ``admin.py`` 의 모듈 레벨 ``admin_views``. 없으면 빈 리스트."""
-    module = importlib.import_module(f"{DOMAINS_PACKAGE}.{domain}.admin")
+    module = importlib.import_module(f"{FEATURES_PACKAGE}.{domain}.admin")
     return list(getattr(module, "admin_views", []))
 
 
 def _view_for(model: type) -> type:
     """주어진 모델을 관리하는 ModelView 를 찾는다(없으면 실패)."""
-    for domain in _domains_with_models():
+    for domain in _features_with_models():
         for view in _admin_views_of(domain):
             if view.model is model:
                 return view
@@ -127,16 +127,16 @@ def test_exposure_probe_detects_sqladmin_default() -> None:
 
 def test_domain_discovery_is_not_vacuous() -> None:
     """실제 도메인을 찾고 있는지 — 스캔이 빈 목록을 반환하면 모든 파라미터 테스트가 사라진다."""
-    assert {"blog", "home", "reply", "sns", "user"} <= set(_domains_with_models())
+    assert {"blog", "home", "reply", "sns", "user"} <= set(_features_with_models())
 
 
 # =============================================================================
 # A. 모델이 있는 도메인은 admin_views 를 노출한다
 # =============================================================================
-@pytest.mark.parametrize("domain", _domains_with_models())
+@pytest.mark.parametrize("domain", _features_with_models())
 def test_domain_with_models_exposes_admin_views(domain: str) -> None:
     views = _admin_views_of(domain)
-    assert views, f"app/domains/{domain}/admin.py 가 admin_views 를 노출하지 않습니다(빈 파일?)"
+    assert views, f"app/features/{domain}/admin.py 가 admin_views 를 노출하지 않습니다(빈 파일?)"
     for view in views:
         assert issubclass(view, ModelView), f"{view!r} 는 ModelView 가 아닙니다"
 
@@ -144,7 +144,7 @@ def test_domain_with_models_exposes_admin_views(domain: str) -> None:
 # =============================================================================
 # B. 각 모델은 정확히 하나의 ModelView 로 관리된다
 # =============================================================================
-@pytest.mark.parametrize("domain", _domains_with_models())
+@pytest.mark.parametrize("domain", _features_with_models())
 def test_every_model_has_exactly_one_admin_view(domain: str) -> None:
     managed = [view.model for view in _admin_views_of(domain)]
     for model in _models_of(domain):
@@ -154,7 +154,7 @@ def test_every_model_has_exactly_one_admin_view(domain: str) -> None:
 # =============================================================================
 # C. 비밀번호 해시는 어떤 화면에도 노출되지 않는다
 # =============================================================================
-@pytest.mark.parametrize("domain", _domains_with_models())
+@pytest.mark.parametrize("domain", _features_with_models())
 def test_admin_never_exposes_password_hash(domain: str) -> None:
     """비밀번호 컬럼을 가진 모델의 뷰는 목록·상세·폼·내보내기에서 그 컬럼을 제외한다.
 
@@ -177,7 +177,7 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
     거부하므로(로그인 불가), 조용히 깨진 데이터가 쌓인다. 그래서 생성 자체를 막는다.
     비밀번호 컬럼이 없는 저장소에서는 그런 위험이 없으므로 생성을 허용한다.
     """
-    from app.domains.user.models.models import User
+    from app.features.user.models.models import User
 
     view = _view_for(User)
     has_secret = bool(SECRET_COLUMNS & _column_names(User))
@@ -191,14 +191,14 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
 # =============================================================================
 def test_access_log_admin_stays_immutable() -> None:
     """접속 로그는 미들웨어가 생성하고 사후 수정되지 않는다."""
-    from app.domains.home.models.models import UserAccessLog
+    from app.features.home.models.models import UserAccessLog
 
     view = _view_for(UserAccessLog)
     assert view.can_create is False
     assert view.can_edit is False
 
 
-@pytest.mark.parametrize("domain", CONTENT_DOMAINS)
+@pytest.mark.parametrize("domain", CONTENT_FEATURES)
 def test_content_admin_allows_full_crud(domain: str) -> None:
     (view,) = _admin_views_of(domain)
     assert view.can_create is True

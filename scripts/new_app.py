@@ -5,7 +5,7 @@ Django-style ``startapp`` equivalent. 앱은 별도 선언(config.py) 없이 디
 구조와 네이밍 컨벤션만으로 AppRegistry 에 자동 발견된다.
 
 컨벤션 (생성되는 구조):
-    app/domains/<name>/
+    app/features/<name>/
         api/routers/router.py   →  <name>_router: APIRouter   (/api 에 자동 마운트)
         api/routers/v1/         →  버전별 서브라우터 위치
         models/                 →  ORM 모델 (Base.metadata 자동 등록)
@@ -36,7 +36,7 @@ _ROUTER_TMPL = '''\
 
 컨벤션: AppRegistry 가 이 모듈의 ``{name}_router`` 를 발견해 /api 에 마운트한다.
 버전별 서브라우터를 여기에 include 한다. 예:
-    from app.domains.{name}.api.routers.v1 import {name} as {name}_v1
+    from app.features.{name}.api.routers.v1 import {name} as {name}_v1
     {name}_router.include_router({name}_v1.router, prefix="/v1/{name}", tags=["{Class}"])
 """
 
@@ -57,7 +57,7 @@ yield 후 성공 시 커밋 — 트랜잭션 경계를 담당한다(UnitOfWork �
     from fastapi import Depends
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.core.db.session import get_session
-    from app.domains.{name}.services.{name}_service import {Class}Service
+    from app.features.{name}.services.{name}_service import {Class}Service
 
     async def get_{name}_service(
         session: AsyncSession = Depends(get_session),
@@ -77,7 +77,7 @@ _ADMIN_TMPL = '''\
 
 활성화하려면 placeholder 를 실제 모델 기반 ModelView 로 교체한다:
     from sqladmin import ModelView
-    from app.domains.{name}.models.models import {Class}Model
+    from app.features.{name}.models.models import {Class}Model
 
     class {Class}Admin(ModelView, model={Class}Model):
         column_list = "__all__"
@@ -115,7 +115,7 @@ def scaffold(
     category: str = "domain",
     with_admin: bool = False,
 ) -> None:
-    """Generate ``app/domains/<name>/`` scaffolding under *root*.
+    """Generate ``app/features/<name>/`` scaffolding under *root*.
 
     Args:
         name: Snake-case app name (e.g. ``"orders"``).
@@ -129,7 +129,7 @@ def scaffold(
         라우터/모델/Admin 을 컨벤션으로 결선한다.
     """
     class_name = "".join(part.capitalize() for part in name.split("_"))
-    base = root / "app" / "domains" / name
+    base = root / "app" / "features" / name
 
     # Create required directory tree; each segment gets an __init__.py.
     for rel in _REQUIRED_DIRS:
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     )
     name = args.name
     class_name = "".join(part.capitalize() for part in name.split("_"))
-    print(f"created app/domains/{name}")
+    print(f"created app/features/{name}")
     print()
     print("이 앱은 디렉터리 컨벤션으로 자동 발견됩니다 — 중앙 파일 수정 불필요.")
     print(f"  - router: api/routers/router.py 의 {name}_router 가 /api 에 자동 마운트")

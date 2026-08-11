@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.db.session import Base
-from app.domains.user.models.models import User
+from app.features.user.models.models import User
 from app.utils.pagination import PaginatedResponse, Paginator
 
 

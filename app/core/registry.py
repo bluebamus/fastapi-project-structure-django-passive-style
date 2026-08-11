@@ -3,14 +3,14 @@
 도메인 앱은 별도 선언(config.py / AppConfig)이 없다. 디렉터리 구조와 네이밍
 컨벤션만으로 라우터·모델·Admin 을 발견·연결한다("convention over configuration").
 
-컨벤션 (app/domains/<name>/):
+컨벤션 (app/features/<name>/):
     api/routers/router.py   →  <name>_router: APIRouter   (있으면 prefix /api 에 마운트)
     models/__init__.py      →  import 시 Base.metadata 에 테이블 등록 (선택)
     admin.py                →  admin_views: list[type]      (선택, SQLAdmin ModelView)
     __init__.py             →  import-time 부수효과(예: 미들웨어 sink 등록) (선택)
 
 브랜치 차이는 오직 "앱 목록의 출처"뿐이다:
-    - feature(자동): discover() 가 app/domains/* 를 스캔해 목록을 만든다.
+    - feature(자동): discover() 가 app/features/* 를 스캔해 목록을 만든다.
     - main(수동):    discover() 가 config.INSTALLED_APPS 목록을 읽는다.  ← 이 브랜치
 결선(install_routers/import_models/install_admin)은 두 브랜치가 동일하게 공유한다.
 """
@@ -26,7 +26,7 @@ from app.utils.logs import get_logger
 
 logger = get_logger("registry")
 
-DOMAINS_PACKAGE = "app.domains"
+FEATURES_PACKAGE = "app.features"
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class AppModule:
 
     Attributes:
         name: 앱 이름 (예: "home"). 라우터 변수명 컨벤션의 기준.
-        package: 앱 패키지 dotted 경로 (예: "app.domains.home").
+        package: 앱 패키지 dotted 경로 (예: "app.features.home").
         prefix: 라우터 마운트 prefix.
     """
 
@@ -83,15 +83,15 @@ class AppRegistry:
         """마지막 discover() 결과."""
         return self._apps
 
-    def discover(self, package: str = DOMAINS_PACKAGE) -> list[AppModule]:
+    def discover(self, package: str = FEATURES_PACKAGE) -> list[AppModule]:
         """`config.INSTALLED_APPS` 목록을 읽어 도메인 앱을 등록한다(수동 등록).
 
-        앱 = INSTALLED_APPS 에 나열된 이름. `package`(기본 app.domains) 하위에서
+        앱 = INSTALLED_APPS 에 나열된 이름. `package`(기본 app.features) 하위에서
         `<package>.<name>` 패키지로 매핑한다. 목록 순서를 그대로 보존하여(정렬 없음)
         명시적 로드 순서 제어를 제공한다. 각 앱 패키지를 import 하여 import-time
         부수효과(__init__.py, 예: home 의 sink 등록)를 실행한다.
 
-        feature 브랜치는 이 메서드만 app/domains/* 자동 스캔으로 교체하고,
+        feature 브랜치는 이 메서드만 app/features/* 자동 스캔으로 교체하고,
         결선 로직(install_routers/import_models/install_admin)은 동일하게 공유한다.
         """
         from config import INSTALLED_APPS

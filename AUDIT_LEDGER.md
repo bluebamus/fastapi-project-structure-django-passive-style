@@ -23,7 +23,7 @@
 | bandit | 미설치 → `uv run --with bandit` 로 임시 실행 예정 |
 
 프로젝트 성격: "FastAPI project structure with Django-style INSTALLED_APPS registration"
-(레이어드: domains/<d>/{api,services,repositories,models,schemas,dependencies} + core 인프라)
+(레이어드: features/<d>/{api,services,repositories,models,schemas,dependencies} + core 인프라)
 
 ### 정적 분석 최종 집계 (수정 전)
 - ruff: 기본 select 클린 / 보안 S: S104 1건(main.py:11 0.0.0.0), S101(assert)은 테스트 한정
