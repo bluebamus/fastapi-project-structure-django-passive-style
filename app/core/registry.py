@@ -1,7 +1,8 @@
-"""앱 자동발견 레지스트리 (컨벤션 기반, gen-2).
+"""앱 등록 레지스트리 (수동 등록 목록 + 컨벤션 결선, gen-2).
 
-도메인 앱은 별도 선언(config.py / AppConfig)이 없다. 디렉터리 구조와 네이밍
-컨벤션만으로 라우터·모델·Admin 을 발견·연결한다("convention over configuration").
+앱 목록의 출처는 `config.INSTALLED_APPS` 하나뿐이다(자동 스캔 없음 — 그것이
+자매 저장소 active-style 의 방식이다). 목록에 이름이 오른 앱에 한해, 그 안의
+라우터·모델·Admin 을 네이밍 컨벤션으로 찾아 결선한다.
 
 컨벤션 (app/features/<name>/):
     api/routers/router.py   →  <name>_router: APIRouter   (있으면 prefix /api 에 마운트)
@@ -13,11 +14,16 @@
     - feature(자동): discover() 가 app/features/* 를 스캔해 목록을 만든다.
     - main(수동):    discover() 가 config.INSTALLED_APPS 목록을 읽는다.  ← 이 브랜치
 결선(install_routers/import_models/install_admin)은 두 브랜치가 동일하게 공유한다.
+
+선택 모듈(router/models/admin)이 **없는 것**과 그 모듈 내부의 import 가
+**깨진 것**은 구분한다 — 둘 다 ModuleNotFoundError 로 오지만, 후자를 삼키면
+앱의 일부가 조용히 비활성화된 채 서버가 정상 기동한다.
 """
 
 from __future__ import annotations
 
 import importlib
+from collections import Counter
 from dataclasses import dataclass
 
 from fastapi import APIRouter
@@ -27,6 +33,17 @@ from app.utils.logs import get_logger
 logger = get_logger("registry")
 
 FEATURES_PACKAGE = "app.features"
+
+
+def _is_absent(exc: ModuleNotFoundError, target: str) -> bool:
+    """*target* 모듈(또는 그 상위 패키지)이 없어서 난 오류인가.
+
+    ``exc.name`` 은 실제로 찾지 못한 모듈 이름이다. 그것이 우리가 찾던 경로
+    자체이거나 그 상위 패키지일 때만 "선택 모듈 부재" 이고, 그 외에는 모듈
+    안에서 다른 것을 import 하다 실패한 것 — 즉 구현 오류다.
+    """
+    name = exc.name
+    return name is not None and (target == name or target.startswith(f"{name}."))
 
 
 @dataclass(frozen=True)
@@ -49,27 +66,49 @@ class AppModule:
         return f"{self.name}_router"
 
     def load_router(self) -> APIRouter | None:
-        """`<package>.api.routers.router` 의 `<name>_router` 를 반환. 없으면 None."""
+        """`<package>.api.routers.router` 의 `<name>_router` 를 반환. 없으면 None.
+
+        Raises:
+            ModuleNotFoundError: 라우터 모듈은 있으나 그 안의 import 가 실패한 경우.
+        """
+        target = f"{self.package}.api.routers.router"
         try:
-            module = importlib.import_module(f"{self.package}.api.routers.router")
-        except ModuleNotFoundError:
-            return None
+            module = importlib.import_module(target)
+        except ModuleNotFoundError as exc:
+            if _is_absent(exc, target):
+                return None
+            raise
         return getattr(module, self.router_attr, None)
 
     def load_admin_views(self) -> list[type]:
-        """`<package>.admin` 의 모듈 레벨 `admin_views` 리스트를 반환. 없으면 []."""
+        """`<package>.admin` 의 모듈 레벨 `admin_views` 리스트를 반환. 없으면 [].
+
+        Raises:
+            ModuleNotFoundError: admin 모듈은 있으나 그 안의 import 가 실패한 경우.
+        """
+        target = f"{self.package}.admin"
         try:
-            module = importlib.import_module(f"{self.package}.admin")
-        except ModuleNotFoundError:
-            return []
+            module = importlib.import_module(target)
+        except ModuleNotFoundError as exc:
+            if _is_absent(exc, target):
+                return []
+            raise
         return list(getattr(module, "admin_views", []))
 
     def import_models(self) -> None:
-        """`<package>.models` 를 import 하여 테이블을 Base.metadata 에 등록한다(있으면)."""
+        """`<package>.models` 를 import 하여 테이블을 Base.metadata 에 등록한다(있으면).
+
+        Raises:
+            ModuleNotFoundError: models 패키지는 있으나 그 안의 import 가 실패한 경우.
+                조용히 넘기면 테이블이 metadata 에서 빠진 채 migration 이 만들어진다.
+        """
+        target = f"{self.package}.models"
         try:
-            importlib.import_module(f"{self.package}.models")
-        except ModuleNotFoundError:
-            return
+            importlib.import_module(target)
+        except ModuleNotFoundError as exc:
+            if _is_absent(exc, target):
+                return
+            raise
 
 
 class AppRegistry:
@@ -93,14 +132,34 @@ class AppRegistry:
 
         feature 브랜치는 이 메서드만 app/features/* 자동 스캔으로 교체하고,
         결선 로직(install_routers/import_models/install_admin)은 동일하게 공유한다.
+
+        Raises:
+            ValueError: 목록에 같은 앱이 두 번 이상 있는 경우.
+            ImportError: 목록의 이름에 해당하는 앱 패키지가 없는 경우.
         """
         from config import INSTALLED_APPS
+
+        duplicates = sorted(name for name, n in Counter(INSTALLED_APPS).items() if n > 1)
+        if duplicates:
+            raise ValueError(
+                f"config.INSTALLED_APPS 에 중복된 앱이 있습니다: {duplicates}. "
+                "같은 앱을 두 번 등록하면 라우터가 중복 마운트됩니다."
+            )
 
         apps = [AppModule(name=name, package=f"{package}.{name}") for name in INSTALLED_APPS]
 
         # import-time 부수효과(예: home 의 access-log sink 등록)를 위해 패키지 import
         for app in apps:
-            importlib.import_module(app.package)
+            try:
+                importlib.import_module(app.package)
+            except ModuleNotFoundError as exc:
+                if not _is_absent(exc, app.package):
+                    raise  # 앱은 있는데 그 안이 깨진 것 — 원인을 바꾸지 않는다
+                raise ImportError(
+                    f"config.INSTALLED_APPS 의 '{app.name}' 에 해당하는 앱 패키지를 찾을 수 "
+                    f"없습니다 (찾은 경로: {app.package}). 앱 이름의 오타이거나 아직 "
+                    "만들지 않은 앱입니다."
+                ) from exc
 
         self._apps = apps
         logger.debug("installed %d apps: %s", len(apps), [a.name for a in apps])
