@@ -493,8 +493,7 @@ class CORSSettings(BaseSettings):
     )
 
     # 자격 증명 허용 여부 (쿠키, Authorization 헤더)
-    # 주의: allow_origins=["*"]와 allow_credentials=True는 CORS 스펙상
-    #       유효하지 않은 조합이다. credentials를 사용하려면 구체적인 Origin을 지정해야 한다.
+    # allow_origins=["*"]와의 조합은 CORS 스펙상 무효 — 아래 validator 가 거부한다.
     CORS_ALLOW_CREDENTIALS: bool = Field(
         default=False,
         description="자격 증명 허용 여부",
@@ -523,6 +522,22 @@ class CORSSettings(BaseSettings):
         default=600,
         description="Preflight 캐시 시간(초)",
     )
+
+    @model_validator(mode="after")
+    def _reject_wildcard_with_credentials(self) -> "CORSSettings":
+        """CORS 스펙상 성립하지 않는 조합을 설정 로드 시점에 거부한다.
+
+        브라우저는 ``Access-Control-Allow-Origin: *`` 과 credentials 를 함께 받으면
+        응답을 폐기한다. 서버는 200 을 반환하므로 서버 로그에는 아무 흔적이 없고
+        프론트에서만 실패한다 — 런타임에 발견하면 원인 추적이 오래 걸린다.
+        """
+        if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ALLOW_ORIGINS:
+            raise ValueError(
+                "CORS_ALLOW_CREDENTIALS=true 와 CORS_ALLOW_ORIGINS 의 와일드카드(*)는 "
+                "함께 쓸 수 없습니다(CORS 스펙). 허용할 Origin 을 명시하세요 "
+                '(예: CORS_ALLOW_ORIGINS=["https://app.example.com"]).'
+            )
+        return self
 
 
 # =============================================================================
