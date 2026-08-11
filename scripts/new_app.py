@@ -1,14 +1,19 @@
 """
-scripts/new_app.py — FastAPI app scaffolding generator (컨벤션 기반, gen-2).
+scripts/new_app.py — FastAPI app scaffolding generator (수동 등록, gen-2).
 
-Django-style ``startapp`` equivalent. 앱은 별도 선언(config.py) 없이 디렉터리
-구조와 네이밍 컨벤션만으로 AppRegistry 에 자동 발견된다.
+Django-style ``startapp`` equivalent. **디렉터리를 만드는 것만으로는 앱이 켜지지
+않는다** — 이 저장소는 수동 등록(passive) 방식이라 ``config.INSTALLED_APPS`` 에
+앱 이름을 직접 추가해야 한다. 그 목록에 오른 앱에 한해, 내부의 라우터·모델·
+Admin 이 네이밍 컨벤션으로 결선된다.
+
+이 생성기는 ``config.py`` 를 수정하지 않는다. 대신 실행 후 복사해 붙일 수 있는
+등록 예제를 출력한다(``next_steps``).
 
 컨벤션 (생성되는 구조):
     app/features/<name>/
-        api/routers/router.py   →  <name>_router: APIRouter   (/api 에 자동 마운트)
+        api/routers/router.py   →  <name>_router: APIRouter   (/api 에 마운트)
         api/routers/v1/         →  버전별 서브라우터 위치
-        models/                 →  ORM 모델 (Base.metadata 자동 등록)
+        models/                 →  ORM 모델 (Base.metadata 에 등록)
         schemas/ services/ repositories/ dependencies/ tests/
         admin.py (선택)         →  admin_views: list[type]
 
@@ -34,7 +39,8 @@ _ROUTER_TMPL = '''\
 """
 {name} module router aggregator.
 
-컨벤션: AppRegistry 가 이 모듈의 ``{name}_router`` 를 발견해 /api 에 마운트한다.
+컨벤션: config.INSTALLED_APPS 에 "{name}" 이 등록돼 있으면 AppRegistry 가 이
+모듈의 ``{name}_router`` 를 찾아 /api 에 마운트한다.
 버전별 서브라우터를 여기에 include 한다. 예:
     from app.features.{name}.api.routers.v1 import {name} as {name}_v1
     {name}_router.include_router({name}_v1.router, prefix="/v1/{name}", tags=["{Class}"])
@@ -73,7 +79,7 @@ _ADMIN_TMPL = '''\
 {Class} domain SQLAdmin views.
 
 컨벤션: 모듈 레벨 ``admin_views`` 리스트를 두면 AppRegistry.install_admin 이
-자동으로 SQLAdmin 에 등록한다(중앙 파일 수정 불필요).
+SQLAdmin 에 등록한다. 단, 이 앱이 config.INSTALLED_APPS 에 등록돼 있어야 한다.
 
 활성화하려면 placeholder 를 실제 모델 기반 ModelView 로 교체한다:
     from sqladmin import ModelView
@@ -158,6 +164,34 @@ def scaffold(
         )
 
 
+def next_steps(name: str, with_admin: bool = False) -> str:
+    """생성 후 사용자가 실제로 해야 할 일을 반환한다.
+
+    이 생성기는 ``config.py`` 를 건드리지 않는다. 등록을 빠뜨리면 앱은 결선되지
+    않으므로, 복사해 붙일 수 있는 형태로 그 단계를 명시한다.
+    """
+    class_name = "".join(part.capitalize() for part in name.split("_"))
+    lines = [
+        f"생성됨: app/features/{name}",
+        "",
+        "아직 결선되지 않았습니다 — config.py 의 INSTALLED_APPS 에 추가하세요:",
+        "",
+        "    INSTALLED_APPS: list[str] = [",
+        "        # ...",
+        f'        "{name}",',
+        "    ]",
+        "",
+        "등록하면 다음이 컨벤션으로 결선됩니다:",
+        f"  - router: api/routers/router.py 의 {name}_router 가 /api 에 마운트",
+        "  - models: models/ 의 ORM 모델이 Base.metadata 에 등록",
+    ]
+    if with_admin:
+        lines.append(f"  - admin : admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 노출")
+    lines.append("")
+    lines.append("등록 후 서버를 재시작하세요.")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -198,13 +232,4 @@ if __name__ == "__main__":
         category=args.category,
         with_admin=args.with_admin,
     )
-    name = args.name
-    class_name = "".join(part.capitalize() for part in name.split("_"))
-    print(f"created app/features/{name}")
-    print()
-    print("이 앱은 디렉터리 컨벤션으로 자동 발견됩니다 — 중앙 파일 수정 불필요.")
-    print(f"  - router: api/routers/router.py 의 {name}_router 가 /api 에 자동 마운트")
-    print("  - models: models/ 에 ORM 모델을 두면 Base.metadata 에 자동 등록")
-    if args.with_admin:
-        print(f"  - admin: admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 자동 노출")
-    print("  - 서버 재시작 시 라우터가 마운트됩니다")
+    print(next_steps(args.name, with_admin=args.with_admin))
