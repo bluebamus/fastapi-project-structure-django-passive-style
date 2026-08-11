@@ -52,3 +52,45 @@ async def test_completed_tasks_are_not_retained() -> None:
     await runner.drain(timeout=1.0)
 
     assert runner.active == 0, "완료된 태스크는 추적 집합에서 제거되어야 함(누수 방지)"
+
+
+# ---------------------------------------------------------------------------
+# drain 이 반환하면 lifespan 은 곧바로 dispose_engine() 을 호출한다.
+# 그때까지 살아있는 태스크가 남아 있으면 폐기된 엔진으로 DB 를 만지게 된다.
+# "경고만 하고 반환" 은 그 경합을 막지 못한다 (계획서 P2-2).
+# ---------------------------------------------------------------------------
+
+
+async def test_drain_cancels_tasks_that_exceed_timeout() -> None:
+    runner = BackgroundTaskRunner(max_concurrent=5)
+    started = asyncio.Event()
+
+    async def never_finishes() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    assert runner.spawn(never_finishes()) is True
+    await started.wait()
+
+    await runner.drain(timeout=0.05)
+
+    assert runner.active == 0, "drain 반환 시 추적 중인 미완료 태스크가 없어야 함"
+
+
+async def test_drain_retrieves_task_exceptions() -> None:
+    """실패한 태스크의 예외를 회수한다 — 안 하면 GC 때 asyncio 경고가 뜬다."""
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def boom() -> None:
+        raise RuntimeError("로그 쓰기 실패")
+
+    assert runner.spawn(boom()) is True
+    await runner.drain(timeout=1.0)
+
+    assert runner.active == 0
+
+
+async def test_drain_on_empty_runner_is_noop() -> None:
+    runner = BackgroundTaskRunner(max_concurrent=5)
+    await runner.drain(timeout=0.01)
+    assert runner.active == 0

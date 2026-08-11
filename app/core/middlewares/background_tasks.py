@@ -67,16 +67,46 @@ class BackgroundTaskRunner:
         return True
 
     async def drain(self, timeout: float = DRAIN_TIMEOUT_SECONDS) -> None:
-        """in-flight 태스크가 끝날 때까지(또는 timeout) 기다린다."""
+        """in-flight 태스크를 기다렸다가, 타임아웃분은 취소하고 예외까지 회수한다.
+
+        정책은 **cancel-and-gather** 다. 반환 시점에 살아있는 태스크가 없다는 것을
+        보장해야 호출자(lifespan)가 곧바로 ``dispose_engine()`` 을 호출해도 폐기된
+        엔진으로 DB 를 만지는 경합이 생기지 않는다. 경고만 남기고 반환하면 그
+        보장이 없다.
+
+        타임아웃을 넘긴 로그는 유실을 허용한다 — 접속 로그는 비핵심이고, 종료를
+        무한정 붙잡는 편이 더 나쁘다. 유실량은 경고 로그로 관측한다.
+        """
         if not self._tasks:
             return
         pending = set(self._tasks)
         logger.info("백그라운드 태스크 drain 시작 — %d건 대기", len(pending))
-        done, still_pending = await asyncio.wait(pending, timeout=timeout)
+
+        _, still_pending = await asyncio.wait(pending, timeout=timeout)
+        for task in still_pending:
+            task.cancel()
+
+        # 완료분의 예외와 취소분의 CancelledError 를 여기서 모두 회수한다.
+        # 회수하지 않으면 GC 시점에 "exception was never retrieved" 가 뜬다.
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        failed = sum(
+            1
+            for r in results
+            if isinstance(r, BaseException) and not isinstance(r, asyncio.CancelledError)
+        )
+
         if still_pending:
-            logger.warning("drain 타임아웃(%.1fs) — 미완료 %d건", timeout, len(still_pending))
-        else:
-            logger.info("백그라운드 태스크 drain 완료 — %d건", len(done))
+            logger.warning(
+                "drain 타임아웃(%.1fs) — 미완료 %d건 취소(로그 유실)", timeout, len(still_pending)
+            )
+        if failed:
+            logger.warning("drain 중 태스크 예외 %d건", failed)
+        logger.info(
+            "백그라운드 태스크 drain 완료 — 총 %d건(취소 %d, 예외 %d)",
+            len(pending),
+            len(still_pending),
+            failed,
+        )
 
 
 # 미들웨어(spawn)와 lifespan(drain)이 공유하는 전역 싱글턴.
