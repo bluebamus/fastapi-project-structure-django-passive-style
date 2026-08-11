@@ -12,6 +12,12 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.test-tmp/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Logs (runtime output at repo root only — anchored so it does NOT swallow
 # the source package app/utils/logs/)

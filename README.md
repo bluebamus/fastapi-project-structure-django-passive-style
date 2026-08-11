@@ -146,7 +146,6 @@ fastapi-project-structure-django-passive-style/
 ├── migrations/                  # Alembic (env.py가 AppRegistry.discover()→import_models()로 메타데이터 수집)
 └── docs/
     ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-    └── refactoring/             # 변경 기록
 ```
 
 ### 핵심 파일 설명
