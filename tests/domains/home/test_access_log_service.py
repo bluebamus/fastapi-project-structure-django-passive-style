@@ -8,8 +8,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.db.session import Base
-from app.domains.home.models.models import UserAccessLog  # noqa: F401  (register table)
-from app.domains.home.services.user_access_log_service import UserAccessLogService
+from app.features.home.models.models import UserAccessLog  # noqa: F401  (register table)
+from app.features.home.services.user_access_log_service import UserAccessLogService
 
 
 @pytest_asyncio.fixture

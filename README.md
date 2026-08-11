@@ -117,7 +117,7 @@ fastapi-project-structure-django-passive-style/
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 │
 ├── app/
-│   ├── domains/                 # 기능 단위 앱 (config.INSTALLED_APPS 에 이름 등록)
+│   ├── features/                 # 기능 단위 앱 (config.INSTALLED_APPS 에 이름 등록)
 │   │   └── <name>/              # 각 앱 디렉토리
 │   │       ├── __init__.py      # 앱 패키지 (import-time 부수효과, 예: sink 등록)
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
@@ -158,7 +158,7 @@ fastapi-project-structure-django-passive-style/
 | `app/core/bootstrap.py` | `create_app()` — `registry.discover()` → `import_models()` → routers → admin_views 등록 |
 | `app/core/registry.py` | `AppRegistry` — `config.INSTALLED_APPS` 목록을 읽어 라우터/모델/Admin 을 컨벤션으로 결선 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
-| `app/domains/<name>/dependencies/` | 기능 의존성 — Service 구성 + 요청 성공 시 커밋(트랜잭션 경계) |
+| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성 + 요청 성공 시 커밋(트랜잭션 경계) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
 | `migrations/env.py` | `AppRegistry().discover()` + `import_models()`로 모든 도메인 모델 수집 → Alembic autogenerate |
 
@@ -167,23 +167,23 @@ fastapi-project-structure-django-passive-style/
 `app/` 아래는 **3개 영역**으로 나뉘며, 의존은 한 방향으로만 흐릅니다.
 
 ```
-domains → core → shared
+features → core → shared
 ```
 
 | 영역 | 역할 | 규칙 |
 |------|------|------|
-| `app/domains/<name>/` | 기능 단위 앱(도메인) | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 도메인은 import하지 않음 |
-| `app/core/` | 프레임워크 인프라 (Base*, 부트스트랩, registry, db, 미들웨어) | **절대 `domains`를 import하지 않음**. 도메인은 `core`의 Base 클래스를 상속 |
+| `app/features/<name>/` | 기능 단위 앱(도메인) | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 도메인은 import하지 않음 |
+| `app/core/` | 프레임워크 인프라 (Base*, 부트스트랩, registry, db, 미들웨어) | **절대 `features`를 import하지 않음**. 도메인은 `core`의 Base 클래스를 상속 |
 | `app/shared/`, `app/utils/` | 순수 유틸리티 (페이지네이션, 로깅) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 도메인을 모른다.** 도메인이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
 
 #### 도메인 앱 표준 레이아웃
 
-새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/domains/home/`)
+새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/features/home/`)
 
 ```
-app/domains/<name>/
+app/features/<name>/
 ├── api/
 │   └── routers/
 │       ├── router.py          # 앱 루트 라우터 (v1/ 등을 묶음) — 필수
@@ -255,7 +255,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 
 ```python
 # dependencies — Service 구성 + 트랜잭션 경계
-# app/domains/home/dependencies/access_log_dependencies.py
+# app/features/home/dependencies/access_log_dependencies.py
 async def get_access_log_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[UserAccessLogService, None]:
@@ -348,7 +348,7 @@ UnitOfWork 대신 **기능 의존성**이 세션으로 Service를 구성하고 �
 트랜잭션 경계가 요청 수명주기와 일치해 예측 가능합니다.
 
 ```python
-# app/domains/home/dependencies/access_log_dependencies.py
+# app/features/home/dependencies/access_log_dependencies.py
 async def get_access_log_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[UserAccessLogService, None]:
@@ -373,7 +373,7 @@ class BaseService(LoggerMixin):
         self.session = session
 
 
-# app/domains/home/services/user_access_log_service.py - 도메인 Service
+# app/features/home/services/user_access_log_service.py - 도메인 Service
 class UserAccessLogService(BaseService):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)

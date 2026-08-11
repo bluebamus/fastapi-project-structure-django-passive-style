@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db.session import Base
 from app.core.repositories.repository_base import BaseRepository
-from app.domains.user.models.models import User
+from app.features.user.models.models import User
 
 
 class _UserRepo(BaseRepository[User]):
