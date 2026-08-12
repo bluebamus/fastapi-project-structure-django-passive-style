@@ -24,6 +24,34 @@ from zoneinfo import ZoneInfo
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# =============================================================================
+# 설치된 앱 (INSTALLED_APPS)
+# =============================================================================
+# 이 목록이 **설치 앱의 유일한 진실 공급원**이다(FR-01). `app/features/` 아래에
+# 디렉터리를 만드는 것만으로는 앱이 설치되지 않는다 — 여기에 추가해야 Router·Model·
+# Admin·ready() 가 활성화된다. 자동 디렉터리 스캔은 의도적으로 하지 않는다: 설치
+# 범위와 순서가 파일 시스템 상태에 암묵적으로 끌려다니면, 실험용 디렉터리 하나가
+# 배포에 섞이는 것을 아무도 못 막는다.
+#
+# 항목 형식은 Django 와 같다.
+#   * config class 경로 — "app.features.blog.apps.BlogConfig" (권장, 명시적)
+#   * package 경로     — "app.features.blog" (이 경우 registry 가 blog.apps 에서
+#                        기본 config 를 고른다)
+#
+# **순서가 계약이다.** registry population(config → models → ready), Router 등록,
+# Admin view 등록이 모두 이 순서를 따른다. 같은 path 를 여러 앱이 선언하면 먼저
+# 등록된 쪽이 이긴다.
+#
+# 환경변수로 덮어쓰지 않는다 — 설치 앱 구성은 코드 리뷰 대상이어야 한다.
+INSTALLED_APPS: list[str] = [
+    "app.features.home.apps.HomeConfig",
+    "app.features.blog.apps.BlogConfig",
+    "app.features.reply.apps.ReplyConfig",
+    "app.features.sns.apps.SnsConfig",
+    "app.features.user.apps.UserConfig",
+    "app.features.auth.apps.AuthConfig",
+]
+
 
 # =============================================================================
 # 타임존 설정
