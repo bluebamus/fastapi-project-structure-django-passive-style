@@ -1,7 +1,9 @@
 """
 FastAPI 애플리케이션 팩토리 모듈
 
-AppRegistry 자동발견으로 도메인 앱(라우터/모델/Admin)을 찾아 FastAPI 앱을 생성합니다.
+`config.INSTALLED_APPS` 에 등록된 앱을 AppRegistry 가 읽어, 각 앱의 라우터/모델/
+Admin 을 네이밍 컨벤션으로 결선한 FastAPI 앱을 생성합니다. 앱 목록은 자동 스캔이
+아니라 그 목록 하나가 진실 공급원입니다(수동 등록 — passive 스타일).
 """
 
 from collections.abc import AsyncGenerator
@@ -236,7 +238,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     """
-    AppRegistry 자동발견을 사용하여 FastAPI 앱을 생성합니다.
+    `config.INSTALLED_APPS` 를 읽어 FastAPI 앱을 생성합니다.
 
     Returns:
         구성이 완료된 FastAPI 앱 인스턴스
@@ -270,7 +272,7 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
     logger.info("글로벌 예외 핸들러 설정 완료")
 
-    # 라우터 등록 (자동발견된 각 앱의 router())
+    # 라우터 등록 (등록된 각 앱의 router())
     n = registry.install_routers(app)
     logger.info("registered %d app routers", n)
 

@@ -98,6 +98,6 @@ def test_every_installed_app_contributes_routes():
 
     paths = {path for _, path in _actual_endpoints()}
     for name in INSTALLED_APPS:
-        assert any(f"/api/v1/{name}/" in path for path in paths), (
-            f"INSTALLED_APPS 의 '{name}' 앱이 라우터를 하나도 붙이지 않았습니다."
-        )
+        assert any(
+            f"/api/v1/{name}/" in path for path in paths
+        ), f"INSTALLED_APPS 의 '{name}' 앱이 라우터를 하나도 붙이지 않았습니다."
