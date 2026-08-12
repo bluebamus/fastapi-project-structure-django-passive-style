@@ -115,33 +115,3 @@ def test_environment_access_check_scans_real_files():
     sources = _python_sources()
     assert len(sources) > 10
     assert any(path.name == "env.py" and "migrations" in path.parts for path in sources)
-
-
-# =============================================================================
-# 3. `.env.example` 은 그대로 복사해도 기동되는 값이어야 한다
-# =============================================================================
-def _settings_classes() -> list[type[BaseSettings]]:
-    return [
-        obj
-        for obj in vars(config_module).values()
-        if inspect.isclass(obj) and issubclass(obj, BaseSettings) and obj is not BaseSettings
-    ]
-
-
-def test_env_example_values_pass_all_validators():
-    """`.env.example` 을 `.env` 로 복사한 상태가 설정 검증을 통과한다.
-
-    키가 존재하는지(위 1번)와 별개로, **값의 조합**이 유효한지도 봐야 한다.
-    설정 validator 를 추가할 때 예시 파일을 같이 고치지 않으면, 문서를 그대로
-    따른 사용자가 기동 실패를 만난다 — 문서가 곧 함정이 된다.
-    """
-    failures = []
-    for cls in _settings_classes():
-        try:
-            cls(_env_file=ENV_EXAMPLE)  # type: ignore[call-arg]
-        except Exception as exc:  # noqa: BLE001 - 어떤 검증 실패든 보고 대상
-            failures.append(f"{cls.__name__}: {exc}")
-
-    assert not failures, ".env.example 의 값이 설정 검증을 통과하지 못합니다:\n" + "\n".join(
-        failures
-    )

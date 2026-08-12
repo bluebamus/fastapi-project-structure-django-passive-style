@@ -214,20 +214,21 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    AppRegistry(discover→import_models)를 통해 INSTALLED_APPS 에 등록된 모든 앱의
-    모델을 Base.metadata에 등록한 후 테이블을 생성합니다.
+    각 기능 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
+    테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱은 app/features/<name>/ 를 만들고 config.INSTALLED_APPS 에
-        이름을 추가하면 라우터/모델이 컨벤션으로 결선됩니다(수동 등록).
+        모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
+        자동으로 판별한다. 새 기능은 app/features/<name>/ 를 만들고
+        라우터는 main.py 에 명시적으로 include_router 한 줄을 추가한다.
     """
     import asyncio
 
-    from app.core.registry import AppRegistry
+    from app.core.db.models_registry import import_all_models
 
-    registry = AppRegistry()
-    registry.discover()
-    registry.import_models()  # imports every app's models package -> Base.metadata
+    # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
+    registered = import_all_models()
+    logger.info("[database] 모델 등록: %d개 모듈 %s", len(registered), registered)
 
     logger.info("Creating database tables...")
 
@@ -259,7 +260,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     Note:
         - 세션은 요청 범위(request scope)로 관리됩니다
         - 한 요청 내에서 여러 번 호출해도 같은 세션을 반환하지 않습니다
-        - 트랜잭션 경계는 기능 의존성(dependencies)이 yield 후 커밋으로 관리합니다
+        - 트랜잭션 경계는 쓰기 핸들러 본문이 `await service.commit()` 으로 관리합니다
     """
     start_time = time.perf_counter()
 

@@ -21,25 +21,8 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# =============================================================================
-# 설치된 앱 (수동 등록 — main 브랜치)
-# =============================================================================
-# Django 의 INSTALLED_APPS 와 동일한 개념. AppRegistry 가 이 "앱 이름" 목록을 읽어
-# app/features/<name> 을 컨벤션(라우터/모델/Admin)으로 결선한다.
-# 목록의 순서가 곧 로드 순서다(수동 등록의 장점 — 명시적 순서 제어).
-#
-# 새 앱 추가: app/features/<name>/ 를 만들고 아래 목록에 이름을 추가한다.
-# (feature 브랜치는 이 목록 없이 app/features/* 를 자동 스캔한다 — 동일한 결선 로직 공유.)
-INSTALLED_APPS: list[str] = [
-    "home",
-    "blog",
-    "reply",
-    "sns",
-    "user",
-]
 
 
 # =============================================================================
@@ -85,10 +68,9 @@ class TimezoneSettings(BaseSettings):
 # API 설명 (Scalar 문서에 표시)
 # =============================================================================
 API_DESCRIPTION = """
-## FastAPI Project Structure — Django Passive App Registration
+## FastAPI Default Project Structure
 
-Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
-트랜잭션 경계는 기능 의존성(dependency)이 담당합니다(UnitOfWork 미사용).
+Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
 
 ### 주요 기능
 
@@ -99,8 +81,9 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 ### 아키텍처
 
 ```
-Router → Depends(get_<name>_service) → Service → Repository → Database
-              (트랜잭션 경계: 요청 성공 시 커밋)
+Router → Service → Repository → Database
+           ↑
+      UnitOfWork (트랜잭션 관리)
 ```
 
 ### 기술 스택
@@ -162,15 +145,20 @@ class AppSettings(BaseSettings):
     )
 
     # 관리자 페이지 활성화 (DEBUG와 독립적으로 동작)
-    # True: /admin 접근 가능
-    # False: /admin 접근 차단
+    # True: /admin 마운트  /  False: /admin 자체가 없음(404)
     #
-    # 기본값이 False 인 이유: SQLAdmin 에는 인증이 붙어 있지 않다(설계 결정).
-    # 설정을 잊은 배포에서 관리 UI 가 열리는 것을 막으려면 "쓰겠다고 밝힌 경우에만
-    # 켜지는" 쪽이 기본이어야 한다. 이 저장소는 템플릿이라 더욱 그렇다.
+    # 기본값이 True 인 것은 의도다 — 이 저장소는 개발을 우선 고려한 레퍼런스 구조라,
+    # 받자마자 /admin 으로 DB 를 들여다볼 수 있어야 한다. "보안 기본값"으로 보고
+    # False 로 되돌리지 말 것(결정: 2026-08-12).
+    #
+    # 다만 대가를 알고 켜야 한다: 이 프로젝트는 SQLAdmin 에 인증 백엔드를 붙이지
+    # 않기로 확정했다(영구 비목표). 즉 ADMIN=True 이면 /admin 이 **자격증명 없이**
+    # 열리고, 게시글·댓글·사용자·접속로그의 조회·수정·삭제와 CSV 내보내기가 가능하다
+    # (비밀번호 해시만 SQLAdmin 설정으로 제외된다).
+    # → 운영·스테이징은 ADMIN=false 를 **명시적으로** 넘기거나, 프록시에서 /admin 을 막는다.
     ADMIN: bool = Field(
-        default=False,
-        description="관리자 페이지 활성화 (인증 없음 — 개발 전용)",
+        default=True,
+        description="관리자 페이지 활성화 (인증 없음 — 운영에서는 false 권장)",
     )
 
     # 실행 환경 (헬스체크 응답에 포함)
@@ -179,47 +167,18 @@ class AppSettings(BaseSettings):
         description="실행 환경",
     )
 
-    # 관리자 전용 API(접속로그 조회·사용자 CRUD)에 요구하는 Bearer 토큰.
-    #
-    # 이 저장소에는 자격증명 저장소가 없다 — User 모델에 비밀번호 컬럼이 없고,
-    # 해싱·토큰 발급 의존성도 없다. 로그인 제품(회원가입·비밀번호 복구·OAuth)은
-    # 이 템플릿의 범위 밖이므로, 관리자 API 는 단일 공유 토큰으로 보호한다.
-    #
-    # 미설정(None 또는 빈 문자열)이면 해당 엔드포인트는 **모든 요청을 거부**한다.
-    # 설정을 잊은 배포가 곧 공개 상태가 되는 것을 막기 위한 fail-closed 기본값이다.
-    ADMIN_API_TOKEN: SecretStr | None = Field(
-        default=None,
-        description="관리자 전용 API Bearer 토큰 (미설정 시 해당 API 전부 거부)",
+    # 개발용 `python main.py` 직접 실행 시 바인딩 호스트/포트.
+    # 컨테이너·배포 환경에서 외부 접근을 허용하려면 0.0.0.0 이 기본이지만, 민감한
+    # 환경에서는 SERVER_HOST=127.0.0.1 로 지정하고 리버스 프록시를 두는 것을 권장한다.
+    SERVER_HOST: str = Field(
+        default="0.0.0.0",  # nosec B104 - 컨테이너 실행 전제의 의도된 기본값(운영은 env 로 제한)
+        description="개발 서버 바인딩 호스트",
     )
 
-    @model_validator(mode="after")
-    def _reject_admin_in_production(self) -> "AppSettings":
-        """운영에서 인증 없는 Admin 을 켜는 구성을 기동 단계에서 거부한다.
-
-        Admin 에는 인증 백엔드가 없다. 인증이 있으면 "켜되 로그인을 요구한다" 가
-        가능하지만, 없는 상태에서 켤 여지를 남기면 설정 실수 한 번으로 전 도메인의
-        생성·수정·삭제·내보내기가 공개된다. 켤 수 없게 만드는 편이 확실하다.
-        """
-        if self.ENV == "production" and self.ADMIN:
-            raise ValueError(
-                "ENV=production 에서는 ADMIN=true 를 쓸 수 없습니다. "
-                "SQLAdmin 에는 인증이 없어 운영에 노출하면 인증 없이 전 도메인의 "
-                "생성·수정·삭제·내보내기가 가능해집니다. ADMIN=false 로 두세요."
-            )
-        return self
-
-    # 개발용 uvicorn 실행 바인드 주소 (main.py __main__ 진입점 전용)
-    # 안전 기본값은 루프백(127.0.0.1). 컨테이너/외부 노출이 필요하면 배포 환경에서
-    # HOST=0.0.0.0 을 env 로 주입한다(코드에 all-interfaces 리터럴을 두지 않는다).
-    HOST: str = Field(
-        default="127.0.0.1",
-        description="개발 서버 바인드 주소",
-    )
-
-    # 개발용 uvicorn 실행 포트 (main.py __main__ 진입점 전용)
-    PORT: int = Field(
+    # 개발 서버 바인딩 포트
+    SERVER_PORT: int = Field(
         default=8000,
-        description="개발 서버 포트",
+        description="개발 서버 바인딩 포트",
     )
 
 
@@ -526,7 +485,8 @@ class CORSSettings(BaseSettings):
     )
 
     # 자격 증명 허용 여부 (쿠키, Authorization 헤더)
-    # allow_origins=["*"]와의 조합은 CORS 스펙상 무효 — 아래 validator 가 거부한다.
+    # 주의: allow_origins=["*"]와 allow_credentials=True는 CORS 스펙상
+    #       유효하지 않은 조합이다. credentials를 사용하려면 구체적인 Origin을 지정해야 한다.
     CORS_ALLOW_CREDENTIALS: bool = Field(
         default=False,
         description="자격 증명 허용 여부",
@@ -558,17 +518,16 @@ class CORSSettings(BaseSettings):
 
     @model_validator(mode="after")
     def _reject_wildcard_with_credentials(self) -> "CORSSettings":
-        """CORS 스펙상 성립하지 않는 조합을 설정 로드 시점에 거부한다.
+        """`allow_origins=["*"]` 와 `allow_credentials=True` 조합을 거부한다.
 
-        브라우저는 ``Access-Control-Allow-Origin: *`` 과 credentials 를 함께 받으면
-        응답을 폐기한다. 서버는 200 을 반환하므로 서버 로그에는 아무 흔적이 없고
-        프론트에서만 실패한다 — 런타임에 발견하면 원인 추적이 오래 걸린다.
+        이 조합은 CORS 스펙상 무효일 뿐 아니라, Starlette 은 이때 요청 Origin 을 그대로
+        반영해 '자격증명 포함 임의 출처 허용'이라는 취약 상태가 된다. 잘못된 운영 설정을
+        기동 시점에 차단한다(fail-fast).
         """
         if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ALLOW_ORIGINS:
             raise ValueError(
-                "CORS_ALLOW_CREDENTIALS=true 와 CORS_ALLOW_ORIGINS 의 와일드카드(*)는 "
-                "함께 쓸 수 없습니다(CORS 스펙). 허용할 Origin 을 명시하세요 "
-                '(예: CORS_ALLOW_ORIGINS=["https://app.example.com"]).'
+                "CORS_ALLOW_CREDENTIALS=True 와 CORS_ALLOW_ORIGINS=['*'] 는 함께 쓸 수 없습니다. "
+                "자격증명을 허용하려면 구체적인 Origin 을 지정하세요."
             )
         return self
 
@@ -742,31 +701,16 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
-    # === 신뢰 경계 ===
-    # 전달 헤더(X-Forwarded-For / X-Real-IP)를 믿어도 되는 상대의 주소·대역.
-    # CIDR 또는 단일 IP. 예: ["10.0.0.0/8", "192.168.1.5"]
-    #
-    # 비어 있으면(기본값) 어떤 전달 헤더도 신뢰하지 않고 실제 TCP 피어 주소를 쓴다.
-    # 이 헤더는 클라이언트가 임의로 보낼 수 있어서, 앞단에 신뢰할 프록시가 있다는
-    # 사실을 운영자가 명시하기 전까지 믿으면 감사 로그의 IP 가 위조된다.
-    ACCESS_LOG_TRUSTED_PROXIES: list[str] = Field(
-        default=[],
-        description="전달 헤더를 신뢰할 프록시 IP/CIDR 목록 (비면 전부 불신)",
+    # 레이트 리밋(slowapi) 활성화
+    RATE_LIMIT_ENABLED: bool = Field(
+        default=True,
+        description="요청 레이트 리밋 활성화",
     )
 
-    # === 개인정보 최소화 ===
-    # 저장 전에 값을 가릴 query parameter 키 (대소문자 무시, 부분 일치)
-    ACCESS_LOG_REDACT_QUERY_KEYS: list[str] = Field(
-        default=["token", "api_key", "apikey", "password", "secret", "code", "auth"],
-        description="접속 로그에서 값을 마스킹할 query 키",
-    )
-
-    # 접속 로그 보존 일수. 이 기간이 지난 로그는 정리 태스크가 삭제한다.
-    # 0 이하는 허용하지 않는다 — '보존 안 함' 이 아니라 '전부 삭제' 가 되기 때문이다.
-    ACCESS_LOG_RETENTION_DAYS: int = Field(
-        default=90,
-        gt=0,
-        description="접속 로그 보존 일수",
+    # 라우트 데코레이터(@limiter.limit)용 기본 레이트 리밋 (slowapi 형식: "<count>/<period>")
+    RATE_LIMIT_DEFAULT: str = Field(
+        default="100/minute",
+        description="라우트 데코레이터 기본 레이트 리밋",
     )
 
 

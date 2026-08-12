@@ -1,119 +1,58 @@
-"""app/utils/pagination.py 단위 테스트.
+"""Pagination 데이터클래스 유틸 테스트."""
 
-in-memory sqlite 에 User 를 적재하고 Paginator/PaginatedResponse 의
-페이지 계산·정렬·필터·자동변환을 검증한다.
-"""
-
-import pytest
-import pytest_asyncio
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
-
-from app.core.db.session import Base
-from app.features.user.models.models import User
-from app.utils.pagination import PaginatedResponse, Paginator
+from app.utils.pagination import Pagination
 
 
-class UserItem(BaseModel):
-    id: str
-    username: str
+def test_create_computes_derived_fields():
+    """create() 는 total/page_size 로 total_pages·has_next·has_prev 를 계산한다."""
+    page = Pagination.create(items=[1, 2, 3], total=25, page=2, page_size=10)
+    assert page.items == [1, 2, 3]
+    assert page.total == 25
+    assert page.page == 2
+    assert page.page_size == 10
+    assert page.total_pages == 3  # ceil(25/10)
+    assert page.has_next is True  # 2 < 3
+    assert page.has_prev is True  # 2 > 1
 
 
-@pytest_asyncio.fixture
-async def session():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as s:
-        for i in range(25):
-            s.add(User(id=f"u{i:02d}", username=f"user{i:02d}", email=f"u{i}@ex.com"))
-        await s.commit()
-        yield s
-    await engine.dispose()
+def test_first_page_has_no_prev():
+    """첫 페이지는 이전 페이지가 없다."""
+    page = Pagination.create(items=["a"], total=5, page=1, page_size=20)
+    assert page.total_pages == 1
+    assert page.has_prev is False
+    assert page.has_next is False
 
 
-def test_create_computes_metadata():
-    resp = PaginatedResponse.create(items=[1, 2], total=25, page=2, page_size=10)
-    assert resp.total_pages == 3
-    assert resp.has_prev is True
-    assert resp.has_next is True
-    assert resp.page == 2
+def test_last_page_has_no_next():
+    """마지막 페이지는 다음 페이지가 없다."""
+    page = Pagination.create(items=[], total=30, page=3, page_size=10)
+    assert page.total_pages == 3
+    assert page.has_next is False  # 3 < 3 == False
+    assert page.has_prev is True
 
 
-def test_create_empty_defaults_to_one_page():
-    resp = PaginatedResponse.create(items=[], total=0, page=1, page_size=10)
-    assert resp.total_pages == 1
-    assert resp.has_next is False
-    assert resp.has_prev is False
+def test_empty_default_instance():
+    """모든 필드에 초기값이 있어 인자 없이 '빈 페이지'를 만들 수 있다."""
+    page: Pagination[int] = Pagination()
+    assert page.items == []
+    assert page.total == 0
+    assert page.page == 1
+    assert page.page_size == 20
+    assert page.total_pages == 1
+    assert page.has_next is False
+    assert page.has_prev is False
 
 
-def test_default_instance_has_initial_values():
-    resp: PaginatedResponse[UserItem] = PaginatedResponse()
-    assert resp.items == []
-    assert resp.total == 0
-    assert resp.page == 1
-    assert resp.page_size == 20
+def test_mutable_default_is_not_shared():
+    """items 는 default_factory 로 정의되어 인스턴스 간 공유되지 않는다(가변 기본값 회피)."""
+    a: Pagination[int] = Pagination()
+    b: Pagination[int] = Pagination()
+    a.items.append(1)
+    assert a.items == [1]
+    assert b.items == []
 
 
-async def test_paginate_first_page(session):
-    paginator = Paginator(session, User, UserItem)
-    result = await paginator.paginate(page=1, page_size=10, order_by="username", order_desc=False)
-
-    assert result.total == 25
-    assert result.total_pages == 3
-    assert len(result.items) == 10
-    assert result.has_next is True
-    assert result.has_prev is False
-    assert isinstance(result.items[0], UserItem)
-    assert result.items[0].username == "user00"
-
-
-async def test_paginate_last_page_partial(session):
-    paginator = Paginator(session, User, UserItem)
-    result = await paginator.paginate(page=3, page_size=10, order_by="username", order_desc=False)
-
-    assert len(result.items) == 5
-    assert result.has_next is False
-    assert result.has_prev is True
-
-
-async def test_paginate_page_size_capped(session):
-    paginator = Paginator(session, User, UserItem, max_page_size=5)
-    result = await paginator.paginate(page=1, page_size=1000)
-
-    assert result.page_size == 5
-    assert len(result.items) == 5
-
-
-async def test_paginate_filter(session):
-    paginator = Paginator(session, User, UserItem)
-    result = await paginator.paginate(filters={"username": "user07"})
-
-    assert result.total == 1
-    assert result.items[0].username == "user07"
-
-
-async def test_paginate_transform_fn(session):
-    paginator = Paginator(session, User, UserItem)
-    result = await paginator.paginate(
-        page=1,
-        page_size=3,
-        order_by="username",
-        order_desc=False,
-        transform_fn=lambda u: UserItem(id=u.id, username=u.username.upper()),
-    )
-
-    assert result.items[0].username == "USER00"
-
-
-@pytest.mark.parametrize("page", [0, -5])
-async def test_paginate_page_below_one_is_clamped(session, page):
-    paginator = Paginator(session, User, UserItem)
-    result = await paginator.paginate(page=page, page_size=10)
-    assert result.page == 1
+def test_zero_total_yields_single_page():
+    """total 이 0이어도 total_pages 는 최소 1이다(0 나눗셈 방지)."""
+    page = Pagination.create(items=[], total=0, page=1, page_size=20)
+    assert page.total_pages == 1
