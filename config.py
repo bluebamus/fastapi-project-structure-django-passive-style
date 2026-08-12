@@ -742,6 +742,33 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
+    # === 신뢰 경계 ===
+    # 전달 헤더(X-Forwarded-For / X-Real-IP)를 믿어도 되는 상대의 주소·대역.
+    # CIDR 또는 단일 IP. 예: ["10.0.0.0/8", "192.168.1.5"]
+    #
+    # 비어 있으면(기본값) 어떤 전달 헤더도 신뢰하지 않고 실제 TCP 피어 주소를 쓴다.
+    # 이 헤더는 클라이언트가 임의로 보낼 수 있어서, 앞단에 신뢰할 프록시가 있다는
+    # 사실을 운영자가 명시하기 전까지 믿으면 감사 로그의 IP 가 위조된다.
+    ACCESS_LOG_TRUSTED_PROXIES: list[str] = Field(
+        default=[],
+        description="전달 헤더를 신뢰할 프록시 IP/CIDR 목록 (비면 전부 불신)",
+    )
+
+    # === 개인정보 최소화 ===
+    # 저장 전에 값을 가릴 query parameter 키 (대소문자 무시, 부분 일치)
+    ACCESS_LOG_REDACT_QUERY_KEYS: list[str] = Field(
+        default=["token", "api_key", "apikey", "password", "secret", "code", "auth"],
+        description="접속 로그에서 값을 마스킹할 query 키",
+    )
+
+    # 접속 로그 보존 일수. 이 기간이 지난 로그는 정리 태스크가 삭제한다.
+    # 0 이하는 허용하지 않는다 — '보존 안 함' 이 아니라 '전부 삭제' 가 되기 때문이다.
+    ACCESS_LOG_RETENTION_DAYS: int = Field(
+        default=90,
+        gt=0,
+        description="접속 로그 보존 일수",
+    )
+
 
 # =============================================================================
 # Redis 설정
