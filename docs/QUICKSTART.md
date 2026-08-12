@@ -136,17 +136,23 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ## 새 기능 추가
 
-`app/features/<name>/` vertical slice 를 만든 뒤 `main.py` 에 두 줄을 추가한다:
+골격을 만들고 `config.INSTALLED_APPS` 에 한 줄을 추가한다.
 
-```python
-# main.py
-from app.features import auth, blog, home, reply, sns, user, orders   # ← import 추가
-app.include_router(orders.router, prefix="/api")                      # ← 취합 한 줄 추가
+```powershell
+uv run python -m scripts.new_app orders --with-models --with-admin
 ```
 
-모델 등록은 `app/core/db/models_registry.py` 가 `app/features/<name>/models/models.py` 를
-디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(기능 `__init__.py` 에서 models import).
-등록 누락은 `tests/test_router_registration.py` 가 잡아준다.
+```python
+# config.py
+INSTALLED_APPS: list[str] = [
+    ...
+    "app.features.orders.apps.OrdersConfig",   # ← 이 한 줄이 '설치'다
+]
+```
+
+이 줄을 넣기 전까지 앱은 존재하지만 설치되지 않은 상태다 — 디렉터리가 있어도 route·모델·
+Admin·`ready()` 어디에도 나오지 않는다. `main.py`·`migrations/env.py`·`session.py` 는
+손대지 않는다. 미등록 상태는 `tests/core/apps/test_manual_registration.py` 가 고정한다.
 
 ---
 

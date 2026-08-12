@@ -12,7 +12,8 @@
 |---|---|---|---|
 | 1 | [`PASSIVE-APP-PROJECT-DESIGN.md`](PASSIVE-APP-PROJECT-DESIGN.md) | 현재 passive-style 프로젝트의 목적, 구조, 설계 원칙과 개발 이력 | 현재 구조 이해용 기준 문서 |
 | 2 | [`PRODUCTION-READINESS-DEVELOPMENT-PLAN.md`](PRODUCTION-READINESS-DEVELOPMENT-PLAN.md) | 기존 구조 검증에서 발견한 운영 준비 문제와 개선 계획 | 역사적 검토 자료. 일부 항목은 이후 `main`에서 구현됨 |
-| 3 | [`DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md`](DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md) | default 기준선 재구축, Django 대응 요구사항, 상세 설계, 개발·브랜치·통합 계획 | 향후 구현의 실행 명세이자 최우선 문서 |
+| 3 | [`DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md`](DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md) | default 기준선 재구축, Django 대응 요구사항, 상세 설계, 개발·브랜치·통합 계획 | 구현의 실행 명세이자 최우선 문서 |
+| 4 | [`DJANGO-APP-COMPATIBILITY.md`](DJANGO-APP-COMPATIBILITY.md) | Django 와 동일·확장·비지원 범위 구분, `ready()` 제약, 앱 제거 시 주의 | 구현 완료 후 작성된 사용자 대상 참조 |
 
 ## 문서 간 관계
 
