@@ -1,8 +1,7 @@
-"""Home 도메인 등록은 표준 FastAPI 배선으로 이뤄진다.
+"""Home 앱 등록은 registry 결선으로 이뤄진다.
 
-home 패키지 __init__.py 가 import 시점에 access-log sink 를 등록하고(register_sink),
-하위 뷰 라우터를 취합한 ``router`` (= home_router) 를 공개하며, main.py 가 이를
-``include_router`` 로 /api 에 취합한다.
+sink 등록은 ``HomeConfig.ready()`` hook 이 하고(패키지 import 부수효과가 아니다),
+router 는 ``AppConfig`` 가 선언한 컨벤션 경로에서 registry adapter 가 가져간다.
 """
 
 
@@ -23,11 +22,11 @@ def test_register_sink_installs_home_sink():
 
 
 def test_home_package_exposes_router_and_main_includes_it():
-    from app.features import home
+    from app.core.apps import AppConfig
     from app.features.home.api.routers.router import home_router
 
     # 패키지가 취합 라우터를 공개한다.
-    assert home.router is home_router
+    assert AppConfig.create("app.features.home.apps.HomeConfig").import_router() is home_router
 
     # main.py 가 /api 프리픽스로 취합한다.
     from main import app

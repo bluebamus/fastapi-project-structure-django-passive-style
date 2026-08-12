@@ -1,8 +1,9 @@
 """SQLAdmin ModelView 계약 테스트.
 
-``ModelView`` 정의는 기능이 소유하고(``app/features/<name>/admin.py``),
-``app/features/admin.py`` 가 명시 import 로 취합한다. 등록 뷰의 진실의 원천은
-``ADMIN_VIEWS`` 다 — 어느 파일에 정의됐든 여기 모이지 않으면 등록되지 않는다.
+``ModelView`` 정의는 기능이 소유하고(``app/features/<name>/admin.py`` 의
+``admin_views``), registry adapter 가 ``config.INSTALLED_APPS`` 순서대로 취합한다.
+등록 뷰의 진실의 원천은 설치 앱 목록이다 — 파일이 있어도 앱이 미등록이면 등록되지
+않는다.
 
 검증하는 계약
 -------------
@@ -26,7 +27,21 @@ from sqlalchemy import String
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.features.admin import ADMIN_VIEWS
+from app.core.apps import Apps
+from config import INSTALLED_APPS
+
+
+def _collect_admin_views() -> list[type[ModelView]]:
+    """설치 앱이 노출하는 ModelView 를 등록 순서대로 모은다."""
+    registry = Apps()
+    registry.populate(INSTALLED_APPS, run_ready=False)
+    views: list[type[ModelView]] = []
+    for config in registry.get_app_configs():
+        views.extend(config.import_admin_views() or [])
+    return views
+
+
+ADMIN_VIEWS = _collect_admin_views()
 
 # 비밀번호 자격증명으로 취급하여 어떤 화면에도 노출을 금지하는 컬럼명.
 SECRET_COLUMNS = frozenset({"hashed_password", "password"})
