@@ -124,6 +124,9 @@ omit = [
     "*/migrations/*",
     "*/__init__.py",
     "*/conftest.py",
+    # 생성기 end-to-end 테스트가 app/features/ 아래에 잠깐 만들었다 지우는 앱.
+    # 측정 후 소스가 사라져 리포트가 "No source for code" 로 깨진다.
+    "*/features/scaffoldprobe/*",
 ]
 
 [tool.coverage.report]
