@@ -19,6 +19,8 @@ jobs:
       - name: Sync dependencies (incl. dev group)
         run: uv sync
 
+      # 순서: 형식 → 타입 → 보안 → 동작 → 스키마.
+      # 싸고 빨리 실패하는 것부터 둔다.
       - name: Ruff lint
         run: uv run ruff check
 
@@ -31,5 +33,20 @@ jobs:
       - name: Bandit security scan
         run: uv run bandit -r app config.py main.py -x '*/tests/*' -q
 
-      - name: Pytest
-        run: uv run pytest
+      # 이전 실행의 잔여 데이터가 있으면 branch/statement 형식이 섞여
+      # combine 이 실패한다. 측정 전에 항상 지운다.
+      - name: Clean coverage data
+        run: rm -f .coverage .coverage.*
+
+      - name: Pytest with coverage gate
+        run: uv run pytest --cov --cov-report=term
+
+      # 마이그레이션은 운영(DEBUG=false)의 유일한 스키마 경로인데, 일반 테스트는
+      # create_all() 로 스키마를 만들어서 마이그레이션이 비어 있어도 통과한다.
+      # 빈 DB 에 실제로 적용해보는 검사를 따로 세운다.
+      - name: Migration check (empty DB → head → downgrade → head)
+        run: uv run pytest tests/core/test_migration_chain.py -v
+
+      # 모델을 고치고 revision 을 안 만들면 여기서 걸린다.
+      - name: Autogenerate diff must be empty
+        run: uv run pytest tests/core/test_migration_chain.py::test_migrated_schema_matches_models -v
