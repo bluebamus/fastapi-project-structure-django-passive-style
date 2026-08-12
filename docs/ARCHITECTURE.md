@@ -2,6 +2,8 @@
 
 이 문서는 프로젝트의 아키텍처를 요약한다. 코드와 문서가 어긋나면 **코드가 정답**이며 이 문서를 갱신한다.
 단계별 튜토리얼(설치/실행/새 앱 추가)은 루트 [`README.md`](../README.md)를 참조한다.
+프로젝트 목적, passive-style 선택 배경과 주요 개발 내역은
+[`django-style-app-registry/README.md`](django-style-app-registry/README.md)를 참조한다.
 
 ---
 

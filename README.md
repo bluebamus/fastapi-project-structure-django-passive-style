@@ -109,6 +109,8 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 ## 프로젝트 구조
 
 > 상세한 아키텍처 설명은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
+> 프로젝트의 목적, Django식 수동 앱 관리 방식의 선택 이유와 개발 이력은
+> **[docs/django-style-app-registry/README.md](docs/django-style-app-registry/README.md)** 에 정리되어 있습니다.
 
 ```
 fastapi-project-structure-django-passive-style/
