@@ -86,7 +86,7 @@ def test_error_handler_survives_non_primitive_detail(detail: Any):
     **실제 등록된 예외 핸들러를 태운다.** 모델만 따로 검사하면 핸들러가 mode="json"
     을 빠뜨려도 통과해버린다(전환 중 실제로 그랬다).
     """
-    from main import _register_exception_handlers
+    from app.core.bootstrap import _register_exception_handlers
 
     app = FastAPI()
     _register_exception_handlers(app)

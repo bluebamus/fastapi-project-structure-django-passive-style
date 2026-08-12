@@ -1,12 +1,11 @@
 """Reply 기능 패키지.
 
-하위 뷰 라우터를 취합한 ``router`` 를 공개한다. ``main.py`` 가 ``include_router`` 로 취합한다.
-모델 모듈을 import 하여 ``Base.metadata`` 에 테이블을 등록한다.
+**가벼운 package marker 다.** Router 도 Model 도 여기서 import 하지 않는다 —
+registry 의 3단계 초기화(config → models → ready)를 지키려면 root package import
+단계에서 하위 모듈이 딸려오면 안 된다. 결선은 ``apps.py`` 의 ``ReplyConfig`` 가
+선언하고 ``app/core/apps/wiring.py`` 가 수행한다.
 
-``admin_views`` 는 재노출하지 않는다 — 이유는 ``app/features/admin.py`` 참고.
+* Router: ``app/features/reply/api/routers/router.py`` 의 ``reply_router``
+* Models: ``app/features/reply/models/``
+* Admin:  ``app/features/reply/admin.py`` 의 ``admin_views``
 """
-
-from app.features.reply.api.routers.router import reply_router as router
-from app.features.reply.models import models as _models  # noqa: F401  (Base.metadata 등록)
-
-__all__ = ["router"]
