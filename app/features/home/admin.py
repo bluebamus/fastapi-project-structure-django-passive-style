@@ -134,15 +134,16 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     # 수정 비활성화 (로그는 불변)
     can_edit = False
 
-    # 삭제 허용 (필요 시 False로 변경)
-    can_delete = True
+    # 삭제 비활성화 — 지울 수 있는 감사 기록은 감사 기록이 아니다.
+    # 보존 기간이 지난 로그의 정리는 Admin 클릭이 아니라 보존 정책이 담당한다.
+    can_delete = False
 
     # 상세 보기 허용
     can_view_details = True
 
-    # 내보내기 허용
-    can_export = True
-    export_types = ["csv", "json"]
+    # 내보내기 비활성화 — IP·사용자 ID·경로가 묶인 개인정보를 파일로 빼내는
+    # 경로가 된다. Admin 에는 인증이 없으므로(개발 전용) 이 경로를 열어두지 않는다.
+    can_export = False
 
     # =========================================================================
     # 컬럼 레이블 (한글화)

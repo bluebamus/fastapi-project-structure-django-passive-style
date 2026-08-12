@@ -164,9 +164,13 @@ class AppSettings(BaseSettings):
     # 관리자 페이지 활성화 (DEBUG와 독립적으로 동작)
     # True: /admin 접근 가능
     # False: /admin 접근 차단
+    #
+    # 기본값이 False 인 이유: SQLAdmin 에는 인증이 붙어 있지 않다(설계 결정).
+    # 설정을 잊은 배포에서 관리 UI 가 열리는 것을 막으려면 "쓰겠다고 밝힌 경우에만
+    # 켜지는" 쪽이 기본이어야 한다. 이 저장소는 템플릿이라 더욱 그렇다.
     ADMIN: bool = Field(
-        default=True,
-        description="관리자 페이지 활성화",
+        default=False,
+        description="관리자 페이지 활성화 (인증 없음 — 개발 전용)",
     )
 
     # 실행 환경 (헬스체크 응답에 포함)
@@ -174,6 +178,22 @@ class AppSettings(BaseSettings):
         default="development",
         description="실행 환경",
     )
+
+    @model_validator(mode="after")
+    def _reject_admin_in_production(self) -> "AppSettings":
+        """운영에서 인증 없는 Admin 을 켜는 구성을 기동 단계에서 거부한다.
+
+        Admin 에는 인증 백엔드가 없다. 인증이 있으면 "켜되 로그인을 요구한다" 가
+        가능하지만, 없는 상태에서 켤 여지를 남기면 설정 실수 한 번으로 전 도메인의
+        생성·수정·삭제·내보내기가 공개된다. 켤 수 없게 만드는 편이 확실하다.
+        """
+        if self.ENV == "production" and self.ADMIN:
+            raise ValueError(
+                "ENV=production 에서는 ADMIN=true 를 쓸 수 없습니다. "
+                "SQLAdmin 에는 인증이 없어 운영에 노출하면 인증 없이 전 도메인의 "
+                "생성·수정·삭제·내보내기가 가능해집니다. ADMIN=false 로 두세요."
+            )
+        return self
 
     # 개발용 uvicorn 실행 바인드 주소 (main.py __main__ 진입점 전용)
     # 안전 기본값은 루프백(127.0.0.1). 컨테이너/외부 노출이 필요하면 배포 환경에서
