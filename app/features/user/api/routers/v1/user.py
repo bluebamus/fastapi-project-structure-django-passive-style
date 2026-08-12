@@ -3,6 +3,10 @@ User v1 API 엔드포인트 — 사용자 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+
+**전 엔드포인트가 관리자 전용이다.** 이 템플릿에는 로그인·회원가입 흐름이 없으므로
+(User 모델에 비밀번호 컬럼이 없다) 사용자 레코드는 자기가입이 아니라 운영자가
+관리하는 대상이다. 열어두면 계정 열거와 임의 수정·삭제가 가능해진다.
 """
 
 from typing import Any
@@ -18,14 +22,20 @@ from app.features.user.schemas.user_schema import (
     UserUpdate,
 )
 from app.features.user.services.user_service import UserService
+from app.utils.authenticator import require_admin
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
+_UNAUTHORIZED: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorResponse, "description": "관리자 인증 필요"}
+}
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
-    404: {"model": ErrorResponse, "description": "사용자를 찾을 수 없음"}
+    **_UNAUTHORIZED,
+    404: {"model": ErrorResponse, "description": "사용자를 찾을 수 없음"},
 }
 _CONFLICT: dict[int | str, dict[str, Any]] = {
-    409: {"model": ErrorResponse, "description": "사용자명 중복"}
+    **_UNAUTHORIZED,
+    409: {"model": ErrorResponse, "description": "사용자명 중복"},
 }
 
 
@@ -49,6 +59,7 @@ async def create_user(
 @router.get(
     "/users",
     response_model=UserListResponse,
+    responses=_UNAUTHORIZED,
     summary="사용자 목록 조회",
     description="사용자 목록을 페이지네이션하여 조회합니다.",
     operation_id="listUsers",

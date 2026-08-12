@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
@@ -177,6 +177,19 @@ class AppSettings(BaseSettings):
     ENV: Literal["development", "staging", "production", "test"] = Field(
         default="development",
         description="실행 환경",
+    )
+
+    # 관리자 전용 API(접속로그 조회·사용자 CRUD)에 요구하는 Bearer 토큰.
+    #
+    # 이 저장소에는 자격증명 저장소가 없다 — User 모델에 비밀번호 컬럼이 없고,
+    # 해싱·토큰 발급 의존성도 없다. 로그인 제품(회원가입·비밀번호 복구·OAuth)은
+    # 이 템플릿의 범위 밖이므로, 관리자 API 는 단일 공유 토큰으로 보호한다.
+    #
+    # 미설정(None 또는 빈 문자열)이면 해당 엔드포인트는 **모든 요청을 거부**한다.
+    # 설정을 잊은 배포가 곧 공개 상태가 되는 것을 막기 위한 fail-closed 기본값이다.
+    ADMIN_API_TOKEN: SecretStr | None = Field(
+        default=None,
+        description="관리자 전용 API Bearer 토큰 (미설정 시 해당 API 전부 거부)",
     )
 
     @model_validator(mode="after")

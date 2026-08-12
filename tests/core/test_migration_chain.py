@@ -56,9 +56,9 @@ def _upgrade_to_head(tmp_path, monkeypatch) -> sa.Engine:
 def test_expected_tables_is_not_vacuous() -> None:
     """기대 목록이 모델과 어긋나면 아래 검사들이 헛통과한다."""
     _load_models()
-    assert _EXPECTED_TABLES <= set(Base.metadata.tables), (
-        "기대 테이블이 모델에 없습니다 — 목록이 낡았거나 자동발견이 동작하지 않습니다"
-    )
+    assert _EXPECTED_TABLES <= set(
+        Base.metadata.tables
+    ), "기대 테이블이 모델에 없습니다 — 목록이 낡았거나 자동발견이 동작하지 않습니다"
 
 
 def test_upgrade_head_succeeds_on_empty_database(tmp_path, monkeypatch) -> None:
@@ -107,9 +107,9 @@ def test_downgrade_to_base_then_upgrade_again(tmp_path, monkeypatch) -> None:
 
         command.downgrade(cfg, "base")
         after_downgrade = set(sa.inspect(engine).get_table_names())
-        assert not (_EXPECTED_TABLES & after_downgrade), (
-            f"downgrade 후에도 남은 테이블: {sorted(_EXPECTED_TABLES & after_downgrade)}"
-        )
+        assert not (
+            _EXPECTED_TABLES & after_downgrade
+        ), f"downgrade 후에도 남은 테이블: {sorted(_EXPECTED_TABLES & after_downgrade)}"
 
         command.upgrade(cfg, "head")
         assert set(sa.inspect(engine).get_table_names()) == before
