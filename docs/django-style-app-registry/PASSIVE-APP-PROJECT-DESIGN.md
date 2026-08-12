@@ -4,6 +4,11 @@
 
 이 문서는 `fastapi-project-structure-django-passive-style`의 존재 이유와 핵심 설계, 구현 방식, 개발 과정 및 확장 규칙을 설명한다.
 
+> **현재 구현 기준:** 이 저장소는 `fastapi-default-project-structure` `a980b71` 의 tracked tree 를
+> 기준선으로 재구축한 뒤, Django app registry lifecycle 을 이식했다. Django 와 동일한 범위와
+> 그렇지 않은 범위는 [`DJANGO-APP-COMPATIBILITY.md`](DJANGO-APP-COMPATIBILITY.md) 를 본다.
+> 실행 명세는 [`DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md`](DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md).
+
 이 프로젝트는 일반적인 FastAPI 애플리케이션 하나를 제공하는 것이 아니라, 여러 기능을 독립된 앱으로 나누고 Django의 `INSTALLED_APPS`처럼 필요한 앱을 명시적으로 추가·제거·정렬할 수 있게 만든 **개발용 기본 구조 템플릿**이다.
 
 기반 구조는 Git 이력상 `fastapi-default-project-structure`에서 가져왔으며, 이후 FastAPI에 Django식 수동 앱 등록 개념을 도입하는 방향으로 확장되었다. 이 문서는 현재 저장소의 코드와 Git 이력을 기준으로 작성하며, 기반 저장소의 현재 상태를 직접 비교한 문서는 아니다.
@@ -33,13 +38,17 @@ FastAPI는 라우터와 의존성을 자유롭게 구성할 수 있지만, 프�
 
 ```python
 INSTALLED_APPS: list[str] = [
-    "home",
-    "blog",
-    "reply",
-    "sns",
-    "user",
+    "app.features.home.apps.HomeConfig",
+    "app.features.blog.apps.BlogConfig",
+    "app.features.reply.apps.ReplyConfig",
+    "app.features.sns.apps.SnsConfig",
+    "app.features.user.apps.UserConfig",
+    "app.features.auth.apps.AuthConfig",
 ]
 ```
+
+항목은 Django 와 같은 두 형식을 받는다 — `AppConfig` class 경로(권장)와 package 경로.
+짧은 이름 축약(`"blog"`)은 프로젝트 전용 관례라 공개 계약에서 제거했다.
 
 파일 시스템을 검색해 모든 하위 디렉터리를 자동 활성화하지 않는다. 따라서 소스 디렉터리가 존재한다는 사실과 애플리케이션에 설치되었다는 사실을 분리할 수 있다.
 
@@ -137,13 +146,12 @@ features → core → utils
 
 ### 5.1 앱 목록의 단일 진실 공급원
 
-[`config.py`](../../config.py)의 `INSTALLED_APPS`가 설치 앱의 단일 진실 공급원(SSOT)이다. [`AppRegistry.discover()`](../../app/core/registry.py)는 이 목록을 순서대로 읽고 각 이름을 다음 package로 변환한다.
+[`config.py`](../../config.py)의 `INSTALLED_APPS`가 설치 앱의 단일 진실 공급원(SSOT)이다. [`Apps.populate()`](../../app/core/apps/registry.py)는 이 목록을 순서대로 읽어 각 항목을 `AppConfig` 로 정규화한다.
 
 ```text
-<name> → app.features.<name>
+"app.features.blog.apps.BlogConfig"  →  BlogConfig(name="app.features.blog")
+"app.features.blog"                  →  blog.apps 에서 기본 config 선택
 ```
-
-예를 들어 `"blog"`는 `app.features.blog`로 연결된다.
 
 Registry는 다음 구성 오류를 시작 단계에서 확인한다.
 
@@ -159,10 +167,10 @@ Registry는 다음 구성 오류를 시작 단계에서 확인한다.
 
 ```text
 app/features/<name>/api/routers/router.py
-  └─ <name>_router: APIRouter
+  └─ <label>_router: APIRouter
 ```
 
-Registry는 `<name>_router`를 읽어 `/api` prefix로 FastAPI에 설치한다. 앱 내부 Router가 버전 및 기능 prefix를 추가한다.
+Registry adapter 는 `<label>_router`를 읽어 `/api` prefix로 FastAPI에 설치한다. 앱 내부 Router가 버전 및 기능 prefix를 추가한다.
 
 ```text
 /api + /v1/user + /users
@@ -199,11 +207,13 @@ Admin 기능이 활성화되면 Registry가 이 목록을 SQLAdmin에 등록한�
 
 관리자용 API는 Bearer token 기반 `require_admin` Dependency로 보호한다. `home` 접근 로그 API와 `user` API가 이 정책을 적용한 참조 구현이다.
 
-### 5.5 선택적 import-time 연결
+### 5.5 `ready()` hook
 
-앱 package의 `__init__.py`는 필요한 경우 import-time 부수효과를 제공할 수 있다. `home` 앱의 접근 로그 sink 등록이 그 예다.
+앱 로드 시 한 번 필요한 결선은 `AppConfig.ready()` 에 둔다. `home` 앱의 접근 로그 sink 등록이 그 예다.
 
-이 기능은 제한적으로 사용해야 한다. 일반 비즈니스 로직은 명시적인 Dependency 또는 Service 호출로 처리하고, 프레임워크와 기능 사이의 결선처럼 앱 로드 시 한 번 필요한 작업에만 사용한다.
+패키지 `__init__.py` 의 import-time 부수효과는 쓰지 않는다 — registry 1단계(root package import)에서 이미 실행돼 3단계 lifecycle 이 무의미해지기 때문이다. `ready()` 는 models 가 준비된 뒤에 호출되므로 다른 앱의 모델을 볼 수 있다.
+
+`ready()` 에서는 **process-local wiring 만** 허용한다. DB 쿼리·network·subprocess·secret 출력은 금지다 — migration 과 CLI 도 이 hook 을 실행할 수 있다.
 
 ## 6. 기능 앱 표준 구조
 
@@ -310,12 +320,8 @@ uv run python -m scripts.new_app orders --with-admin
 
 ```python
 INSTALLED_APPS: list[str] = [
-    "home",
-    "blog",
-    "reply",
-    "sns",
-    "user",
-    "orders",
+    ...
+    "app.features.orders.apps.OrdersConfig",
 ]
 ```
 

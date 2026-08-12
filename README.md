@@ -1,7 +1,7 @@
 # FastAPI Default Project Structure
 
 Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
-표준 FastAPI 배선을 따릅니다: 각 기능 패키지(`app/features/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 명시적 `include_router` 호출로 최종 취합하며 앱 설정을 구성합니다.
+Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공급원은 `config.INSTALLED_APPS` 이고, 등록된 앱의 Router·Models·Admin 결선은 app registry 가 컨벤션대로 처리합니다. 디렉터리를 만드는 것만으로는 앱이 설치되지 않습니다.
 
 ## 목차
 
@@ -115,7 +115,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 ```
 fastapi-default-project-structure/
-├── main.py                      # 진입점: 각 기능의 router 를 include_router 로 취합 + 앱 설정
+├── main.py                      # 진입점: create_app() 호출만 (얇은 entrypoint)
 ├── config.py                    # 환경 설정 (Pydantic Settings) — 설정 단일 출처
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 ├── alembic.ini                  # Alembic 설정
@@ -123,8 +123,8 @@ fastapi-default-project-structure/
 ├── .pre-commit-config.yaml      # ruff + 기본 위생 훅
 │
 ├── app/
-│   ├── features/                # 기능 단위 vertical slice — main.py 가 include_router 로 취합
-│   │   ├── admin.py             # SQLAdmin 취합 — ADMIN_VIEWS + 조립 함수 3종
+│   ├── features/                # 기능 단위 vertical slice — INSTALLED_APPS 로 설치
+│   │   ├── admin.py             # 기능 소유 SQLAdmin ModelView + admin_views
 │   │   └── <name>/              # 각 기능 디렉토리
 │   │       ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
 │   │       ├── admin.py         # 이 기능 모델의 ModelView + admin_views (선택)
@@ -143,7 +143,6 @@ fastapi-default-project-structure/
 │   │   ├── db/                  # 세션·라우팅·모델 등록
 │   │   │   ├── session.py       # 엔진, get_session / get_read_session, background_session
 │   │   │   ├── router.py        # 읽기/쓰기 라우팅 (RoutingSession)
-│   │   │   └── models_registry.py  # 모델 import 단일 지점 (SSOT)
 │   │   ├── models/models_base.py   # SQLAlchemy Base + TimestampMixin·UUIDMixin
 │   │   ├── repositories/        # BaseRepository (제네릭 CRUD)
 │   │   ├── services/            # BaseService
@@ -173,10 +172,14 @@ fastapi-default-project-structure/
 
 | 파일 | 설명 |
 |------|------|
-| `main.py` | FastAPI 조립 — 각 기능 `router` 를 명시 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
-| `app/features/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` 공개 — `main.py` 가 명시 import 후 `include_router` 로 취합 |
+| `main.py` | `app = create_app()` 과 로컬 uvicorn 실행만 — 조립은 전부 `app/core/bootstrap.py` |
+| `config.INSTALLED_APPS` | **설치 앱의 유일한 진실 공급원.** 목록에 없는 앱은 route·모델·Admin·`ready()` 어디에도 나오지 않음 |
+| `app/core/apps/` | `AppConfig`·`Apps` registry(Django lifecycle) + `wiring.py`(FastAPI 전용 adapter) |
+| `app/core/bootstrap.py` | `create_app(installed_apps, registry, enable_admin)` — registry population → 미들웨어 → Router → docs → 조건부 Admin |
+| `app/features/<name>/apps.py` | `AppConfig` subclass — 등록 대상이자 결선 컨벤션 선언부 |
+| `app/features/<name>/__init__.py` | 가벼운 package marker. Router·Model 을 import 하지 않음(3단계 lifecycle 보존) |
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
-| `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합(`ADMIN_VIEWS`). `main.py` 는 `register_admin(app, engine)` 하나만 호출하고, 내부에서 `create_admin_interface()`(생성·마운트) → `register_admin_views()`(등록) 순으로 위임 |
+| `app/core/apps/wiring.py` | 설치 앱의 `admin_views` 를 SQLAdmin 에 등록. `sqladmin` import 는 `create_admin()` 함수 안에 있어 `ADMIN=false` 면 로드조차 되지 않음 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
 | `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_session` / 조회용 `get_read_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
@@ -250,9 +253,9 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 >
 > 의존성이 `yield` 후에 커밋하던 이전 방식은 FastAPI 상위 버전에서 yield dependency 의 종료 코드가 **응답 전송 후에** 실행되도록 바뀌면서, 커밋이 실패해도 클라이언트가 `201` 을 받는 문제가 있었습니다. 커밋을 핸들러 안으로 옮겨 응답 생성 전에 끝나도록 보장합니다.
 
-#### 마지막 단계 — `main.py` 에 라우터 명시 등록
+#### 마지막 단계 — `config.INSTALLED_APPS` 에 한 줄
 
-위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 에 이름을 추가하고 `app.include_router(<name>.router, prefix="/api")` 한 줄을 넣어야 라우터가 연결됩니다. 모델은 기능 `__init__.py` 에서 import 하며, `models_registry` 가 `app/features/<name>/models/models.py` 를 자동 수집합니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. (절차는 아래 [신규 기능 개발 가이드](#신규-기능-개발-가이드) 참고)
+위 구조를 만든 뒤 `config.py` 의 `INSTALLED_APPS` 에 config class 경로 한 줄을 추가해야 앱이 설치됩니다. 그 한 줄이 Router·Models·Admin·`ready()` 를 동시에 켭니다 — `main.py`·`migrations/env.py`·`session.py` 는 손대지 않습니다. (절차는 아래 [신규 기능 개발 가이드](#신규-기능-개발-가이드) 참고)
 
 ---
 
@@ -1038,31 +1041,35 @@ async def create_item(request: Request, ...):            # request 파라미터 
 **1. `app/features/<name>/` 생성 + 코드 작성** (`api/routers/`, `models/`, `schemas/`, `repositories/`, `services/`, `dependencies/`)
 `__init__.py` 는 `router` 를 공개하고 `models` 모듈을 import 합니다(`app/features/home/__init__.py` 참고).
 
-**2. `main.py` 에 라우터 등록** (직접 편집)
+**2. `config.INSTALLED_APPS` 에 등록** (직접 편집 — 이 한 줄이 '설치'다)
 
 ```python
-# main.py
-from app.features import blog, home, reply, sns, user, <name>   # ← import 추가
-
-app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
+# config.py
+INSTALLED_APPS: list[str] = [
+    ...
+    "app.features.<name>.apps.<Name>Config",   # ← 이 한 줄을 추가
+]
 ```
 
-각 기능 `__init__.py` 가 `router` 를 공개하므로 `main.py` 가 명시 `include_router` 로 취합합니다. **모델은 `models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `Base.metadata` 등록에 별도 편집이 필요 없습니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다.
+이 줄을 넣기 전까지 앱은 **존재하지만 설치되지 않은** 상태입니다 — 디렉터리가 있어도 route·모델·Admin·`ready()` 어디에도 나오지 않습니다. 넣는 순간 넷이 함께 켜집니다. `main.py`·`migrations/env.py`·`session.py` 는 손대지 않습니다.
+
+Router 는 `api/routers/router.py` 의 `<name>_router`, 모델은 `models/`, Admin 은 `admin.py` 의 `admin_views` 라는 컨벤션 이름으로 찾습니다. **module 이 없으면 그 기능이 없는 것으로 넘어가지만, module 은 있는데 공개 이름이 없거나 내부 import 가 깨지면 기동이 실패합니다.**
 
 **3. 서버 재시작** — 등록한 라우터가 마운트됩니다.
 
 ### 개발 체크리스트
 
-- [ ] `main.py` 에 `from app.features import ..., <name>` + `app.include_router(<name>.router, prefix="/api")`
+- [ ] `config.py` 의 `INSTALLED_APPS` 에 `"app.features.<name>.apps.<Name>Config"` 추가
+- [ ] `apps.py` — `AppConfig` subclass (`name = "app.features.<name>"`)
 - [ ] `api/routers/router.py` + `v1/` — 엔드포인트 정의
-- [ ] `models/models.py` — SQLAlchemy ORM 모델 (`__init__.py` 에서 import → 자동 수집)
+- [ ] `models/` — SQLAlchemy ORM 모델 (등록된 앱의 모델만 `Base.metadata` 에 들어감)
 - [ ] `repositories/` — BaseRepository 확장
 - [ ] `dependencies/` — 기능 의존성(Service 구성; 쓰기/조회 세션 분리)
 - [ ] `services/` — 비즈니스 로직
 - [ ] `schemas/` — Pydantic 요청/응답 스키마
 - [ ] `tests/` — pytest 테스트
 - [ ] Celery 태스크는 중앙 `app/celery/tasks.py` 에 추가 (선택)
-- [ ] SQLAdmin 은 기능 `admin.py` 에 ModelView + `admin_views`, `app/features/admin.py` 에 취합 한 줄 (선택)
+- [ ] SQLAdmin 은 기능 `admin.py` 에 ModelView + `admin_views` (선택 — 중앙 취합 파일은 없음)
 
 ---
 
