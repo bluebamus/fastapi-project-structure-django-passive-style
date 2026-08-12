@@ -26,8 +26,9 @@ import pytest
 from fastapi import FastAPI
 from sqladmin import Admin
 
-from app.core.db.models_registry import iter_model_modules
+from app.core.apps import Apps
 from app.core.db.session import engine as _ENGINE
+from config import INSTALLED_APPS
 
 EXPECTED_MANAGED_MODELS = {"Post", "Reply", "SnsPost", "User", "UserAccessLog"}
 
@@ -36,13 +37,14 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def _features_with_models() -> list[str]:
-    """``models/models.py`` 를 가진 기능 패키지 이름 목록.
+    """모델을 가진 **설치** 앱의 label 목록.
 
-    모델 등록과 같은 SSOT(``models_registry``)를 쓴다 — 탐지 기준이 갈라지면
+    모델 등록과 같은 SSOT(``INSTALLED_APPS`` + registry)를 쓴다 — 탐지 기준이 갈라지면
     "모델은 등록됐는데 admin 검사에서는 빠지는" 사각지대가 생긴다.
     """
-    # "app.features.<name>.models.models" → "<name>"
-    return sorted(dotted.split(".")[2] for dotted in iter_model_modules())
+    registry = Apps()
+    registry.populate(INSTALLED_APPS, run_ready=False)
+    return sorted(c.label for c in registry.get_app_configs() if c.get_models())
 
 
 def test_admin_views_cover_expected_models() -> None:
