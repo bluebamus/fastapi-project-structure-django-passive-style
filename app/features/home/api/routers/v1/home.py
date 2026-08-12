@@ -3,6 +3,10 @@ Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+
+**전 엔드포인트가 관리자 전용이다.** 응답에 IP 주소·사용자 ID·요청 경로·접속
+시각·브라우저 정보가 들어간다 — IP 와 사용자 ID 의 결합은 개인정보이자 보안 감사
+데이터다. 라우터 수준에 인증을 걸어, 뒤에 추가되는 엔드포인트도 기본으로 보호받게 한다.
 """
 
 from typing import Any
@@ -17,11 +21,13 @@ from app.features.home.schemas.user_access_log_schema import (
     UserAccessLogResponse,
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
+from app.utils.authenticator import require_admin
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 _ERR: dict[int | str, dict[str, Any]] = {
-    500: {"model": ErrorResponse, "description": "서버 내부 오류"}
+    401: {"model": ErrorResponse, "description": "관리자 인증 필요"},
+    500: {"model": ErrorResponse, "description": "서버 내부 오류"},
 }
 
 

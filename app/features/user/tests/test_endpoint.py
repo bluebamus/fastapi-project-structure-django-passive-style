@@ -1,11 +1,16 @@
 """User CRUD 엔드포인트 테스트.
 
-AppRegistry 자동 등록 + view→dependency→service→repository→DB 전체 경로를
+INSTALLED_APPS 등록 + view→dependency→service→repository→DB 전체 경로를
 in-memory sqlite(get_session 오버라이드)로 검증한다.
+
+이 엔드포인트들은 관리자 전용이다(계획서 U-1). client fixture 가 관리자 토큰을
+설정하고 Authorization 헤더를 기본으로 실어 보낸다 — 인증 자체의 검증은
+``tests/core/test_admin_api_auth.py`` 가 담당하고, 여기서는 CRUD 동작을 본다.
 """
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -13,9 +18,11 @@ from app.core.bootstrap import create_app
 from app.core.db.session import Base, get_session
 from app.features.user.models.models import User  # noqa: F401  (register table)
 
+_ADMIN_TOKEN = "user-endpoint-test-token"  # noqa: S105 - 테스트 고정값
+
 
 @pytest_asyncio.fixture
-async def client():
+async def client(monkeypatch):
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -29,16 +36,24 @@ async def client():
         async with maker() as session:
             yield session
 
+    from app.utils.authenticator import auth
+
+    monkeypatch.setattr(auth.app_settings, "ADMIN_API_TOKEN", SecretStr(_ADMIN_TOKEN))
+
     app = create_app()
     app.dependency_overrides[get_session] = _override_get_session
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"},
+    ) as c:
         yield c
     await engine.dispose()
 
 
-def test_user_auto_registered():
-    """디렉터리 컨벤션만으로 user CRUD 라우터가 자동 발견·마운트된다."""
+def test_user_router_is_wired():
+    """INSTALLED_APPS 에 등록된 user 앱의 CRUD 라우터가 컨벤션으로 마운트된다."""
     app = create_app()
     paths = {r.path for r in app.routes}
     assert "/api/v1/user/users" in paths
