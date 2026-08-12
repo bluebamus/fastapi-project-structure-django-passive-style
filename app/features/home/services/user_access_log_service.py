@@ -6,7 +6,7 @@ UserAccessLog Service
 """
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,6 @@ from app.features.home.schemas.user_access_log_schema import (
     OSStats,
     UserAccessLogCreate,
 )
-from config import timezone_settings
 
 
 class UserAccessLogService(BaseService):
@@ -40,31 +39,6 @@ class UserAccessLogService(BaseService):
         data_dict = data.model_dump() if isinstance(data, UserAccessLogCreate) else data
         self.log.debug("접속 로그 생성: path=%s", data_dict.get("request_path"))
         return await self.repository.create(data_dict)
-
-    async def purge_logs_older_than(self, days: int) -> int:
-        """보존 기간이 지난 접속 로그를 삭제하고 삭제 건수를 반환한다.
-
-        지운 적이 없으면 IP·사용자 ID 가 묶인 개인정보가 무한정 쌓인다. 삭제는
-        Admin 클릭이 아니라 이 정책이 담당한다(Admin 의 접속로그 삭제는 감사
-        무결성을 위해 막혀 있다).
-
-        Args:
-            days: 보존 일수. 반드시 1 이상.
-
-        Returns:
-            삭제된 로그 수.
-
-        Raises:
-            ValueError: ``days`` 가 0 이하인 경우. 0 을 허용하면 "보존 안 함" 이
-                아니라 "전부 삭제" 가 되어, 설정 실수 한 번에 감사 기록이 사라진다.
-        """
-        if days <= 0:
-            raise ValueError(f"보존 일수는 1 이상이어야 합니다 (받은 값: {days}).")
-
-        cutoff = timezone_settings.now() - timedelta(days=days)
-        deleted = await self.repository.delete_older_than(cutoff)
-        self.log.info("접속 로그 정리: %d건 삭제 (기준 %s 이전)", deleted, cutoff.isoformat())
-        return deleted
 
     async def get_access_logs(
         self,

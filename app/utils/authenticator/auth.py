@@ -1,64 +1,102 @@
-"""관리자 전용 API 접근 제어 (설정 기반 Bearer 토큰).
+"""인증 유틸리티.
 
-**왜 로그인이 아니라 공유 토큰인가.** 이 저장소에는 자격증명 저장소가 없다 —
-``User`` 모델에 비밀번호 컬럼이 없고, 해싱·토큰 발급 의존성도 설치돼 있지 않다.
-사용자 로그인을 붙이려면 비밀번호 컬럼·해싱 라이브러리·토큰 발급 엔드포인트·
-계정 생성 흐름 변경이 함께 와야 하는데, 이는 "전체 인증 제품 기능" 으로 범위
-밖이다. 반면 보호해야 할 대상(접속로그 조회·사용자 CRUD)은 성격상 **운영자
-전용**이라 사용자별 신원이 필요하지 않다. 그래서 설정에 둔 단일 토큰으로 막는다.
+비밀번호 해시(bcrypt)와 JWT access/refresh 토큰 생성·검증을 제공하는 순수 함수 모음.
+프레임워크에 독립적이며, auth 도메인 서비스와 `get_current_user` 의존성이 사용한다.
 
-**fail-closed.** 토큰이 설정돼 있지 않으면 모든 요청을 거부한다. "설정을 안 했으니
-일단 열어둔다" 는 곧 설정을 잊은 배포가 공개 상태가 된다는 뜻이다.
-
-**401 만 쓰고 403 은 쓰지 않는 이유.** 공유 토큰 방식에는 "인증은 됐으나 권한이
-없는" 상태가 존재하지 않는다. 토큰이 없거나 틀리면 둘 다 "유효한 자격 증명이
-없음" 이므로 401 이 맞다(RFC 7235). 역할 구분이 생기면 그때 403 이 의미를 갖는다.
+주의: bcrypt 는 72바이트를 초과하는 비밀번호를 거부하므로 입력을 72바이트로 잘라서 사용한다.
 """
 
 from __future__ import annotations
 
-import secrets
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import bcrypt
+import jwt
 
-from app.utils.logs import get_logger
-from config import app_settings
+from config import jwt_settings
 
-logger = get_logger("authenticator")
+_BCRYPT_MAX_BYTES = 72
 
-# auto_error=False: 헤더 부재를 여기서 직접 처리해 응답 형태를 통일한다.
-bearer_scheme = HTTPBearer(auto_error=False, description="관리자 API 토큰")
-
-_UNAUTHORIZED = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="관리자 인증이 필요합니다.",
-    headers={"WWW-Authenticate": "Bearer"},
-)
+ACCESS_TOKEN_TYPE = "access"
+REFRESH_TOKEN_TYPE = "refresh"
 
 
-def require_admin(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-) -> None:
-    """관리자 토큰이 유효하지 않으면 401 로 거부한다.
+def _pw_bytes(password: str) -> bytes:
+    return password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
-    Raises:
-        HTTPException: 토큰 미설정·헤더 부재·토큰 불일치 — 모두 401.
+
+def hash_password(password: str) -> str:
+    """비밀번호를 bcrypt 로 해시한다."""
+    digest: bytes = bcrypt.hashpw(_pw_bytes(password), bcrypt.gensalt())
+    return digest.decode("utf-8")
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """평문 비밀번호가 해시와 일치하는지 검증한다(불일치·오류 시 False)."""
+    try:
+        matches: bool = bcrypt.checkpw(_pw_bytes(password), hashed.encode("utf-8"))
+        return matches
+    except (ValueError, TypeError):
+        return False
+
+
+def _create_token(
+    subject: str,
+    token_type: str,
+    secret: str,
+    expires_delta: timedelta,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "type": token_type,
+        "iat": now,
+        "exp": now + expires_delta,
+    }
+    if extra:
+        payload.update(extra)
+    return jwt.encode(payload, secret, algorithm=jwt_settings.JWT_ALGORITHM)
+
+
+def create_access_token(
+    subject: str,
+    *,
+    expires_delta: timedelta | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Access Token 을 생성한다(기본 만료: 설정의 ACCESS_TOKEN_EXPIRE_MINUTES)."""
+    delta = expires_delta or timedelta(minutes=jwt_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return _create_token(
+        subject, ACCESS_TOKEN_TYPE, jwt_settings.ACCESS_TOKEN_SECRET_KEY, delta, extra
+    )
+
+
+def create_refresh_token(
+    subject: str,
+    *,
+    expires_delta: timedelta | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Refresh Token 을 생성한다(기본 만료: 설정의 REFRESH_TOKEN_EXPIRE_DAYS)."""
+    delta = expires_delta or timedelta(days=jwt_settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    return _create_token(
+        subject, REFRESH_TOKEN_TYPE, jwt_settings.REFRESH_TOKEN_SECRET_KEY, delta, extra
+    )
+
+
+def decode_token(token: str, *, token_type: str = ACCESS_TOKEN_TYPE) -> dict[str, Any]:
+    """토큰을 검증·디코드한다.
+
+    만료·서명 오류·타입 불일치 시 `jwt.InvalidTokenError`(하위 포함)를 발생시킨다.
     """
-    configured = app_settings.ADMIN_API_TOKEN
-    expected = configured.get_secret_value() if configured else ""
-
-    if not expected:
-        # 거부 자체는 옳지만, 운영자가 원인을 알 수 있어야 한다.
-        logger.error(
-            "ADMIN_API_TOKEN 이 설정되지 않아 관리자 API 요청을 거부했습니다. "
-            ".env 에 ADMIN_API_TOKEN 을 설정하세요."
-        )
-        raise _UNAUTHORIZED
-
-    if credentials is None or not credentials.credentials:
-        raise _UNAUTHORIZED
-
-    # 타이밍 공격으로 토큰을 한 글자씩 알아내는 것을 막는다.
-    if not secrets.compare_digest(credentials.credentials, expected):
-        raise _UNAUTHORIZED
+    secret = (
+        jwt_settings.ACCESS_TOKEN_SECRET_KEY
+        if token_type == ACCESS_TOKEN_TYPE
+        else jwt_settings.REFRESH_TOKEN_SECRET_KEY
+    )
+    payload = jwt.decode(token, secret, algorithms=[jwt_settings.JWT_ALGORITHM])
+    if payload.get("type") != token_type:
+        raise jwt.InvalidTokenError(f"expected {token_type} token, got {payload.get('type')!r}")
+    return payload

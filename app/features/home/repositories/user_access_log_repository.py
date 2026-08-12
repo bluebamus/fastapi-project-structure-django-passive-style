@@ -6,9 +6,8 @@ UserAccessLog Repository
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, and_, delete, func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.repositories.repository_base import BaseRepository
@@ -35,26 +34,6 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
             session: 비동기 데이터베이스 세션
         """
         super().__init__(session)
-
-    async def delete_older_than(self, cutoff: datetime) -> int:
-        """*cutoff* 이전에 생성된 로그를 삭제하고 삭제 건수를 반환한다.
-
-        커밋은 호출자가 한다(다른 메서드와 같은 트랜잭션 경계 규약).
-
-        Args:
-            cutoff: 이 시각보다 오래된 로그가 삭제 대상이다.
-
-        Returns:
-            삭제된 행 수.
-        """
-        # DML 은 CursorResult 를 돌려주지만 execute() 의 선언 타입은 Result 다.
-        result = cast(
-            "CursorResult[Any]",
-            await self.session.execute(
-                delete(UserAccessLog).where(UserAccessLog.created_at < cutoff)
-            ),
-        )
-        return result.rowcount or 0
 
     async def get_by_ip(
         self,

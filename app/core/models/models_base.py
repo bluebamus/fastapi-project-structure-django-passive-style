@@ -30,16 +30,16 @@ class Base(DeclarativeBase):
     공통 필드와 메서드를 제공합니다.
     """
 
+    if TYPE_CHECKING:
+        # 저장소(BaseRepository)가 관리하는 모든 모델은 UUIDMixin 을 통해 문자열 ``id``
+        # 기본키를 갖는다는 것이 이 프로젝트의 불변식이다. 런타임에는 각 모델/믹스인이
+        # 실제 컬럼을 정의하므로, 여기서는 제네릭 코드(self.model.id)의 타입 체크를 위한
+        # 선언만 둔다(TYPE_CHECKING 가드로 런타임 매핑에는 영향을 주지 않음).
+        id: Mapped[str]
+
     type_annotation_map = {
         datetime: DateTime(timezone=True),
     }
-
-    if TYPE_CHECKING:
-        # 타입 전용 계약: BaseRepository/pagination 등 제네릭 코드는 모든
-        # Repository 대상 모델이 String(36) UUID 기본키 `id` 를 갖는다고 전제한다.
-        # 실제 매핑은 각 도메인 모델(또는 UUIDMixin)이 제공하므로 여기서는
-        # 런타임 컬럼을 만들지 않고(타입 검사 시에만 노출) 그 불변식만 선언한다.
-        id: Mapped[str]
 
     def to_dict(self) -> dict[str, Any]:
         """모델을 딕셔너리로 변환합니다."""

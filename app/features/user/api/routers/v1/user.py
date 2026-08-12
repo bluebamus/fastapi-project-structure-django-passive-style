@@ -3,10 +3,6 @@ User v1 API 엔드포인트 — 사용자 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
-
-**전 엔드포인트가 관리자 전용이다.** 이 템플릿에는 로그인·회원가입 흐름이 없으므로
-(User 모델에 비밀번호 컬럼이 없다) 사용자 레코드는 자기가입이 아니라 운영자가
-관리하는 대상이다. 열어두면 계정 열거와 임의 수정·삭제가 가능해진다.
 """
 
 from typing import Any
@@ -14,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.features.user.dependencies.user_dependencies import get_user_service
+from app.features.user.dependencies.user_dependencies import (
+    get_user_service,
+    get_user_service_readonly,
+)
 from app.features.user.schemas.user_schema import (
     UserCreate,
     UserListResponse,
@@ -22,20 +21,14 @@ from app.features.user.schemas.user_schema import (
     UserUpdate,
 )
 from app.features.user.services.user_service import UserService
-from app.utils.authenticator import require_admin
 
-router = APIRouter(dependencies=[Depends(require_admin)])
+router = APIRouter()
 
-_UNAUTHORIZED: dict[int | str, dict[str, Any]] = {
-    401: {"model": ErrorResponse, "description": "관리자 인증 필요"}
-}
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
-    **_UNAUTHORIZED,
-    404: {"model": ErrorResponse, "description": "사용자를 찾을 수 없음"},
+    404: {"model": ErrorResponse, "description": "사용자를 찾을 수 없음"}
 }
 _CONFLICT: dict[int | str, dict[str, Any]] = {
-    **_UNAUTHORIZED,
-    409: {"model": ErrorResponse, "description": "사용자명 중복"},
+    409: {"model": ErrorResponse, "description": "사용자명 중복"}
 }
 
 
@@ -53,13 +46,13 @@ async def create_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.create_user(payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
 @router.get(
     "/users",
     response_model=UserListResponse,
-    responses=_UNAUTHORIZED,
     summary="사용자 목록 조회",
     description="사용자 목록을 페이지네이션하여 조회합니다.",
     operation_id="listUsers",
@@ -67,7 +60,7 @@ async def create_user(
 async def list_users(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
-    service: UserService = Depends(get_user_service),
+    service: UserService = Depends(get_user_service_readonly),
 ) -> UserListResponse:
     users, total = await service.list_users(skip=skip, limit=limit)
     return UserListResponse(
@@ -88,7 +81,7 @@ async def list_users(
 )
 async def get_user(
     user_id: str = Path(..., description="사용자 ID(UUID)"),
-    service: UserService = Depends(get_user_service),
+    service: UserService = Depends(get_user_service_readonly),
 ) -> UserResponse:
     user = await service.get_user(user_id)
     return UserResponse.model_validate(user)
@@ -108,6 +101,7 @@ async def update_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.update_user(user_id, payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
@@ -124,3 +118,4 @@ async def delete_user(
     service: UserService = Depends(get_user_service),
 ) -> None:
     await service.delete_user(user_id)
+    await service.commit()

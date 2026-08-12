@@ -59,14 +59,14 @@ def upgrade() -> None:
     op.create_index('ix_user_access_logs_user_id', 'user_access_logs', ['user_id'], unique=False)
     # ### end Alembic commands ###
 
-    # --- 보정 (2026-08-11, REQ-019/A) --------------------------------------
+    # --- 보정 (2026-08-10) -------------------------------------------------
     # 최초 작성 시 user_access_logs 만 담겨 있었고 나머지 도메인 테이블이 통째로
-    # 빠져 있었다. 빈 DB 에 `alembic upgrade head` 를 돌리면 user_access_logs 하나만
-    # 생겨서 blog/reply/sns/user 엔드포인트가 전부 죽는다(실측 확인).
+    # 빠져 있었다. 그 결과 다음 리비전(b2f1a9c0d3e4)이 존재하지 않는 users 를
+    # ALTER 하면서 빈 DB에서는 upgrade head 자체가 불가능했다. DEBUG 모드의
+    # create_db_tables() 가 이 결함을 가려왔다.
     #
-    # 테스트가 이 결함을 가려왔다 — 하니스는 마이그레이션이 아니라 create_all() 로
-    # 스키마를 만들기 때문에 전부 green 이었다. 운영(DEBUG=false)에서는 Alembic 이
-    # 유일한 스키마 경로이므로 신규 배포가 불가능한 상태였다.
+    # users 는 hashed_password 없이 만든다 — 그 컬럼 추가는 b2f1a9c0d3e4 의
+    # 역할이므로, 여기서 미리 넣으면 후속 리비전이 무의미해진다.
     op.create_table(
         'users',
         sa.Column('id', sa.String(length=36), nullable=False),

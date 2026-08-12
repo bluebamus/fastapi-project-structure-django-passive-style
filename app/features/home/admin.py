@@ -1,16 +1,13 @@
 """
-Home 모듈 SQLAdmin 설정
+Home 기능 SQLAdmin 설정
 
 SQLAdmin을 사용한 UserAccessLog 모델의 관리자 인터페이스를 정의합니다.
 
-사용 방법:
-    main.py에서 Admin 인스턴스를 생성하고 ModelView를 등록합니다.
-
-    from sqladmin import Admin
-    from app.features.home.admin import UserAccessLogAdmin
-
-    admin = Admin(app, engine)
-    admin.add_view(UserAccessLogAdmin)
+등록 경로:
+    이 파일은 ModelView 정의와 ``admin_views`` 노출까지만 담당합니다.
+    ``app/features/admin.py`` 가 이를 명시 import 해 ``ADMIN_VIEWS`` 로 취합하고,
+    ``main.py`` 는 ADMIN=true 일 때 ``register_admin(app, engine)`` 만 호출합니다.
+    이 파일에서 ``Admin`` 인스턴스를 직접 만들지 않습니다.
 
 Note:
     SQLAdmin은 ADMIN 설정으로 제어됩니다 (DEBUG와 독립적).
@@ -18,9 +15,21 @@ Note:
     운영 환경에서는 보안상 ADMIN=False 설정을 권장합니다.
 """
 
+from typing import Any
+
 from sqladmin import ModelView
 
 from app.features.home.models.models import UserAccessLog
+
+
+def _format_is_bot(model: Any, _attr: Any) -> str:
+    """봇 여부를 사람이 읽는 문자열로 표시한다."""
+    return "봇" if model.is_bot else "사용자"
+
+
+def _format_response_time(model: Any, _attr: Any) -> str:
+    """응답 시간을 'Nms' 형식으로 표시한다(없으면 '-')."""
+    return f"{model.response_time_ms}ms" if model.response_time_ms else "-"
 
 
 class UserAccessLogAdmin(ModelView, model=UserAccessLog):
@@ -134,16 +143,15 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     # 수정 비활성화 (로그는 불변)
     can_edit = False
 
-    # 삭제 비활성화 — 지울 수 있는 감사 기록은 감사 기록이 아니다.
-    # 보존 기간이 지난 로그의 정리는 Admin 클릭이 아니라 보존 정책이 담당한다.
-    can_delete = False
+    # 삭제 허용 (필요 시 False로 변경)
+    can_delete = True
 
     # 상세 보기 허용
     can_view_details = True
 
-    # 내보내기 비활성화 — IP·사용자 ID·경로가 묶인 개인정보를 파일로 빼내는
-    # 경로가 된다. Admin 에는 인증이 없으므로(개발 전용) 이 경로를 열어두지 않는다.
-    can_export = False
+    # 내보내기 허용
+    can_export = True
+    export_types = ["csv", "json"]
 
     # =========================================================================
     # 컬럼 레이블 (한글화)
@@ -180,17 +188,13 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     # =========================================================================
     # 컬럼 포맷터 (값 표시 형식)
     # =========================================================================
-    # SQLAdmin 은 formatter 의 모델 인자를 `type` 으로 타이핑하므로 속성은 getattr 로 접근한다
-    # (런타임 동작은 인스턴스 속성 접근과 동일).
     column_formatters = {
-        UserAccessLog.is_bot: lambda m, _: "봇" if getattr(m, "is_bot", False) else "사용자",
-        UserAccessLog.response_time_ms: lambda m, _: (
-            f"{getattr(m, 'response_time_ms', None)}ms"
-            if getattr(m, "response_time_ms", None)
-            else "-"
-        ),
+        UserAccessLog.is_bot: _format_is_bot,
+        UserAccessLog.response_time_ms: _format_response_time,
     }
 
 
-# 컨벤션: AppRegistry.install_admin 이 이 모듈 레벨 리스트를 SQLAdmin 에 등록한다.
+# 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
+# 패키지 __init__.py 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
+# sqladmin 이 딸려 와 ADMIN=false 가 무의미해진다(가드: tests/test_admin_wiring.py).
 admin_views: list[type] = [UserAccessLogAdmin]

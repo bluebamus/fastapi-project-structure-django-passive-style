@@ -16,20 +16,6 @@ CRUD 작업과 N+1 문제 해결을 위한 Eager Loading 메서드를 제공합�
     # N+1 해결 - Eager Loading
     user = await repo.get_by_id_with("id", relations=["posts", "profile"])
     users = await repo.get_all_with(relations=["posts"])
-
-설계 의도 (기반/foundation 계층):
-    이 클래스는 애플리케이션 코드가 아니라 "차후 비즈니스 코드가 골라 쓰도록
-    마련된 재사용 primitives"이다. 따라서 일부 메서드가 현재 어느 도메인에서도
-    호출되지 않는 것은 결함(죽은 코드)이 아니라 의도된 확장점이다.
-
-    특히 관계 로딩 메서드(get_*_with / get_with_join / count_with_relation)는
-    대상 모델에 SQLAlchemy relationship() 이 정의돼 있어야 동작한다. 이 템플릿의
-    도메인들은 앱 독립성(INSTALLED_APPS 탈착성)을 위해 도메인 간 참조를 느슨한
-    문자열로 두고 relationship() 을 두지 않으므로, 관계 로딩 메서드는 관계가
-    도입되기 전까지 자연히 미사용 상태다(정상).
-
-    독립성을 유지하며 이 메서드들을 실제로 활용하는 방법(도메인 내부 관계 도입)은
-    저장소 루트의 EAGER_LOADING_DESIGN.html 참조.
 """
 
 from collections.abc import Sequence
@@ -131,16 +117,18 @@ class BaseRepository(CRUDBase[ModelType]):
         for relation in relations:
             # 중첩 관계 지원: "posts.comments" -> posts -> comments
             parts = relation.split(".")
+
+            # 첫 파트는 현재 모델의 관계 속성으로 로더를 시작한다.
             attr = getattr(self.model, parts[0])
             load_option = loader(attr)
-
-            # 중첩 단계는 문자열이 아니라 대상 매퍼의 실제 관계 속성으로 체이닝한다
-            # (SQLAlchemy 2.0 의 체인 로더는 문자열 관계명을 받지 않는다).
-            current_model = attr.property.mapper.class_
+            # 다음 파트는 "직전 관계가 가리키는 모델"의 속성이어야 한다. SQLAlchemy 2.0
+            # 에서는 문자열 기반 관계 로딩이 제거되었으므로, mapper 를 따라가며 실제
+            # QueryableAttribute 로 해석한다(문자열 전달 시 런타임 오류).
+            related_model = attr.property.mapper.class_
             for part in parts[1:]:
-                next_attr = getattr(current_model, part)
-                load_option = load_option.selectinload(next_attr)
-                current_model = next_attr.property.mapper.class_
+                attr = getattr(related_model, part)
+                load_option = load_option.selectinload(attr)
+                related_model = attr.property.mapper.class_
 
             stmt = stmt.options(load_option)
 
@@ -805,12 +793,6 @@ class BaseRepository(CRUDBase[ModelType]):
         Example:
             user = await repo.update("user-123", {"name": "New Name"})
         """
-        # 빈 patch(변경 컬럼 없음)는 no-op 로 처리한다. 빈 dict 를 values() 에 넘기면
-        # SQLAlchemy 가 "empty SET clause" CompileError 를 던져 500 이 되므로, 대상이
-        # 존재하면 현재 상태를 그대로 반환하고(→200) 없으면 None(→404) 을 반환한다.
-        if not data:
-            return await self.get_by_id(id)
-
         try:
             stmt = update(self.model).where(self.model.id == id).values(**data)
             result = cast("CursorResult[Any]", await self.session.execute(stmt))
