@@ -78,6 +78,11 @@ def _run_probe(tmp_path: Path, env_body: str) -> subprocess.CompletedProcess[str
         if key.startswith(("DB_", "MYSQL_")):
             del child_env[key]
     child_env["PYTHONPATH"] = str(PROJECT_ROOT)
+    # 자식은 tmp_path 에서 돌아 pyproject.toml 을 못 본다. coverage 가 켜져 있으면
+    # 부모(branch=true)와 자식(branch 미설정)의 데이터 형식이 달라 combine 이
+    # "Can't combine branch coverage data with statement data" 로 터진다 —
+    # 테스트는 전부 통과했는데 커버리지 집계만 실패하는, 원인 찾기 어려운 모드다.
+    child_env["COVERAGE_RCFILE"] = str(PROJECT_ROOT / "pyproject.toml")
 
     # 인터프리터·스크립트가 모두 이 파일 안에 고정되어 있고 셸을 거치지 않는다.
     return subprocess.run(  # noqa: S603
