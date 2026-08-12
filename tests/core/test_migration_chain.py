@@ -15,9 +15,9 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 
-from app.core.db.models_registry import import_all_models
+from app.core.apps import Apps
 from app.core.db.session import Base
-from config import db_settings
+from config import INSTALLED_APPS, db_settings
 
 _EXPECTED_TABLES = {
     "user_access_logs",
@@ -70,7 +70,7 @@ def test_migrated_schema_matches_models(tmp_path, monkeypatch):
 
     테이블이 생기기만 하고 컬럼이 어긋나면 운영에서 늦게 터진다.
     """
-    import_all_models()
+    Apps().populate(INSTALLED_APPS, run_ready=False)
     engine = _upgrade_to_head(tmp_path, monkeypatch)
     try:
         with engine.connect() as conn:

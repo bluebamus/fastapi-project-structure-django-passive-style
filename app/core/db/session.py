@@ -218,17 +218,20 @@ async def create_db_tables() -> None:
     테이블을 생성합니다.
 
     Note:
-        모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
-        자동으로 판별한다. 새 기능은 app/features/<name>/ 를 만들고
-        라우터는 main.py 에 명시적으로 include_router 한 줄을 추가한다.
+        모델 수집 대상은 ``config.INSTALLED_APPS`` 다. 디렉터리를 훑지 않는다 —
+        등록하지 않은 앱의 테이블이 개발 DB 에만 생겨 운영과 어긋나는 일을 막는다.
     """
     import asyncio
 
-    from app.core.db.models_registry import import_all_models
+    from app.core.apps import apps
+    from config import INSTALLED_APPS
 
-    # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
-    registered = import_all_models()
-    logger.info("[database] 모델 등록: %d개 모듈 %s", len(registered), registered)
+    # 등록 앱의 models 를 확보한다. 애플리케이션 조립부가 이미 populate 했으면 no-op 이고,
+    # 이 함수를 단독으로 부르는 경로(개발 스크립트)에서는 여기서 채운다.
+    # ready() 는 실행하지 않는다 — 테이블 생성은 앱 결선을 필요로 하지 않는다.
+    apps.populate(INSTALLED_APPS, run_ready=False)
+    registered = [model.__name__ for model in apps.get_models()]
+    logger.info("[database] 모델 등록: %d개 %s", len(registered), registered)
 
     logger.info("Creating database tables...")
 

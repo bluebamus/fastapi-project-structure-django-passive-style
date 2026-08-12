@@ -13,15 +13,20 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ---------------------------------------------------------------------------
-# Import Base and every domain app's models so that autogenerate discovers
-# ALL domain tables. 목록은 models_registry 가 디렉터리에서 판별하므로
-# 새 앱을 추가해도 이 파일은 손대지 않는다.
+# autogenerate 가 볼 테이블 집합은 런타임과 **같은 registry** 로 정한다 —
+# config.INSTALLED_APPS 에 등록된 앱의 models 만 import 한다. 디렉터리 스캔이 아니므로
+# 등록하지 않은 앱의 테이블이 마이그레이션에 새어 들어오지 않는다(FR-06·SEC-02).
+#
+# ``run_ready=False`` 로 3단계 hook 은 건너뛴다. migration 은 스키마만 다뤄야 하고,
+# 앱의 runtime 결선(access-log sink 등록 등)을 실행할 이유가 없다(§6.7).
+# 전역 registry 대신 격리 인스턴스를 쓰는 이유도 같다 — alembic 프로세스가 애플리케이션
+# 전역 상태를 만들지 않는다.
 # ---------------------------------------------------------------------------
-from app.core.db.models_registry import import_all_models  # noqa: E402
+from app.core.apps import Apps  # noqa: E402
 from app.core.db.session import Base  # noqa: E402
-from config import db_settings  # noqa: E402
+from config import INSTALLED_APPS, db_settings  # noqa: E402
 
-import_all_models()
+Apps().populate(INSTALLED_APPS, run_ready=False)
 
 target_metadata = Base.metadata
 

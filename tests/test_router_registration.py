@@ -12,8 +12,9 @@ import importlib
 import pkgutil
 
 import app.features
-from app.core.db.models_registry import import_all_models, iter_model_modules
+from app.core.apps import Apps
 from app.core.db.session import Base
+from config import INSTALLED_APPS
 
 
 def _modules_with_router() -> set[str]:
@@ -51,21 +52,17 @@ def test_every_feature_router_is_mounted():
 
 
 def test_every_model_is_in_metadata():
-    """models/models.py 를 가진 기능은 빠짐없이 Base.metadata 에 등록돼야 한다."""
-    import pathlib
+    """등록 앱의 모델은 빠짐없이 Base.metadata 에 들어간다.
 
-    import_all_models()
+    판정 기준은 디렉터리가 아니라 ``INSTALLED_APPS`` 다 — 미등록 앱의 models.py 는
+    있어도 등록 대상이 아니므로 "빠졌다" 고 볼 수 없다(FR-01).
+    """
+    registry = Apps()
+    registry.populate(INSTALLED_APPS, run_ready=False)
 
-    modules_dir = pathlib.Path(app.features.__path__[0])
-    with_models = {
-        info.name
-        for info in pkgutil.iter_modules(app.features.__path__)
-        if info.ispkg and (modules_dir / info.name / "models" / "models.py").is_file()
-    }
-    registered = {dotted.split(".")[2] for dotted in iter_model_modules()}
-
-    # 모델 없는 기능(auth 등)은 정상 제외 — "파일은 있는데 새는" 경우만 잡는다.
-    assert (
-        with_models - registered == set()
-    ), f"models.py 가 있는데 등록되지 않은 기능: {sorted(with_models - registered)}"
-    assert Base.metadata.tables, "Base.metadata 가 비어 있다 — 마이그레이션이 빈 채로 생성된다"
+    collected = {model.__tablename__ for model in registry.get_models()}
+    assert collected, "등록 앱에서 모델을 하나도 수집하지 못했다"
+    assert collected <= set(Base.metadata.tables), (
+        "registry 가 수집한 모델이 Base.metadata 에 없다: "
+        f"{sorted(collected - set(Base.metadata.tables))}"
+    )
