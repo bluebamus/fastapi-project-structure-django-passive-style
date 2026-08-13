@@ -51,7 +51,7 @@ Django 6.0 공식 문서는 앱 registry를 설정과 introspection을 보관하
 - `app/core/db/models_registry.py`가 `app/features/*`를 파일 시스템에서 스캔해 모델을 import한다.
 - `app/features/admin.py`가 기능별 `admin_views`를 직접 import해 `ADMIN_VIEWS`를 구성한다.
 - Alembic도 자동 모델 스캔 함수에 의존한다.
-- `auth`, rate limiting, validation, 최신 응답 직렬화, 테스트와 CI 계약 등 대상 저장소보다 진전된 기능이 있다.
+- `auth`, validation, 최신 응답 직렬화, 테스트와 CI 계약 등 대상 저장소보다 진전된 기능이 있다.
 
 즉, 기준 저장소는 기능이 풍부하고 현재 개발 기준선으로 적합하지만 앱의 설치 여부를 한 목록에서 통제하지는 않는다.
 
@@ -150,7 +150,7 @@ Django 6.0 공식 문서는 앱 registry를 설정과 introspection을 보관하
 | FR-04 | Registry는 설치된 앱의 Router, Models, Admin 구성요소를 앱 설정에 따라 결선해야 하며, 구성요소가 없는 앱도 허용해야 한다. |
 | FR-05 | Registry는 `get_app_configs()`, `get_app_config(label)`, `is_installed(name)`, `get_models()`, `get_model(app_label, model_name)` 조회 API를 제공해야 한다. |
 | FR-06 | SQLAlchemy model import와 Alembic `target_metadata` 구성은 동일한 설치 앱 목록과 Registry 구현을 사용해야 한다. |
-| FR-07 | FastAPI 애플리케이션은 `create_app()` factory에서 Registry population, 공통 middleware, rate limiter, 예외 처리, Router 및 조건부 Admin을 순서대로 조립해야 한다. |
+| FR-07 | FastAPI 애플리케이션은 `create_app()` factory에서 Registry population, 공통 middleware, 예외 처리, Router 및 조건부 Admin을 순서대로 조립해야 한다. |
 | FR-08 | 각 앱은 `AppConfig.ready()`를 통해 models 준비 후 실행할 초기화 hook을 선언할 수 있어야 한다. |
 | FR-09 | 신규 앱 생성기는 `apps.py`, `<PascalName>Config`, Router entrypoint 및 선택된 계층 골격을 생성해야 한다. |
 | FR-10 | 신규 앱 생성기는 설정 파일을 자동 수정하지 않고, 사용자가 `INSTALLED_APPS`에 붙여 넣을 explicit config class 경로를 출력해야 한다. |
@@ -187,7 +187,7 @@ Django 6.0 공식 문서는 앱 registry를 설정과 introspection을 보관하
 |---|---|
 | BC-01 | 기준 저장소 `a980b71`의 공개 route inventory는 수동 앱 등록으로 의도적으로 비활성화한 fixture를 제외하고 그대로 유지되어야 한다. |
 | BC-02 | `auth` 기능과 OAuth2/JWT 동작은 설치 앱으로 전환된 뒤에도 기존 API 계약과 테스트를 유지해야 한다. |
-| BC-03 | CORS, user-info/access-log middleware, rate limiting, 공통 예외 응답, health 및 Scalar docs 동작을 보존해야 한다. |
+| BC-03 | CORS, user-info/access-log middleware, 공통 예외 응답, health 및 Scalar docs 동작을 보존해야 한다. |
 | BC-04 | SQLAlchemy async session, primary/replica routing, transaction boundary 및 Celery bridge 동작을 보존해야 한다. |
 | BC-05 | 기존 Alembic revision chain과 단일 head를 유지하며 기존 schema를 의도 없이 삭제하거나 재생성해서는 안 된다. |
 | BC-06 | 기준 저장소의 Ruff, format, MyPy, Bandit, Pytest 및 CI 검사를 약화하거나 우회해서는 안 된다. |
@@ -220,7 +220,7 @@ Django 6.0 공식 문서는 앱 registry를 설정과 introspection을 보관하
 | AC-09 | runtime과 Alembic이 수집한 등록 model 집합이 일치하고 `uv run alembic heads` 결과가 1개이며 `uv run alembic check`가 성공한다. | migration/schema parity test와 CLI |
 | AC-10 | generator가 `apps.py`와 올바른 config class를 생성하고, 미등록 상태에서는 비활성이며 등록 후 활성화된다. | `tests/scripts/test_new_app.py` end-to-end test |
 | AC-11 | generator 입력 `../escape`, 절대 경로, separator 포함 이름, symlink escape 및 기존 대상은 실패하고 `app/features` 밖에 파일을 만들거나 기존 파일을 바꾸지 않는다. | generator security tests와 임시 directory snapshot |
-| AC-12 | 기준 저장소의 고정 route inventory, auth, middleware, rate limit, transaction 및 Celery 회귀 테스트가 모두 통과한다. | 전체 Pytest suite |
+| AC-12 | 기준 저장소의 고정 route inventory, auth, middleware, transaction 및 Celery 회귀 테스트가 모두 통과한다. | 전체 Pytest suite |
 | AC-13 | `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy .`, `uv run bandit -ll -q -r app main.py config.py`가 모두 exit code 0이다. | CI와 로컬 품질 gate |
 | AC-14 | `uv run python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=85 -q -rsxX`가 성공하고 summary에 skipped, xfailed, xpassed, deselected가 없다. | CI와 로컬 test gate |
 | AC-15 | 기준선 복사 전후 manifest 검사에서 허용된 docs 외 구현 기준선이 `a980b71` tracked tree와 일치하고 금지 산출물이 대상 Git index에 없다. | `git ls-files`, hash manifest 및 금지 path 검사 |
@@ -402,7 +402,7 @@ def create_app(
 1. 설정과 앱 목록 결정
 2. registry population 완료
 3. FastAPI 생성 및 기존 lifespan 연결
-4. CORS, user info, rate limiter 및 exception handler 등록
+4. CORS, user info 및 exception handler 등록
 5. registry 기반 Router 설치
 6. health 및 Scalar docs 등록
 7. 허용된 경우 registry 기반 SQLAdmin 설치
@@ -532,7 +532,6 @@ chore: reset implementation baseline to fastapi-default-project-structure a980b7
 
 - 기능 앱의 API·Service·Repository·Schema·Model 구현
 - `auth` 기능
-- rate limiting
 - DB session/router
 - middleware와 logging
 - migration chain
@@ -693,7 +692,7 @@ uv run alembic heads
 1. registry 결과만 읽는 `install_routers()`를 구현한다.
 2. registry 결과만 읽는 `install_admin()`을 구현한다.
 3. 기준 `main.py`의 모든 공통 조립 동작을 `create_app()`으로 옮긴다.
-4. rate limiter와 모든 기존 middleware·exception handler를 보존한다.
+4. 모든 기존 middleware·exception handler를 보존한다.
 5. `main.py`를 얇은 entrypoint로 바꾼다.
 6. `create_app()`이 격리 registry와 app 목록을 주입받도록 한다.
 7. route collision, 잘못된 router attribute, 내부 import failure를 fail-fast 처리한다.
@@ -863,7 +862,7 @@ push 전 확인 사항은 다음과 같다.
 | 위험 | 영향 | 대응 |
 |---|---|---|
 | 기준 저장소 전체 복사로 대상 문서·설정 소실 | 프로젝트 목적과 기록 유실 | docs 선행 commit, tracked export, allowlist, manifest 비교 |
-| 대상 main 공통 코드를 통째로 이식 | 최신 auth/rate limit/API 회귀 | 앱 수동화 관련 파일·행동만 선별 이식, default 회귀 suite 고정 |
+| 대상 main 공통 코드를 통째로 이식 | 최신 auth/API 회귀 | 앱 수동화 관련 파일·행동만 선별 이식, default 회귀 suite 고정 |
 | `__init__.py` eager import 잔존 | 3단계 lifecycle 위반 | root package import 후 model module 미로딩 테스트 |
 | 전역 registry 상태가 테스트를 오염 | 비결정적 테스트와 이중 `ready()` | injectable registry, idempotency, isolated factory fixture |
 | `ready()`에서 DB·외부 I/O 수행 | CLI/migration 기동 부작용 | hook 정책 문서화, home sink만 wiring, I/O 금지 테스트/리뷰 |

@@ -10,7 +10,7 @@
 1. 설치 앱 목록 결정 (``config.INSTALLED_APPS`` 또는 주입값)
 2. registry population — config → models → ``ready()``
 3. FastAPI 생성 + lifespan 연결
-4. CORS · user-info middleware · rate limiter · 예외 핸들러
+4. CORS · user-info middleware · 예외 핸들러
 5. registry 기반 Router 설치
 6. health · Scalar docs
 7. 허용된 경우에만 registry 기반 SQLAdmin 설치
@@ -30,7 +30,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
-from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.apps import Apps
@@ -41,7 +40,6 @@ from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
-from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.tags_metadata import tags_metadata
 from app.utils.logs import get_logger
 from config import INSTALLED_APPS, app_settings
@@ -288,12 +286,9 @@ def create_app(
         openapi_url="/openapi.json" if app_settings.DEBUG else None,
     )
 
-    # 4. 미들웨어 · 레이트 리밋 · 예외 핸들러
+    # 4. 미들웨어 · 예외 핸들러
     CustomCORSMiddleware(app).configure_cors()
     setup_user_info_middleware(app)
-
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
     if app_settings.DEBUG:
         logger.info("API 문서 활성화 (DEBUG 모드): /docs, /openapi.json")

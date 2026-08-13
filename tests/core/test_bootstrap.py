@@ -94,11 +94,10 @@ def test_create_app_accepts_an_isolated_registry():
 
 
 def test_create_app_installs_health_and_baseline_middleware():
-    """BC-03: health · CORS · user-info · rate limiter 가 보존된다."""
+    """BC-03: health · CORS · user-info 가 보존된다."""
     app = bootstrap.create_app(registry=Apps(), enable_admin=False)
 
     assert "/health" in app.openapi()["paths"]
-    assert app.state.limiter is not None
     middleware = {m.cls.__name__ for m in app.user_middleware}
     assert "CORSMiddleware" in middleware
 
