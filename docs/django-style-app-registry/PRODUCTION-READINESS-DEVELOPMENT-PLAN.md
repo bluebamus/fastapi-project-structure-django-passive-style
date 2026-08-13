@@ -3,7 +3,7 @@
 ## 1. 문서 정보
 
 - 작성일: 2026-08-11
-- 검토 기준 커밋: `960516d`
+- 검토 기준 커밋: `0db2523`
 - 대상: `fastapi-project-structure-django-passive-style`
 - 목적: Django의 `INSTALLED_APPS`와 유사한 수동 앱 등록 구조를 유지하면서, 현재 구현을 안전하게 운영 배포할 수 있는 수준으로 보완한다.
 - 기준 문서: `README.md`, `docs/ARCHITECTURE.md`

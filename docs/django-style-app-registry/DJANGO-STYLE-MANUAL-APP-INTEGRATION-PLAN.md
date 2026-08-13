@@ -6,7 +6,7 @@
 - 대상 저장소: `fastapi-project-structure-django-passive-style`
 - 기준 저장소: `../fastapi-default-project-structure`
 - 기준 저장소 기준점: `main` / `a980b71`
-- 대상 저장소 참조점: `main` / `85153fb`
+- 대상 저장소 참조점: `main` / `623736a`
 - 산출물 성격: 분석, 기획, 설계 및 개발·통합 작업 계획
 - 이번 작업 범위: 문서 작성만 수행하며 브랜치 생성, 코드 복사, 구현, 커밋 및 푸시는 수행하지 않는다.
 
@@ -57,7 +57,7 @@ Django 6.0 공식 문서는 앱 registry를 설정과 introspection을 보관하
 
 ### 3.3 대상 저장소 main의 재사용 가치
 
-`fastapi-project-structure-django-passive-style` `85153fb`에는 다음 참조 구현이 있다.
+`fastapi-project-structure-django-passive-style` `623736a`에는 다음 참조 구현이 있다.
 
 - `config.INSTALLED_APPS`
 - `app/core/registry.py`
@@ -475,7 +475,7 @@ Apps().populate(INSTALLED_APPS)
 
 ```text
 fastapi-default-project-structure: main == origin/main == a980b71, clean
-fastapi-project-structure-django-passive-style: main == origin/main == 85153fb + docs commit, clean
+fastapi-project-structure-django-passive-style: main == origin/main == 623736a + docs commit, clean
 ```
 
 원격이 변경되었다면 fetch 후 새 commit hash로 이 계획서의 기준점을 갱신하고 차이를 다시 검토한다.

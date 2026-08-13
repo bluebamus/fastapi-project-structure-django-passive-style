@@ -11,7 +11,7 @@
 provenance:
 
 - 구현 기준선: `fastapi-default-project-structure` `a980b71`
-- passive 참조점: `fastapi-project-structure-django-passive-style` `85153fb`
+- passive 참조점: `fastapi-project-structure-django-passive-style` `623736a`
 
 ## 2. 세 가지 등급
 

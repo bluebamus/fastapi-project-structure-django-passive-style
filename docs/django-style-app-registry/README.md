@@ -62,5 +62,5 @@ PASSIVE-APP-PROJECT-DESIGN
 ## 저장소 기준점
 
 - default 구현 기준선: `fastapi-default-project-structure` `a980b71`
-- passive-style 참조점: `fastapi-project-structure-django-passive-style` `85153fb`
+- passive-style 참조점: `fastapi-project-structure-django-passive-style` `623736a`
 - 실제 구현 착수 전에는 두 저장소의 원격 최신 상태와 working tree를 다시 확인하고 기준점이 바뀌면 통합 계획을 갱신한다.
