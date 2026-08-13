@@ -33,7 +33,6 @@ fastapi-default-project-structure/
 │   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
-│   │   ├── rate_limit.py            # slowapi limiter + 초과 핸들러
 │   │   ├── db/
 │   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_session
 │   │   │   ├── router.py            # 읽기/쓰기 라우팅 (RoutingSession)
@@ -180,7 +179,7 @@ def create_app(installed_apps=None, registry=None, *, enable_admin=None) -> Fast
 1. 설치 앱 목록 결정 (config.INSTALLED_APPS 또는 주입값)
 2. registry population (config → models → ready)
 3. FastAPI 생성 + lifespan
-4. CORS · user-info middleware · rate limiter · 예외 핸들러
+4. CORS · user-info middleware · 예외 핸들러
 5. install_routers(app, registry)          ← registry 기반
 6. /health + Scalar docs
 7. ADMIN=true 일 때만 create_admin(...)     ← registry 기반, 여기서 sqladmin import
@@ -380,6 +379,7 @@ uv run alembic upgrade head
 
 | 날짜 | 변경 내용 |
 |------|----------|
+| 2026-08-13 | **레이트 리밋 제거**: `app/core/rate_limit.py`·`slowapi` 의존성·`RATE_LIMIT_*` 설정·`auth` 라우트 데코레이터를 모두 삭제했다. 요청 한도가 필요하면 리버스 프록시나 API gateway 단에서 건다 — 인메모리 카운터는 워커별로 갈라져 실질 한도를 보장하지 못했다. 나머지 미들웨어·예외 핸들러·공개 route inventory 는 불변. |
 | 2026-08-12 | **default `a980b71` 기준선 위에 Django app registry 이식**: 구현 tree 를 기준 저장소 tracked tree 로 교체한 뒤 `app/core/apps/`(`AppConfig`·`Apps`·`wiring`)와 `app/core/bootstrap.create_app()` 을 추가. 설치 앱의 진실 공급원이 `config.INSTALLED_APPS` 로 일원화됐다 — `main.py` 의 `include_router` 나열, 중앙 admin 취합 파일, 디렉터리 스캔 모델 수집을 모두 대체한다. 기능 `__init__.py` 는 가벼운 marker 가 되고, home sink 등록은 `HomeConfig.ready()` 로 이동. 공개 route inventory·auth·rate limit·미들웨어·migration chain 은 불변. 호환 범위: `docs/django-style-app-registry/DJANGO-APP-COMPATIBILITY.md`. |
 | 2026-06-23 | 기능 모델 레지스트리 아키텍처로 전환, 이 문서 최초 작성 |
 | 2026-06-23 | 자동 발견 제거, `app/apps.py` 수동 등록 SSOT로 전환 |
