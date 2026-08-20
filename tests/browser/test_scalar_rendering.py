@@ -28,21 +28,31 @@ RENDER_TIMEOUT_SECONDS = 20.0
 async def _body_when_rendered(page, expected: tuple[str, ...]) -> str:
     """기대 문자열이 전부 나타난 시점의 body 텍스트를 돌려준다.
 
-    Scalar 는 태그 섹션을 **지연 렌더링**한다. 고정 시간 대기(이전 구현: 2.5초)는
-    기계가 한가할 때만 맞고, 부하가 걸리면 아직 접혀 있는 화면을 읽어 실패한다 —
-    실제로 이 파일이 부하 상황에서 간헐적으로 빨간불이 됐다.
+    두 가지를 처리한다.
 
-    단정 자체는 호출부에 그대로 둔다. 여기서는 **기다리기만** 하므로, 문자열이 정말
-    없으면 상한을 채운 뒤 같은 실패가 난다.
+    **지연 렌더링** — Scalar 는 태그 섹션을 나중에 그린다. 고정 시간 대기(최초 구현:
+    2.5초)는 기계가 한가할 때만 맞고, 부하가 걸리면 아직 비어 있는 화면을 읽는다.
+
+    **접힘** — 항목이 많으면 ``Show More`` 뒤로 접는다. 접힌 동안에는 경로만 나오고
+    **요약문이 DOM 에 없다**. 기다려서 풀리는 문제가 아니다 — 그래서 기대 문자열이
+    안 보이면 보이는 ``Show More`` 를 눌러 펼친 뒤 다시 본다.
+
+    단정 자체는 호출부에 그대로 둔다. 여기서는 **기다리고 펼치기만** 하므로, 문자열이
+    정말 없으면 상한을 채운 뒤 같은 실패가 난다.
     """
     deadline = time.monotonic() + RENDER_TIMEOUT_SECONDS
-    body = ""
     while True:
         body = await page.inner_text("body")
         if all(text in body for text in expected):
             return body
         if time.monotonic() >= deadline:
             return body
+
+        for button in await page.get_by_text("Show More").all():
+            try:
+                await button.click(timeout=1_000)
+            except Exception:  # noqa: BLE001 - 펼치기는 최선 노력. 실패해도 다음 회차가 있다.
+                pass
         await page.wait_for_timeout(250)
 
 

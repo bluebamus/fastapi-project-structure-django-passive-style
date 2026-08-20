@@ -74,13 +74,51 @@
   Repository 소관이다. Base 에 다시 올리려면 ADR-016 을 뒤집는 새 ADR 이 필요하다.
 
 ## 3. 인수 기준 (GATE 3 체크리스트)
-- [ ] 전 테스트 실제 실행·통과 (기준선 307 → 예제 2종 추가 후 실제 수집 수를 run-log 에 기록, 조용한 SKIP 아님)
-- [ ] `pytest -m mysql` 이 compose 인스턴스에서 실제 실행 (skip 시 실패 처리)
-- [ ] alembic upgrade head → 신규 revision downgrade → 재-upgrade → schema drift 0
-- [ ] 전 소스 타입 검사(mypy)·정적분석 클린, 게이트 stdout/stderr UTF-8 고정 (C-7)
-- [ ] 불변식 구조 증거: INV-1 → 세션 의존성 계약 테스트 / INV-2 → 계층 AST 검사 / INV-3·4 → registry 회귀 테스트 / INV-5 → secret canary probe / INV-6 → 문서 경로·심볼·환경변수 실재 검사
-- [ ] OpenAPI 문서 규칙 비공허성 검증 (plan §8)
-- [ ] 질의 수준(design-baseline §0 = 적극)에 맞춘 P/D 질문 깊이
+- [x] 전 테스트 실제 실행·통과 — 완료 시점 **594 passed / 0 skipped**(run-log Round 10), 2026-08-20 재측정 **632 passed / skip·xfail·deselect 0**
+- [x] `pytest -m mysql` 이 compose 인스턴스에서 실제 실행 — 2026-08-20 재측정 **22 passed / skip 0**. 게이트 7단계가 skip 을 실패로 처리한다
+- [x] alembic upgrade head → downgrade → 재-upgrade → drift 0 — `tests/integration/test_mysql_migration_roundtrip.py` 5건 (`head_to_base_to_head_round_trip` · `new_revisions_have_a_working_downgrade` · `migrated_schema_matches_the_registry_models` 등), MySQL 에서 실제 실행
+- [x] mypy·정적분석 클린, stdio UTF-8 고정 — 게이트 1~4단계(ruff format·ruff check·mypy·bandit) + `tests/test_layering_and_openapi.py::test_ci_pins_utf8_stdio` · `::test_python_subprocesses_in_tests_force_utf8`
+- [x] 불변식 구조 증거: **INV-1~25** 각각에 검사가 연결됨
+      (이 줄의 문구는 v0.1 당시 **INV 6개** 기준이었고 이후 §2-3 이 25개로 늘었다.
+      2026-08-20 재검수에서 전수 대조했다 — 아래 매핑 참조)
+- [x] OpenAPI 문서 규칙 비공허성 검증 — 게이트 6단계 `scripts/openapi_revert_check.py` ("규칙이 실제로 결함을 잡는지 — 통과만으로는 알 수 없다")
+- [x] 질의 수준(design-baseline §0 = 적극) 준수 — Round 0~11 각 라운드 로그에 P/D 질의와 결정 근거가 남아 있다
+
+
+### 3-1. 불변식 → 검사 매핑 (2026-08-20 전수 대조)
+
+| INV | 검사 |
+|---|---|
+| INV-1 세션 선택 | `tests/test_read_path_no_commit.py` · `tests/core/test_db_router.py` |
+| INV-2 Repository 에서만 분기 | `tests/test_orm_raw_parity.py` |
+| INV-3 미등록 앱 비합류 | `tests/core/apps/test_manual_registration.py` · `test_installed_apps.py` |
+| INV-4 migration == runtime metadata | `tests/core/test_alembic_metadata.py` |
+| INV-5 secret canary | `tests/core/test_security_hardening.py` |
+| INV-6 문서 참조 실재 | `tests/test_docs_references.py` |
+| INV-7 예외 detail 원문 차단 | `tests/core/test_db_error_conversion.py` |
+| INV-8 로그 보간 금지 | `tests/core/test_security_hardening.py` · `tests/core/test_raw_repository_base.py::test_logs_carry_query_name_but_not_sql_or_params` |
+| INV-9 커밋은 View 1회 | `tests/test_read_path_no_commit.py` · `tests/test_orm_raw_parity.py::test_no_feature_commits_outside_the_view` |
+| INV-10 startup 실패·shutdown 동일 cleanup | `tests/core/test_runtime_lifecycle.py` |
+| INV-11 create_all 대상 한정 | `tests/core/test_bootstrap.py` · `tests/core/test_alembic_metadata.py` |
+| INV-12 `/health` 는 DB 를 안 본다 · `/ready` | `tests/core/test_runtime_lifecycle.py` (503 응답·스키마 포함) |
+| INV-13 Mixin 컬럼 배치 | `tests/core/test_model_mixins.py` |
+| INV-14 DB 예외 경계 변환 | `tests/core/test_db_error_conversion.py` |
+| INV-15 `BaseRepository` 공개 8개 | `tests/core/test_repository_base.py` |
+| INV-16 Raw DML read-only 거부 | `tests/core/test_raw_routing.py` · `tests/core/test_db_router_env.py` |
+| INV-17 Raw commit 없음·반환 형태 | `tests/core/test_raw_repository_base.py` |
+| INV-18 SQL 은 Raw Repository 밖에 없다 | `tests/test_orm_raw_parity.py::test_only_the_raw_repository_owns_sql` · `tests/core/test_raw_repository_base.py::test_raw_base_owns_no_domain_sql` |
+| INV-19 예제 계층 동일 | `tests/test_orm_raw_parity.py` |
+| INV-20 schema key `__` 없음 | `tests/test_openapi_contract.py` |
+| INV-21 선언 태그 == 사용 태그 | `tests/test_openapi_contract.py` |
+| INV-22 옛 세션 이름 부재 | `tests/core/test_runtime_lifecycle.py` · `tests/test_docs_references.py::test_session_dependency_names_in_docs_are_importable` |
+| INV-23 문서 심볼·경로·환경변수 실재 | `tests/test_docs_references.py` (2026-08-20 이후 `project-guide` 현행 버전까지 포함) |
+| INV-24 저장소 줄바꿈 LF | **실행 테스트 없음.** `.gitattributes` 의 `* text=auto eol=lf` 가 커밋 시점에 강제한다 |
+| INV-25 Scalar 실렌더링 | `tests/browser/test_scalar_rendering.py` (게이트 8단계) |
+
+**INV-24 에 테스트를 두지 않는 이유.** 줄바꿈은 git 이 커밋 시점에 정규화한다. 작업
+디렉터리 파일을 읽어 CRLF 를 금지하는 테스트를 쓰면 Windows 체크아웃에서 오히려 실패한다
+— 실제로 이 저장소의 작업 트리에는 CRLF 가 있고 `.gitattributes` 가 blob 을 LF 로 만든다.
+검사를 추가하면 git 이 이미 보장하는 것을 잘못된 층에서 다시 주장하게 된다.
 
 ## 4. 변경 이력
 - v0.1 (2026-08-18): 최초 작성. 기준선 `9c93803` 확정.
@@ -95,3 +133,6 @@
 - v0.10 (2026-08-19): Round 9 반영 — Phase 6 완료. INV-20~21 추가.
 - v1.0 (2026-08-19): Round 10 반영 — **전체 작업 완료**. INV-22~23 추가.
 - v1.1 (2026-08-19): Round 11 반영 — 잔여 위험 2건 해소. INV-24~25 추가.
+- v0.6 (2026-08-20): 재검수. 미체크로 남아 있던 인수 기준 7칸을 근거와 함께 닫고,
+  불변식 범위 문구를 실제 집합(INV-1~25)에 맞췄다. §3-1 매핑표를 추가했다.
+  인수 기준 자체는 바꾸지 않았다.

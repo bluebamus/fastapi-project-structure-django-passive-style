@@ -129,6 +129,30 @@ def live_server() -> Iterator[str]:
             process.wait(timeout=10)
 
 
+#: Scalar 가 그려졌다고 볼 최소 본문 길이. `test_scalar_page_renders` 가 쓰는 신호와 같다.
+RENDERED_BODY_MIN_CHARS = 1_000
+
+#: 그리기를 기다리는 상한.
+RENDER_TIMEOUT_SECONDS = 20.0
+
+
+async def _wait_until_painted(page) -> None:
+    """Scalar 가 실제로 칠해질 때까지 기다린다.
+
+    ``networkidle`` 은 **그리기 완료를 뜻하지 않는다.** JS 가 받아온 스키마로 화면을
+    만드는 동안 네트워크는 조용하다. 그래서 본문 길이로 본다 — 부하가 걸린 기계에서
+    아직 빈 화면(102자)을 읽어 검사가 실패한 적이 있다.
+
+    **기다리기만 하고 단정하지 않는다.** 끝내 안 그려지면 그건 `test_scalar_page_renders`
+    가 실패시킬 일이지, 픽스처가 가로챌 일이 아니다.
+    """
+    deadline = time.monotonic() + RENDER_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if len(await page.inner_text("body")) >= RENDERED_BODY_MIN_CHARS:
+            return
+        await page.wait_for_timeout(250)
+
+
 @pytest.fixture
 async def docs_page(live_server: str) -> AsyncIterator:
     """`/docs` 를 열고 Scalar 가 그려질 때까지 기다린 페이지.
@@ -169,6 +193,7 @@ async def docs_page(live_server: str) -> AsyncIterator:
 
         try:
             await page.goto(f"{live_server}/docs", wait_until="networkidle", timeout=30_000)
+            await _wait_until_painted(page)
             yield page
         finally:
             await browser.close()
