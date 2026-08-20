@@ -2,10 +2,10 @@
 
 | 항목 | 값 |
 |---|---|
-| 문서 버전 | 1.0.0 |
-| 작성일 | 2026-08-18 |
-| 대상 프로젝트 | fastapi-default-project-structure 0.1.0 |
-| 적용 코드 기준 | Git `9c93803` |
+| 문서 버전 | 1.1.0 |
+| 작성일 | 2026-08-20 |
+| 대상 프로젝트 | fastapi-project-structure-django-passive-style 0.1.0 |
+| 적용 코드 기준 | Git `b88f654` |
 
 ## 1. 전체 흐름
 

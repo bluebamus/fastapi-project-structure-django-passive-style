@@ -1,4 +1,4 @@
-# FastAPI Default Project Structure
+# FastAPI Project Structure — Django Passive Style
 
 Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
 Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공급원은 `config.INSTALLED_APPS` 이고, 등록된 앱의 Router·Models·Admin 결선은 app registry 가 컨벤션대로 처리합니다. 디렉터리를 만드는 것만으로는 앱이 설치되지 않습니다.
@@ -10,13 +10,13 @@ Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공
 - [아키텍처](#아키텍처)
 - [프로젝트 구조](#프로젝트-구조)
 - [데이터 흐름](#데이터-흐름)
+- [ORM / Raw 데이터 접근](#orm--raw-데이터-접근)
 - [핵심 패턴](#핵심-패턴)
 - [시작하기](#시작하기)
 - [환경 설정](#환경-설정)
 - [로깅 시스템](#로깅-시스템)
 - [접속 로그 미들웨어](#접속-로그-미들웨어)
 - [인증 (JWT)](#인증-jwt)
-- [레이트 리밋](#레이트-리밋)
 - [신규 기능 개발 가이드](#신규-기능-개발-가이드)
 - [API 문서](#api-문서)
 
@@ -112,7 +112,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 > 상세한 아키텍처 설명은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
 ```
-fastapi-default-project-structure/
+fastapi-project-structure-django-passive-style/
 ├── main.py                      # 진입점: create_app() 호출만 (얇은 entrypoint)
 ├── config.py                    # 환경 설정 (Pydantic Settings) — 설정 단일 출처
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
@@ -123,17 +123,19 @@ fastapi-default-project-structure/
 ├── app/
 │   ├── features/                # 기능 단위 vertical slice — INSTALLED_APPS 로 설치
 │   │   ├── admin.py             # 기능 소유 SQLAdmin ModelView + admin_views
-│   │   └── <name>/              # 각 기능 디렉토리
-│   │       ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
-│   │       ├── admin.py         # 이 기능 모델의 ModelView + admin_views (선택)
-│   │       ├── api/routers/     # router.py + v1/ 엔드포인트
-│   │       ├── models/          # SQLAlchemy ORM 모델
-│   │       ├── schemas/         # Pydantic 스키마
-│   │       ├── services/        # 비즈니스 로직
-│   │       ├── repositories/    # 데이터 접근 계층
-│   │       ├── dependencies/    # 기능 의존성 (Service 구성 — 커밋은 핸들러)
-│   │       ├── exceptions.py    # 기능 예외 (선택)
-│   │       └── tests/           # 이 기능의 테스트
+│   │   ├── <name>/              # 각 기능 디렉토리
+│   │   │   ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
+│   │   │   ├── admin.py         # 이 기능 모델의 ModelView + admin_views (선택)
+│   │   │   ├── api/routers/     # router.py + v1/ 엔드포인트
+│   │   │   ├── models/          # SQLAlchemy ORM 모델
+│   │   │   ├── schemas/         # Pydantic 스키마
+│   │   │   ├── services/        # 비즈니스 로직
+│   │   │   ├── repositories/    # 데이터 접근 계층
+│   │   │   ├── dependencies/    # 기능 의존성 (Service 구성 — 커밋은 핸들러)
+│   │   │   ├── exceptions.py    # 기능 예외 (선택)
+│   │   │   └── tests/           # 이 기능의 테스트
+│   │   ├── catalog/             # ORM 참조 예제 — BaseRepository 로 상품 CRUD
+│   │   └── reports/             # Raw SQL 참조 예제 — RawRepositoryBase 로 매출 집계
 │   ├── core/                    # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── tags_metadata.py     # OpenAPI 태그 설명
@@ -141,7 +143,8 @@ fastapi-default-project-structure/
 │   │   │   ├── session.py       # 엔진, get_routed_db_session / get_read_only_db_session, background_session
 │   │   │   ├── router.py        # 읽기/쓰기 라우팅 (RoutingSession)
 │   │   ├── models/models_base.py   # SQLAlchemy Base + TimestampMixin·UUIDMixin
-│   │   ├── repositories/        # BaseRepository (제네릭 CRUD)
+│   │   ├── repositories/        # ORM: BaseRepository / Raw: RawRepositoryBase
+│   │   │                        #   두 계열은 상속 관계가 없다
 │   │   ├── services/            # BaseService
 │   │   └── middlewares/         # CORS, UserInfo, AccessLogSink, background_tasks
 │   │
@@ -158,7 +161,8 @@ fastapi-default-project-structure/
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
 ├── docs/
 │   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-│   └── QUICKSTART.md            # 최소 실행 경로
+│   ├── QUICKSTART.md            # 최소 실행 경로
+│   └── project-guide/v1.1/      # 심화 가이드 9종(현행). v1.0 은 이전 기록
 └── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
 ```
 
@@ -325,6 +329,37 @@ async def get_access_logs(
 
 ---
 
+## ORM / Raw 데이터 접근
+
+이 구조는 데이터 접근 계층을 **두 계열**로 나눠 둡니다. 새 기능에서 가장 먼저 정할 것이
+어느 쪽을 쓰느냐이고, 갈라지는 지점은 **Repository 구현 하나뿐**입니다 — 스키마·서비스·
+라우터·앱 등록의 작성 방식은 두 경우가 같습니다.
+
+| | ORM | Raw SQL |
+|---|---|---|
+| 상속할 Base | `BaseRepository` (`app/core/repositories/repository_base.py`) | `RawRepositoryBase` (`app/core/repositories/raw_repository_base.py`) |
+| 돌려주는 것 | 모델 인스턴스 | `RowMapping` / scalar / rowcount |
+| 참조 예제 | `app/features/catalog/repositories/product_repository.py` | `app/features/reports/repositories/sales_report_repository.py` |
+
+**기본값은 ORM 입니다.** Raw 는 ORM 이 못 하는 일이 생겼을 때 꺼냅니다 — 여러 테이블
+집계·리포트, 대량 조회에서 필요한 컬럼만, DB 고유 기능. 취향 문제가 아니라, ORM 경로는
+모델이 스키마를 소유해 마이그레이션과 어긋나면 그 자리에서 깨지는 반면 Raw 경로는 SQL
+문자열이 스키마를 몰라 실행 시점까지 아무도 모르기 때문입니다.
+
+두 계열은 **상속 관계가 없습니다**. 하나의 Base 가 모델과 row 를 함께 돌려주면 호출부가
+무엇을 받았는지 타입으로 알 수 없기 때문입니다. 공통 규칙은 그대로입니다 — Repository 는
+commit 하지 않고, 트랜잭션 경계는 핸들러가 소유합니다.
+
+`RawRepositoryBase` 를 상속했다면 추가로 지켜야 하는 것이 있습니다: SQL 은 `text()` 로
+감싼 `TextClause`, 외부 값은 전부 named bind parameter, `query_name` 은 코드 상수,
+방언 함수는 SQL 에 넣지 않음. 어기면 AST 검사와 테스트가 실패합니다.
+
+> **선택 기준과 규칙 전문**: [docs/project-guide/v1.1/09-orm-vs-raw-decision.md](docs/project-guide/v1.1/09-orm-vs-raw-decision.md)
+> — 판단 기준 표, Raw 전용 제약 5가지, 자주 틀리는 지점, 결과 API 의 의미가 있습니다.
+> 심화 가이드 전체는 [docs/project-guide/v1.1/](docs/project-guide/v1.1/README.md) 를 보세요.
+
+---
+
 ## 핵심 패턴
 
 ### 1. Repository 패턴
@@ -481,8 +516,8 @@ class UserRepository(BaseRepository[User]):
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/your-repo/fastapi-default-project-structure.git
-cd fastapi-default-project-structure
+git clone https://github.com/bluebamus/fastapi-project-structure-django-passive-style.git
+cd fastapi-project-structure-django-passive-style
 ```
 
 ### 2. 가상환경 설정

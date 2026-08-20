@@ -154,6 +154,20 @@ INSTALLED_APPS: list[str] = [
 Admin·`ready()` 어디에도 나오지 않는다. `main.py`·`migrations/env.py`·`session.py` 는
 손대지 않는다. 미등록 상태는 `tests/core/apps/test_manual_registration.py` 가 고정한다.
 
+### 그다음 정할 것 — ORM 인가 Raw 인가
+
+골격을 만들었으면 데이터 접근 방식을 고른다. 이 구조에서 **갈라지는 지점은 Repository
+구현 하나뿐**이고 나머지 파일의 작성 방식은 같다.
+
+- **기본값은 ORM** — `BaseRepository` 를 상속한다. 예제:
+  `app/features/catalog/repositories/product_repository.py`
+- **집계·리포트처럼 ORM 이 버거우면 Raw** — `RawRepositoryBase` 를 상속한다. 예제:
+  `app/features/reports/repositories/sales_report_repository.py`
+
+판단 기준과 Raw 전용 제약(bind parameter 강제, `query_name` 코드 상수, 방언 함수 배제)은
+[ORM vs Raw 결정 가이드](project-guide/v1.1/09-orm-vs-raw-decision.md) 에 있다.
+심화 가이드 전체는 [docs/project-guide/v1.1/](project-guide/v1.1/README.md).
+
 ---
 
 ## 자주 막히는 지점
