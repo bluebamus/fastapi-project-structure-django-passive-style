@@ -99,3 +99,24 @@ pytest(단위+불변식+공개 API+OpenAPI) · OpenAPI fail-on-revert · `-m mys
 | 0 | 0 | 2 | 2 | 2 | 6 | NOT CONVERGED (Open Fix 6) |
 | 0.5 | 0 | 2 | 0 | 0 | 2 | NOT CONVERGED (Open Fix 8) |
 | 1 | 0 | 0 | 1 | 2 | 3 (L-009·L-010 Fixed / L-011 Accepted) | **CONVERGED** (Open Fix 0) |
+
+## Round 1.1 — 2026-08-20 (base SHA: `95a7428`) — 문서 정합성 정정
+
+- **트리거:** 푸시 후 잔여 작업 확인. 미닫힘 체크박스를 훑다가 `audit-report.md` §5 의
+  **열 칸이 전부 미체크**인 것을 발견 — Round 1 의 `CONVERGED` 선언과 표면상 모순이다.
+- **원인:** Round 1 마감 때 `checklist.md` 만 닫고 `audit-report.md` 를 보지 않았다.
+  charter §4 가 "인수 기준은 audit-report §5 를 그대로 쓴다" 고 선언했으므로 그쪽이 정본이다.
+  같은 그룹에 체크박스 파일이 둘인데 한쪽만 닫은 상태였다.
+- **재측정:** 아홉 칸 전부 실질 충족이었다. Raw 등장 3/3 문서 · 구조 트리 실물 확인 ·
+  09 문서 실재 · 가이드 링크 3·2·2회 · v1.1 죽은 세션 API 0회 · BASE_DOCS 13문서 ·
+  fail-on-revert 5종 · 게이트 8/8(CI run `32335993433` 2 job success).
+- **닫지 않은 것 1건:** 학습자 시나리오 수동 검증. RL-03 이 자동화 불가로 명시한 사람
+  판정이라 기계가 닫지 않는다. 근거 없이 체크하면 이 문서 전체의 신뢰가 떨어진다.
+- **함께 관측(다른 그룹, 이번에 고치지 않음):** `orm-raw-repository/charter.md` §3 의
+  인수 기준 8칸도 미체크인데 그 그룹의 `completion-report.md` 는 "열린 결함 0건" 이라고
+  적혀 있다. 같은 종류의 어긋남이다. 근거는 그 그룹 run-log 에 있으나(594 passed 기록,
+  mysql 실행, 게이트 8단계) **INV-1~6 구조 증거 매핑을 한 건씩 대조해야** 닫을 수 있어
+  이 라운드에서 손대지 않았다 — 남의 그룹을 근거 없이 체크하지 않는다.
+- **변경:** `audit-report.md` 만 수정. 코드·테스트 diff 0.
+- **수렴 판정:** `CONVERGED` 유지 (Open Fix 0). 신규 결함 0, 문서 정합성 정정 1.
+

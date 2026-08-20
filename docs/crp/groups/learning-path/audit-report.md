@@ -195,16 +195,16 @@ L-001·L-002 가 다시 생기면 실패해야 한다. 이게 없으면 다음 P
 
 작업이 끝났는지는 **아래를 전부 만족할 때** 판정한다.
 
-- [ ] `RawRepositoryBase` 가 README·QUICKSTART·ARCHITECTURE 중 **최소 2곳**에 등장
-- [ ] `catalog`·`reports` 가 README 구조 트리에 실물로 등장
-- [ ] "언제 ORM, 언제 Raw" 판단 기준이 **학습 문서**(설계 문서 아님)에 존재
-- [ ] 진입 문서에서 `project-guide` 로의 링크 존재
-- [ ] `project-guide v1.1` 이 Phase 4~7 산출물을 반영
-- [ ] T-3 검사가 있고, 위 항목을 지우면 **실패**한다(fail-on-revert 확인)
-- [ ] **v1.1 에 `get_session()`·`get_read_session()`·`get_write_session()` 이 0회** (L-007)
-- [ ] **`BASE_DOCS` 가 `docs/project-guide/<현행>/*.md` 를 포함** (L-008) — 넣은 채로 초록
-- [ ] `scripts/review_gate.py` 8단계 통과
-- [ ] 학습자 시나리오 수동 검증: "README 만 읽고 Raw 기능을 하나 만들 수 있는가"
+- [x] `RawRepositoryBase` 가 README·QUICKSTART·ARCHITECTURE 중 **최소 2곳**에 등장 — **3/3 문서**
+- [x] `catalog`·`reports` 가 README 구조 트리에 실물로 등장 — 트리 블록 한정 검사로 확인
+- [x] "언제 ORM, 언제 Raw" 판단 기준이 **학습 문서**(설계 문서 아님)에 존재 — `docs/project-guide/v1.1/09-orm-vs-raw-decision.md`
+- [x] 진입 문서에서 `project-guide` 로의 링크 존재 — 3·2·2회
+- [x] `project-guide v1.1` 이 Phase 4~7 산출물을 반영 — `RawRepositoryBase` 11 · `RawCRUDBase` 2 · catalog 20 · reports 19회
+- [x] T-3 검사가 있고, 위 항목을 지우면 **실패**한다 — 5종 실증(제목·Raw 등장·가이드 링크·버전 드리프트·구조 트리). 여섯 번째가 헛통과해 검사 범위를 트리 블록으로 좁힌 뒤 재증명
+- [x] **v1.1 에 `get_session()`·`get_read_session()`·`get_write_session()` 이 0회** (L-007)
+- [x] **`BASE_DOCS` 가 `docs/project-guide/<현행>/*.md` 를 포함** (L-008) — 진입 3 + v1.1 10 = **13문서**, 넣은 채로 초록
+- [x] `scripts/review_gate.py` 8단계 통과 — 로컬 8/8, CI run `32335993433` 2 job success
+- [ ] 학습자 시나리오 수동 검증: "README 만 읽고 Raw 기능을 하나 만들 수 있는가" — **사람 판정(RL-03). 자동화 불가이므로 기계가 닫지 않는다**
 
 ---
 
@@ -266,3 +266,14 @@ grep -c "project-guide" README.md docs/QUICKSTART.md docs/ARCHITECTURE.md
 git log -1 --format="%ci" -- docs/project-guide/
 git log -1 --format="%ci" -- app/core/repositories/raw_repository_base.py
 ```
+
+---
+
+## 8. 완료 판정 갱신 (2026-08-20, Round 1 이후)
+
+§5 의 열 칸 중 **아홉 칸을 근거와 함께 닫았다.** 마지막 한 칸은 RL-03 이 자동화 불가로
+명시한 사람 판정이라 열어 둔다.
+
+이 절을 덧붙인 이유: Round 1 을 `CONVERGED` 로 판정하면서 `checklist.md` 만 닫고 이 문서를
+보지 않았다. 같은 그룹에 체크박스가 있는 파일이 둘인데 한쪽만 닫으면, 수렴 선언과 문서가
+어긋난 채로 남는다 — 다음에 이 저장소를 여는 사람은 어느 쪽을 믿어야 할지 알 수 없다.
