@@ -319,6 +319,30 @@
   반영하지 않았다), (3) 브라우저 단계가 붙으며 20분 예산 초과. 수정 후 두 job 모두
   success. **미검증 6번(CI 실제 실행) 해소.**
 
+### Round 12 — 2026-08-20 (base SHA: `ed86e57`) — 재검수(문서 정합성만)
+
+- **트리거:** `learning-path` 그룹 Round 1.1 에서 같은 종류의 어긋남을 고치다 이 그룹에도
+  있는 것을 관측했다. `completion-report.md` 는 "열린 결함 0건" 인데 `charter.md` §3 의
+  인수 기준 **7칸이 전부 미체크**였다 — 완료 선언과 문서가 표면상 모순.
+- **원인:** Round 10~11 마감 때 `checklist.md` 는 닫았고 `charter.md` §3 은 보지 않았다.
+  체크박스가 있는 파일이 둘인데 한쪽만 닫은 것이다.
+- **재측정:** 전부 실질 충족이었다.
+  - 전 테스트 **632 passed / skip·xfail·deselect 0** (완료 시점 594 → 이후 문서 그룹이 증가분)
+  - `pytest -m mysql` **22 passed / skip 0** (게이트 7단계가 skip 을 실패로 처리)
+  - alembic roundtrip 5건이 MySQL 에서 실제 실행 — downgrade 후 base 에 테이블 0, 재-upgrade 성공
+  - 게이트 8단계 통과, stdio UTF-8 고정 검사 2건 실재
+  - OpenAPI 비공허성은 `scripts/openapi_revert_check.py` 가 게이트 6단계로 상주
+- **발견 1건 (문구 드리프트):** "불변식 구조 증거" 항목이 v0.1 당시 **INV 6개** 기준 문구였는데
+  §2-3 이 이후 **25개**로 늘었다. 자매 저장소(active-style)가 Round 12 에서 겪은 것과 같은
+  드리프트다. 25개를 전수 대조해 §3-1 매핑표로 남기고 범위 문구를 맞췄다.
+- **관측 1건 (예외로 남김):** INV-24(줄바꿈 LF)만 **실행 테스트가 없다.** 대신
+  `.gitattributes` 의 `* text=auto eol=lf` 가 커밋 시점에 강제한다. 테스트를 만들지 않기로
+  했다 — 작업 디렉터리를 읽어 CRLF 를 금지하면 Windows 체크아웃에서 실패한다(이 저장소의
+  작업 트리에는 실제로 CRLF 가 있고 git 이 blob 을 LF 로 만든다). git 이 이미 보장하는 것을
+  잘못된 층에서 다시 주장하는 검사는 거짓 실패만 만든다.
+- **변경:** `charter.md` 만 수정(v0.6). 코드·테스트·설정 diff 0.
+- **수렴 판정:** `CONVERGED` 유지 (Open Fix 0). 신규 결함 0, 문서 정합성 정정 1.
+
 ## 심각도 추세
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -334,3 +358,4 @@
 | 9 | 0 | 0 | 2 | 2 | 4 | CONVERGED — **Phase 6 완료** |
 | 10 | 0 | 1 | 2 | 0 | 3 | CONVERGED — **전체 작업 완료** |
 | 11 | 0 | 1 | 0 | 0 | 1 | CONVERGED — 잔여 위험 2건 해소 |
+| 12 | 0 | 0 | 0 | 0 | 0 (문서 정합성 정정 1) | **CONVERGED** (Open Fix 0) |
