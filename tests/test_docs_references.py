@@ -37,6 +37,12 @@ def _current_guide_docs() -> tuple[str, ...]:
     L-007 이 그렇게 생겼다. 가이드가 ``get_session()`` 을 가르쳤는데 코드에는 없었고,
     이 검사가 진입 문서 3종만 보고 있어서 아무도 몰랐다(L-008).
     """
+    latest = _latest_guide_dir()
+    return tuple(f"docs/project-guide/{latest.name}/{f.name}" for f in sorted(latest.glob("*.md")))
+
+
+def _latest_guide_dir() -> Path:
+    """``docs/project-guide/`` 의 최신 버전 폴더."""
     root = REPO_ROOT / "docs" / "project-guide"
     versions = sorted(
         (d for d in root.iterdir() if d.is_dir() and re.fullmatch(r"v\d+(?:\.\d+)*", d.name)),
@@ -44,8 +50,7 @@ def _current_guide_docs() -> tuple[str, ...]:
         key=lambda d: tuple(int(part) for part in d.name[1:].split(".")),
     )
     assert versions, "docs/project-guide/ 에 버전 폴더가 없다 — 검사가 헛통과한다"
-    latest = versions[-1]
-    return tuple(f"docs/project-guide/{latest.name}/{f.name}" for f in sorted(latest.glob("*.md")))
+    return versions[-1]
 
 
 #: 진입 문서 + 현행 가이드. 학습자가 실제로 따라 하는 문서 전체.
@@ -234,3 +239,86 @@ def test_session_dependency_names_in_docs_are_importable():
     missing = sorted(name for name in names if not hasattr(db_session, name))
 
     assert not missing, f"문서가 존재하지 않는 세션 Dependency 를 안내한다: {missing}"
+
+
+# =============================================================================
+# 학습 경로 잠금 (T-3)
+#
+# 위의 검사들은 "문서가 **틀린 것**을 가리키지 않는가" 를 본다. 아래는 반대다 —
+# "문서에 **있어야 할 것이 있는가**". 이 그룹의 결함(L-001·L-003·L-005·L-006)은
+# 전부 후자였고, 그래서 어떤 검사도 실패하지 않은 채 학습 경로가 끊겨 있었다.
+# =============================================================================
+
+#: 진입 문서에 반드시 도달 경로가 있어야 하는 항목.
+#: ``(라벨, 찾을 문자열, 최소 몇 개 문서에 있어야 하는가)``
+REQUIRED_IN_ENTRY_DOCS: tuple[tuple[str, str, int], ...] = (
+    # Raw 계층의 존재 자체. 이게 0 이던 것이 L-001 이다.
+    ("Raw Repository Base", "RawRepositoryBase", 2),
+    # 두 참조 예제로 가는 실제 경로.
+    ("ORM 참조 예제", "app/features/catalog/repositories/product_repository.py", 2),
+    ("Raw 참조 예제", "app/features/reports/repositories/sales_report_repository.py", 2),
+    # 심화 가이드로 나가는 문. 0 이던 것이 L-003 이다.
+    ("심화 가이드 링크", "project-guide/", 3),
+    # 선택 기준 문서. "언제 ORM, 언제 Raw" 가 어디에도 없던 것이 L-004 다.
+    ("ORM/Raw 결정 가이드", "09-orm-vs-raw-decision.md", 2),
+)
+
+
+@pytest.mark.parametrize(("label", "needle", "minimum"), REQUIRED_IN_ENTRY_DOCS)
+def test_learning_path_is_reachable_from_entry_docs(label: str, needle: str, minimum: int):
+    """학습 경로의 각 지점이 진입 문서에서 도달 가능하다."""
+    found = [path for path in ENTRY_DOCS if needle in _current_section(path)]
+
+    assert (
+        len(found) >= minimum
+    ), f"{label}({needle}) 가 진입 문서 {minimum}곳 이상에 없다 — 있는 곳: {found or '없음'}"
+
+
+def test_entry_docs_point_at_the_current_guide_version():
+    """진입 문서가 **최신** 버전 가이드를 가리킨다.
+
+    v1.2 를 만들고 링크를 안 고치면 학습자는 옛 문서로 간다. 그건 링크가 깨진 것보다
+    나쁘다 — 깨진 링크는 눈에 띄지만 옛 문서는 그럴듯하게 읽힌다.
+    """
+    latest = _latest_guide_dir().name
+    stale: dict[str, list[str]] = {}
+    for path in ENTRY_DOCS:
+        versions = set(re.findall(r"project-guide/(v\d+(?:\.\d+)*)/", _current_section(path)))
+        if versions - {latest}:
+            stale[path] = sorted(versions - {latest})
+
+    assert not stale, f"진입 문서가 최신({latest}) 이 아닌 가이드 버전을 가리킨다: {stale}"
+
+
+def test_readme_title_identifies_this_repository():
+    """README 첫 줄이 이 저장소를 식별한다.
+
+    L-005 는 기준선 교체 때 형제 저장소의 제목이 남은 것이었다. 학습자가 **가장 먼저
+    보는 한 줄**이라 틀리면 나머지를 다 의심하게 된다.
+    """
+    title = next(
+        line
+        for line in (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+
+    assert "Django Passive Style" in title, f"README 제목이 이 저장소를 식별하지 않는다: {title!r}"
+    assert "Default" not in title, f"형제 저장소 이름 잔재가 README 제목에 있다: {title!r}"
+
+
+def test_readme_structure_tree_lists_both_example_features():
+    """README **구조 트리 안**에 두 참조 예제가 실물로 있다.
+
+    ``<name>/`` 자리 표시자만 있으면 두 예제가 있다는 사실을 트리에서 알 수 없다(L-006).
+
+    본문 전체가 아니라 트리 블록만 본다 — 다른 절에서 ``app/features/catalog/...`` 경로를
+    인용하는 것만으로 이 검사가 통과하면, 트리에서 두 예제를 지워도 아무도 모른다.
+    """
+    text = _current_section("README.md")
+    heading = text.index("## 프로젝트 구조")
+    start = text.index("```", heading)
+    tree = text[start : text.index("```", start + 3)]
+
+    missing = [name for name in ("catalog/", "reports/") if name not in tree]
+
+    assert not missing, f"README 구조 트리에 없는 예제 기능: {missing}"
