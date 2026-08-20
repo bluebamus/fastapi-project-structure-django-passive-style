@@ -8,28 +8,54 @@
 from typing import Any
 
 from fastapi import status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =============================================================================
 # 예외 응답 스키마
 # =============================================================================
 class ErrorResponse(BaseModel):
-    """API 에러 응답 스키마"""
+    """API 오류 응답 — 모든 도메인이 같은 모양을 쓴다.
 
-    error_code: str
-    message: str
-    detail: Any | None = None
+    상태 코드마다 다른 모양을 내보내면 클라이언트가 코드별로 분기해야 한다. 하나로
+    고정해 두면 오류 처리를 한 곳에 둘 수 있다.
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "error_code": "NOT_FOUND",
-                "message": "리소스를 찾을 수 없습니다.",
-                "detail": {"resource": "User", "id": 1},
-            }
+    ``detail`` 에는 **식별자만** 담는다 — 원본 DB 메시지나 bind 값은 담지 않는다.
+    그건 응답으로 나가는 순간 그대로 유출이다(C-12).
+    """
+
+    error_code: str = Field(
+        description="기계가 분기할 오류 코드. 도메인별 접두사를 쓴다.",
+        examples=["CATALOG_PRODUCT_NOT_FOUND"],
+    )
+    message: str = Field(
+        description="사용자에게 보여줄 한국어 메시지.",
+        examples=["상품을 찾을 수 없습니다."],
+    )
+    detail: Any | None = Field(
+        default=None,
+        description="원인을 좁힐 식별자. 값이나 SQL 은 담지 않는다.",
+        examples=[{"id": "3f1c9c2e-0b1a-4a5e-9f3d-2c7b8a4d5e6f"}],
+    )
+
+    # OpenAPI **3.1** 이다(FastAPI 기본). 3.0 의 `example`(단수)은 이 버전의 키워드가
+    # 아니다 — 도구에 따라 조용히 무시된다. `examples`(배열)를 쓴다.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "error_code": "CATALOG_PRODUCT_NOT_FOUND",
+                    "message": "상품을 찾을 수 없습니다.",
+                    "detail": {"id": "3f1c9c2e-0b1a-4a5e-9f3d-2c7b8a4d5e6f"},
+                },
+                {
+                    "error_code": "DUPLICATE",
+                    "message": "이미 존재하는 데이터입니다.",
+                    "detail": {"model": "Product"},
+                },
+            ]
         }
-    }
+    )
 
 
 # =============================================================================

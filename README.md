@@ -30,7 +30,7 @@ Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공
 
 - **계층 분리 아키텍처**: Router → Service → Repository → Database
 - **명시적 트랜잭션 경계**: 기능 의존성(`get_<name>_service`)은 Service 구성만 담당하고, 커밋은 **쓰기 핸들러 본문**이 `await service.commit()` 로 수행(UnitOfWork 미사용)
-- **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
+- **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_only_db_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
 - **인증(JWT)**: OAuth2 Password 플로우 + JWT access/refresh 토큰, bcrypt 비밀번호 해시 (`auth` 기능, `app/utils/authenticator/`)
 - **N+1 문제 해결**: Eager Loading 전략 내장 (selectin, joined, subquery)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
@@ -100,8 +100,8 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 트랜잭션 경계는 **쓰기 핸들러 본문**이 담당합니다. `get_<name>_service` 가 세션으로 Service를
 구성해 뷰에 주입하면, 핸들러가 작업을 마친 뒤 응답을 만들기 전에 `await service.commit()` 을
-호출합니다(예외 시 `get_session` teardown 이 롤백). 조회 엔드포인트는
-`get_<name>_service_readonly` 를 써서 `get_read_session` 을 받고 커밋하지 않습니다.
+호출합니다(예외 시 `get_writer_db_session` teardown 이 롤백). 조회 엔드포인트는
+`get_<name>_service_readonly` 를 써서 `get_read_only_db_session` 을 받고 커밋하지 않습니다.
 요청 밖(백그라운드/Celery)에서는 `background_session()` 컨텍스트(별도 풀)를 사용해
 메인 API 풀 고갈을 방지합니다.
 
@@ -138,7 +138,7 @@ fastapi-default-project-structure/
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── tags_metadata.py     # OpenAPI 태그 설명
 │   │   ├── db/                  # 세션·라우팅·모델 등록
-│   │   │   ├── session.py       # 엔진, get_session / get_read_session, background_session
+│   │   │   ├── session.py       # 엔진, get_routed_db_session / get_read_only_db_session, background_session
 │   │   │   ├── router.py        # 읽기/쓰기 라우팅 (RoutingSession)
 │   │   ├── models/models_base.py   # SQLAlchemy Base + TimestampMixin·UUIDMixin
 │   │   ├── repositories/        # BaseRepository (제네릭 CRUD)
@@ -154,7 +154,7 @@ fastapi-default-project-structure/
 │   ├── utils/                   # 로깅·인증·페이지네이션 유틸
 │   └── test_*.py                # 라우터/admin 배선, 응답 직렬화, 레이트리밋 등
 │
-├── migrations/                  # Alembic (env.py 가 import_all_models() SSOT 로 메타데이터 수집)
+├── migrations/                  # Alembic (env.py 가 App Registry 로 메타데이터 수집)
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
 ├── docs/
 │   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
@@ -178,9 +178,9 @@ fastapi-default-project-structure/
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
 | `app/core/apps/wiring.py` | 설치 앱의 `admin_views` 를 SQLAdmin 에 등록. `sqladmin` import 는 `create_admin()` 함수 안에 있어 `ADMIN=false` 면 로드조차 되지 않음 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
-| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_session` / 조회용 `get_read_session`). 커밋은 핸들러가 수행 |
+| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_writer_db_session` / 조회용 `get_read_only_db_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
-| `migrations/env.py` | `import_all_models()`(SSOT) 로 전 기능 모델을 자동 수집 → Alembic autogenerate |
+| `migrations/env.py` | `Apps().populate(INSTALLED_APPS, run_ready=False)` 로 설치 앱의 모델만 수집 → Alembic autogenerate. runtime 과 **같은 registry 경로**다 |
 
 ### `app/` 구현 규칙 (Conventions)
 
@@ -193,7 +193,7 @@ features → core → utils
 | 영역 | 역할 | 규칙 |
 |------|------|------|
 | `app/features/<name>/` | 기능 단위 vertical slice | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 기능은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
-| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 기능 구현을 직접 알지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`가 메타데이터 등록을 위해 `import_all_models()`를 함수 내부에서 호출하는 것 |
+| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어, App Registry) | 기능 구현을 직접 알지 않는다. `db/session.py` 의 `create_db_tables()` 도 디렉터리를 훑지 않고 `apps.populate(INSTALLED_APPS, run_ready=False)` 로 등록 앱의 모델만 확보한다 |
 | `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 기능 구현을 직접 결합하지 않는다.** 기능이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
@@ -242,9 +242,9 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 | 계층 | 하는 일 | 하지 말 것 |
 |------|---------|-----------|
 | **Router** | 입력 검증(Pydantic), `Depends(get_<name>_service)`로 Service 주입, Service 호출 → **쓰기면 `await service.commit()`** → 응답 변환 | 직접 ORM 쿼리 |
-| **Dependency** | 세션 주입(쓰기 `get_session` / 조회 `get_read_session`) → `Service(session)` 구성 후 **반환**(`yield` 아님) | 비즈니스 로직·커밋 |
+| **Dependency** | 세션 주입(쓰기 `get_writer_db_session` / 조회 `get_read_only_db_session`) → `Service(session)` 구성 후 **반환**(`yield` 아님) | 비즈니스 로직·커밋 |
 | **Service** | `BaseService` 상속, `self.session`/Repository로 데이터 접근·비즈니스 로직 | 커밋 시점 결정(핸들러가 담당) |
-| **Repository** | `BaseRepository` 상속, 쿼리 캡슐화, N+1 회피(`get_all_with`) | 비즈니스 로직·커밋 |
+| **Repository** | `BaseRepository` 상속, 쿼리 캡슐화, N+1 회피(기능별 Eager Loading 쿼리) | 비즈니스 로직·커밋 |
 
 > **주의:** `Service`는 세션을 주입받아 구성됩니다(`Service(session)`). 트랜잭션 커밋은 Service 도 의존성도 아닌 **쓰기 핸들러 본문**이 응답 반환 직전에 수행합니다.
 >
@@ -273,7 +273,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
        ↓
 6. 응답 반환 (Pydantic 직렬화)
        ↓
-7. 의존성 teardown — 예외로 빠져나갔다면 get_session 이 rollback()
+7. 의존성 teardown — 예외로 빠져나갔다면 get_writer_db_session 이 rollback()
 ```
 
 ### 코드 예시
@@ -281,13 +281,13 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 ```python
 # dependencies — Service 구성만 담당(커밋하지 않는다)
 async def get_blog_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    session: AsyncSession = Depends(get_writer_db_session),   # 쓰기용
 ) -> BlogService:
     return BlogService(session)
 
 
 async def get_blog_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용 — 커밋 없음
+    session: AsyncSession = Depends(get_read_only_db_session),  # 조회용 — 커밋 없음
 ) -> BlogService:
     return BlogService(session)
 
@@ -320,7 +320,7 @@ async def get_access_logs(
 ### 트랜잭션 & 롤백
 
 - **성공**: 쓰기 핸들러가 응답 생성 전에 `await service.commit()` 을 호출한다.
-- **예외**: 뷰/Service 에서 예외 발생 → 커밋이 실행되지 않고 `get_session` teardown 이 `session.rollback()`.
+- **예외**: 뷰/Service 에서 예외 발생 → 커밋이 실행되지 않고 `get_writer_db_session` teardown 이 `session.rollback()`.
 - **요청 밖(Celery/백그라운드)**: `async with background_session() as session:` 컨텍스트로 커밋/롤백을 직접 관리(별도 풀).
 
 ---
@@ -339,22 +339,21 @@ class BaseRepository(Generic[ModelType]):
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    # CRUD 기본 메서드
+    # 공개 계약은 **정확히 이 8개**다 (ADR-016). 넓히지 않는 이유는 두 가지다.
+    # 1) Raw Repository 가 같은 계약을 다시 구현해야 한다 — 안 쓰는 메서드를 두 번 만들 이유가 없다.
+    # 2) 도메인 쿼리는 그 도메인의 Repository 에 있어야 변경이 한 곳에서 끝난다.
     async def create(self, data: dict) -> ModelType: ...
-    async def get_by_id(self, id: str) -> ModelType | None: ...
+    async def get_by_id(self, id: PrimaryKeyT) -> ModelType | None: ...
+    async def get_one(self, **filters) -> ModelType | None: ...
     async def get_all(self, skip: int, limit: int) -> Sequence[ModelType]: ...
-    async def update(self, id: str, data: dict) -> ModelType | None: ...
-    async def delete(self, id: str) -> bool: ...
-
-    # N+1 문제 해결 메서드
-    async def get_by_id_with(self, id: str, relations: list[str]) -> ModelType | None: ...
-    async def get_all_with(self, relations: list[str], strategy: str) -> Sequence[ModelType]: ...
-
-    # 고급 쿼리
-    async def get_or_create(self, filters: dict, defaults: dict) -> tuple[ModelType, bool]: ...
-    async def update_or_create(self, filters: dict, data: dict) -> tuple[ModelType, bool]: ...
-    async def bulk_create(self, items: list[dict]) -> list[ModelType]: ...
+    async def count(self, **filters) -> int: ...
+    async def exists(self, **filters) -> bool: ...
+    async def update(self, id: PrimaryKeyT, data: dict) -> ModelType | None: ...
+    async def delete(self, id: PrimaryKeyT) -> bool: ...
 ```
+
+Eager Loading·upsert·일괄 삽입처럼 도메인마다 모양이 다른 쿼리는 Base 가 아니라
+**기능별 Repository** 에 둡니다 — 아래 예시가 그 배치입니다.
 
 ```python
 # 기능별 Repository 확장
@@ -390,13 +389,13 @@ UnitOfWork 대신 **쓰기 핸들러**가 커밋 시점을 쥡니다. 기능 의
 ```python
 # app/features/blog/dependencies/blog_dependencies.py — 구성만 한다
 async def get_blog_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    session: AsyncSession = Depends(get_writer_db_session),   # 쓰기용
 ) -> BlogService:
     return BlogService(session)
 
 
 async def get_blog_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용
+    session: AsyncSession = Depends(get_read_only_db_session),  # 조회용
 ) -> BlogService:
     return BlogService(session)
 
@@ -407,11 +406,11 @@ async def create_post(
     service: BlogService = Depends(get_blog_service),
 ) -> PostResponse:
     post = await service.create_post(payload)
-    await service.commit()          # 예외 시 get_session teardown 이 롤백
+    await service.commit()          # 예외 시 get_writer_db_session teardown 이 롤백
     return PostResponse.model_validate(post)
 ```
 
-- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_session` 을 받습니다. 불필요한
+- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받습니다. 불필요한
   COMMIT 왕복이 사라지고, `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅됩니다.
   읽기 핸들러가 몰래 쓰기를 시도하면 `ReadOnlyRoutingError` 로 즉시 실패합니다.
 - 요청 밖(Celery/백그라운드)에서는 `async with background_session() as session:` 컨텍스트로
@@ -451,16 +450,24 @@ class UserAccessLogService(BaseService):
 for user in users:
     print(user.posts)  # 각 사용자마다 추가 쿼리 발생
 
-# 해결: Eager Loading
-users = await repo.get_all_with(
-    relations=["posts", "profile"],
-    strategy="selectin"  # SELECT IN 전략
-)
+# 해결: 기능별 Repository 에 Eager Loading 쿼리를 둔다
+class UserRepository(BaseRepository[User]):
+    model = User
 
-# Eager Loading 전략
-# - selectin: SELECT ... WHERE id IN (...) - 대부분의 경우 권장
-# - joined: LEFT OUTER JOIN - 1:1 관계에 적합
-# - subquery: 서브쿼리 사용 - 복잡한 관계에 적합
+    async def get_all_with_posts(self, *, skip: int = 0, limit: int = 50):
+        stmt = (
+            select(User)
+            .options(selectinload(User.posts))   # SELECT ... WHERE id IN (...)
+            .order_by(User.id)                   # 정렬 없는 pagination 은 페이지가 겹친다
+            .offset(skip)
+            .limit(limit)
+        )
+        return (await self.session.execute(stmt)).scalars().all()
+
+# 로딩 전략 선택
+# - selectinload: 대부분의 경우 권장 (1:N)
+# - joinedload:   LEFT OUTER JOIN — 1:1 관계에 적합
+# - subqueryload: 서브쿼리 — 복잡한 관계에 적합
 ```
 
 ---
@@ -980,13 +987,13 @@ curl -X POST localhost:8000/api/v1/auth/refresh \
 
 > 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
-새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤 **`main.py` 에 라우터를 명시 등록**합니다.
-등록을 빠뜨리면 라우터가 연결되지 않습니다.
+새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤 **`apps.py` 의 `AppConfig` 를 `config.INSTALLED_APPS` 에 등록**합니다.
+등록을 빠뜨리면 라우터·모델·Admin 어디에도 연결되지 않습니다. `main.py` 는 손대지 않습니다.
 
 ### 최소 절차 (3단계)
 
-**1. `app/features/<name>/` 생성 + 코드 작성** (`api/routers/`, `models/`, `schemas/`, `repositories/`, `services/`, `dependencies/`)
-`__init__.py` 는 `router` 를 공개하고 `models` 모듈을 import 합니다(`app/features/home/__init__.py` 참고).
+**1. `app/features/<name>/` 생성 + 코드 작성** (`apps.py`, `api/routers/`, `models/`, `schemas/`, `repositories/`, `services/`, `dependencies/`)
+기능 root `__init__.py` 는 **가벼운 package marker** 입니다 — Router·Model 을 재노출하지 않습니다. 결선은 `apps.py` 의 `AppConfig` 가 담당합니다(`app/features/home/apps.py` 참고). `python -m scripts.new_app <name>` 으로 골격을 만들 수 있습니다.
 
 **2. `config.INSTALLED_APPS` 에 등록** (직접 편집 — 이 한 줄이 '설치'다)
 

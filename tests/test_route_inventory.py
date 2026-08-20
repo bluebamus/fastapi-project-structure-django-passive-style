@@ -30,6 +30,10 @@ EXPECTED: dict[str, frozenset[str]] = {
     "/api/v1/auth/login": frozenset({"POST"}),
     "/api/v1/auth/refresh": frozenset({"POST"}),
     "/api/v1/auth/me": frozenset({"GET"}),
+    # ORM/Raw 예제 (Phase 5) — 두 기능은 Repository 구현만 다르다.
+    "/api/v1/catalog/products": frozenset({"GET", "POST"}),
+    "/api/v1/catalog/products/{product_id}": frozenset({"GET", "PATCH", "DELETE"}),
+    "/api/v1/reports/daily-sales": frozenset({"GET"}),
 }
 
 

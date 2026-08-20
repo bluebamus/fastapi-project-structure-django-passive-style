@@ -11,12 +11,12 @@ home 은 조회 엔드포인트만 가진다(쓰기 없음). 접속 로그 적�
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.session import get_read_session
+from app.core.db.session import get_read_only_db_session
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
 
 async def get_access_log_service(
-    session: AsyncSession = Depends(get_read_session),
+    session: AsyncSession = Depends(get_read_only_db_session),
 ) -> UserAccessLogService:
     """UserAccessLogService 를 구성해 view 에 제공한다(읽기 전용 — 커밋하지 않는다)."""
     return UserAccessLogService(session)

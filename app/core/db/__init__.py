@@ -2,7 +2,7 @@
 Database 모듈
 
 데이터베이스 연결과 세션 관리를 제공합니다.
-요청 스코프 세션은 get_session(DI), 요청 밖 작업은 background_session(컨텍스트)을 사용한다.
+요청 스코프 세션은 get_routed_db_session(DI), 요청 밖 작업은 background_session(컨텍스트)을 사용한다.
 (UnitOfWork 는 제거되었고 트랜잭션 경계는 의존성/컨텍스트가 담당한다.)
 
 읽기/쓰기 분리는 DatabaseRouter 가 담당한다(app/core/db/router.py).
@@ -17,6 +17,7 @@ from app.core.db.router import (
     using_writer,
 )
 from app.core.db.session import (
+    READINESS_TIMEOUT_SECONDS,
     AsyncSessionLocal,
     BackgroundSessionLocal,
     Base,
@@ -27,9 +28,10 @@ from app.core.db.session import (
     dispose_engine,
     engine,
     get_background_session,
-    get_read_session,
-    get_session,
-    get_write_session,
+    get_read_only_db_session,
+    get_routed_db_session,
+    get_writer_db_session,
+    ping_writer_db,
     read_engines,
     writer_engine,
 )
@@ -48,10 +50,13 @@ __all__ = [
     "mark_read_only",
     "AsyncSessionLocal",
     "BackgroundSessionLocal",
-    "get_session",
-    "get_read_session",
-    "get_write_session",
+    # 정식 이름 (ADR-009)
+    "get_routed_db_session",
+    "get_read_only_db_session",
+    "get_writer_db_session",
     "get_background_session",
+    "ping_writer_db",
+    "READINESS_TIMEOUT_SECONDS",
     "background_session",
     "create_db_tables",
     "dispose_engine",

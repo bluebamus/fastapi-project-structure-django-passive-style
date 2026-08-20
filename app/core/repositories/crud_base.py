@@ -10,17 +10,23 @@
         ...
 """
 
-from typing import Generic, TypeVar
+from typing import Generic
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing_extensions import TypeVar
 
 from app.core.models.models_base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 
+#: 기본키 타입. 이 저장소의 모델은 전부 문자열 UUID 지만(UUIDPrimaryKeyMixin), 계약에
+#: 타입을 노출해 두면 정수 PK 를 쓰는 모델을 붙일 때 `str` 로 뭉개지 않는다. 기본값이
+#: 있어 기존 `BaseRepository[User]` 표기는 그대로 동작한다.
+PrimaryKeyT = TypeVar("PrimaryKeyT", default=str)
 
-class CRUDBase(Generic[ModelType]):
+
+class CRUDBase(Generic[ModelType, PrimaryKeyT]):
     """
     기본 CRUD 베이스 클래스
 
@@ -33,6 +39,7 @@ class CRUDBase(Generic[ModelType]):
 
     Type Parameters:
         ModelType: Base를 상속한 SQLAlchemy 모델 타입
+        PrimaryKeyT: 기본키 타입 (기본값 ``str``)
     """
 
     model: type[ModelType]
@@ -46,7 +53,7 @@ class CRUDBase(Generic[ModelType]):
         """
         self.session = session
 
-    async def _get(self, id: str | UUID) -> ModelType | None:
+    async def _get(self, id: PrimaryKeyT | UUID) -> ModelType | None:
         """
         ID로 엔티티를 조회합니다 (내부용).
 

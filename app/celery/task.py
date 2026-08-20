@@ -31,3 +31,18 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
         _worker_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_worker_loop)
     return _worker_loop.run_until_complete(coro)
+
+
+def get_worker_loop() -> asyncio.AbstractEventLoop | None:
+    """현재 worker 프로세스의 영속 루프. 아직 만들지 않았으면 ``None``.
+
+    worker 종료 훅이 "닫을 것이 있는지"를 판단하는 데 쓴다. 없는데 만들면
+    태스크를 한 번도 실행하지 않은 worker 가 종료할 때 루프가 새로 생긴다.
+    """
+    return _worker_loop
+
+
+def clear_worker_loop() -> None:
+    """전역 루프 참조를 지운다 — 닫힌 루프를 다음 호출이 재사용하지 않도록."""
+    global _worker_loop
+    _worker_loop = None

@@ -116,7 +116,13 @@ def test_generated_app_is_inactive_until_registered():
     생성물이 ``app.features.<name>`` 을 절대 경로로 참조하므로 임시 디렉터리에서는
     import 되지 않는다. 그래서 실제 ``app/features/`` 아래에 만들고 끝나면 지운다 —
     "생성했지만 등록하지 않은 앱" 이라는 상태를 실물로 재현하는 유일한 방법이다.
+
+    이름에 **PID 를 붙인다.** 실제 트리에 쓰는 테스트라, 검수 게이트를 두 개 동시에
+    돌리면 두 판이 같은 디렉터리를 다투고 한쪽이 "이전 실행의 잔해" 로 오판해 실패한다
+    (게이트 3개 병렬 실행으로 실측했다). 고정 이름을 쓰는 한 `finally` 정리로는
+    못 막는다 — 겹치는 구간이 정리 이전이다.
     """
+    import os
     import shutil
     import sys as _sys
 
@@ -126,8 +132,8 @@ def test_generated_app_is_inactive_until_registered():
     from app.core.apps.wiring import install_routers
     from config import INSTALLED_APPS
 
-    name = "scaffoldprobe"
-    entry = f"app.features.{name}.apps.ScaffoldprobeConfig"
+    name = f"scaffoldprobe{os.getpid()}"
+    entry = f"app.features.{name}.apps.{name.capitalize()}Config"
     target = PROJECT_ROOT / "app" / "features" / name
     assert not target.exists(), f"{target} 이 이미 있다 — 이전 실행의 잔해를 정리할 것"
 
@@ -258,15 +264,16 @@ def test_resolve_target_stays_inside_features(features: Path):
 # =============================================================================
 def test_cli_rejects_bad_name_with_nonzero_exit():
     proc = subprocess.run(  # noqa: S603 - 인터프리터·인자가 이 파일에 고정돼 있다
-        [sys.executable, "-m", "scripts.new_app", "../escape"],
+        [sys.executable, "-X", "utf8", "-m", "scripts.new_app", "../escape"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="strict",
         timeout=180,
         check=False,
     )
 
     assert proc.returncode == 2
     assert "오류" in proc.stderr
+    assert not (PROJECT_ROOT / "app" / "escape").exists()

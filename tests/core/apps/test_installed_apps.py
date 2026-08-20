@@ -14,7 +14,7 @@ from app.core.apps import AppConfig, Apps
 from app.core.apps.exceptions import AppLookupError
 from config import INSTALLED_APPS
 
-EXPECTED_LABELS = ["home", "blog", "reply", "sns", "user", "auth"]
+EXPECTED_LABELS = ["home", "blog", "reply", "sns", "user", "auth", "catalog", "reports"]
 FEATURES_DIR = Path(__file__).resolve().parents[3] / "app" / "features"
 
 

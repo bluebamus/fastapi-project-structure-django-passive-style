@@ -19,7 +19,17 @@ from app.core.apps.wiring import install_admin
 from app.core.db.session import engine as _ENGINE
 from config import INSTALLED_APPS
 
-EXPECTED_MANAGED_MODELS = {"Post", "Reply", "SnsPost", "User", "UserAccessLog"}
+EXPECTED_MANAGED_MODELS = {
+    "Post",
+    "Reply",
+    "SnsPost",
+    "User",
+    "UserAccessLog",
+    # ORM/Raw 예제 (Phase 5). SalesOrder 는 읽기 전용 뷰다 — 원본을 화면에서
+    # 고치면 리포트 숫자가 근거 없이 움직인다.
+    "Product",
+    "SalesOrder",
+}
 
 
 @pytest.fixture

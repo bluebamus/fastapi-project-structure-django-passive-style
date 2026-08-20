@@ -1,0 +1,3722 @@
+{
+  "components": {
+    "schemas": {
+      "AccessLogStats": {
+        "description": "접속 로그 통계 응답 스키마",
+        "properties": {
+          "browsers": {
+            "description": "브라우저별 통계",
+            "items": {
+              "$ref": "#/components/schemas/BrowserStats"
+            },
+            "title": "Browsers",
+            "type": "array"
+          },
+          "device_types": {
+            "description": "장치 유형별 통계",
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeStats"
+            },
+            "title": "Device Types",
+            "type": "array"
+          },
+          "os_list": {
+            "description": "OS별 통계",
+            "items": {
+              "$ref": "#/components/schemas/OSStats"
+            },
+            "title": "Os List",
+            "type": "array"
+          },
+          "total_count": {
+            "description": "전체 접속 수",
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_count",
+          "device_types",
+          "os_list",
+          "browsers"
+        ],
+        "title": "AccessLogStats",
+        "type": "object"
+      },
+      "AuthenticatedUserResponse": {
+        "description": "인증이 돌려주는 사용자(민감 정보 제외).\n\n`user` 기능의 ``UserResponse`` 와 **다른 모델**이다 — 저쪽은 생성·수정 시각까지\n담는 정식 사용자 DTO 고, 이쪽은 로그인·`/me` 가 돌려주는 최소 정보다.\n\n이름을 굳이 다르게 두는 이유는 OpenAPI 때문이다. 서로 다른 모듈의 같은 클래스\n이름은 schema key 가 ``app__features__auth__schemas__auth_schema__UserResponse``\n처럼 **모듈 경로**로 노출된다. 그 이름은 파일을 옮기는 순간 바뀌고, 그때 이\n스키마로 생성한 클라이언트 코드가 통째로 깨진다(DOC-005).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "email",
+          "is_active"
+        ],
+        "title": "AuthenticatedUserResponse",
+        "type": "object"
+      },
+      "Body_authLogin": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          },
+          "grant_type": {
+            "anyOf": [
+              {
+                "pattern": "^password$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "password": {
+            "format": "password",
+            "title": "Password",
+            "type": "string"
+          },
+          "scope": {
+            "default": "",
+            "title": "Scope",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_authLogin",
+        "type": "object"
+      },
+      "BrowserStats": {
+        "description": "브라우저별 통계 스키마",
+        "properties": {
+          "browser_name": {
+            "description": "브라우저 이름",
+            "title": "Browser Name",
+            "type": "string"
+          },
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "browser_name",
+          "count"
+        ],
+        "title": "BrowserStats",
+        "type": "object"
+      },
+      "DailySalesItem": {
+        "description": "일자별 집계 한 줄 — Raw SQL 의 컬럼 alias 와 필드명이 1:1 이다.",
+        "properties": {
+          "gross_amount": {
+            "description": "총 매출",
+            "examples": [
+              "5120.50"
+            ],
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gross Amount",
+            "type": "string"
+          },
+          "order_count": {
+            "description": "주문 수",
+            "examples": [
+              42
+            ],
+            "minimum": 0.0,
+            "title": "Order Count",
+            "type": "integer"
+          },
+          "sales_date": {
+            "description": "매출 일자",
+            "examples": [
+              "2026-08-01"
+            ],
+            "format": "date",
+            "title": "Sales Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sales_date",
+          "order_count",
+          "gross_amount"
+        ],
+        "title": "DailySalesItem",
+        "type": "object"
+      },
+      "DailySalesReportResponse": {
+        "description": "일별 매출 리포트 응답.",
+        "examples": [
+          {
+            "end_date": "2026-08-07",
+            "items": [
+              {
+                "gross_amount": "5120.50",
+                "order_count": 42,
+                "sales_date": "2026-08-01"
+              }
+            ],
+            "order_count": 42,
+            "start_date": "2026-08-01"
+          }
+        ],
+        "properties": {
+          "end_date": {
+            "description": "조회 종료일(포함)",
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "items": {
+            "description": "일자별 집계",
+            "items": {
+              "$ref": "#/components/schemas/DailySalesItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "order_count": {
+            "description": "기간 전체 주문 수",
+            "minimum": 0.0,
+            "title": "Order Count",
+            "type": "integer"
+          },
+          "start_date": {
+            "description": "조회 시작일(포함)",
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "order_count",
+          "items"
+        ],
+        "title": "DailySalesReportResponse",
+        "type": "object"
+      },
+      "DeviceTypeStats": {
+        "description": "장치 유형별 통계 스키마",
+        "properties": {
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          },
+          "device_type": {
+            "description": "장치 유형",
+            "title": "Device Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_type",
+          "count"
+        ],
+        "title": "DeviceTypeStats",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "API 오류 응답 — 모든 도메인이 같은 모양을 쓴다.\n\n상태 코드마다 다른 모양을 내보내면 클라이언트가 코드별로 분기해야 한다. 하나로\n고정해 두면 오류 처리를 한 곳에 둘 수 있다.\n\n``detail`` 에는 **식별자만** 담는다 — 원본 DB 메시지나 bind 값은 담지 않는다.\n그건 응답으로 나가는 순간 그대로 유출이다(C-12).",
+        "examples": [
+          {
+            "detail": {
+              "id": "3f1c9c2e-0b1a-4a5e-9f3d-2c7b8a4d5e6f"
+            },
+            "error_code": "CATALOG_PRODUCT_NOT_FOUND",
+            "message": "상품을 찾을 수 없습니다."
+          },
+          {
+            "detail": {
+              "model": "Product"
+            },
+            "error_code": "DUPLICATE",
+            "message": "이미 존재하는 데이터입니다."
+          }
+        ],
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "description": "원인을 좁힐 식별자. 값이나 SQL 은 담지 않는다.",
+            "examples": [
+              {
+                "id": "3f1c9c2e-0b1a-4a5e-9f3d-2c7b8a4d5e6f"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "description": "기계가 분기할 오류 코드. 도메인별 접두사를 쓴다.",
+            "examples": [
+              "CATALOG_PRODUCT_NOT_FOUND"
+            ],
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "description": "사용자에게 보여줄 한국어 메시지.",
+            "examples": [
+              "상품을 찾을 수 없습니다."
+            ],
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "헬스체크 응답 스키마",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "OSStats": {
+        "description": "OS별 통계 스키마",
+        "properties": {
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          },
+          "os_name": {
+            "description": "OS 이름",
+            "title": "Os Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "os_name",
+          "count"
+        ],
+        "title": "OSStats",
+        "type": "object"
+      },
+      "PostCreate": {
+        "description": "게시글 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "title": {
+            "description": "제목",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "PostCreate",
+        "type": "object"
+      },
+      "PostListResponse": {
+        "description": "게시글 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PostResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PostListResponse",
+        "type": "object"
+      },
+      "PostResponse": {
+        "description": "게시글 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "제목",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PostResponse",
+        "type": "object"
+      },
+      "PostUpdate": {
+        "description": "게시글 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "본문",
+            "title": "Content"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "제목",
+            "title": "Title"
+          }
+        },
+        "title": "PostUpdate",
+        "type": "object"
+      },
+      "ProductCreate": {
+        "description": "상품 생성 요청.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "상품 설명(선택)",
+            "examples": [
+              "적축 87키"
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "default": true,
+            "description": "판매 여부",
+            "examples": [
+              true
+            ],
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "상품명",
+            "examples": [
+              "기계식 키보드"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "description": "판매가",
+            "examples": [
+              "129000.00"
+            ],
+            "title": "Price"
+          },
+          "sku": {
+            "description": "재고 관리 코드(전역 고유)",
+            "examples": [
+              "SKU-1001"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          },
+          "stock": {
+            "default": 0,
+            "description": "재고 수량",
+            "examples": [
+              25
+            ],
+            "minimum": 0.0,
+            "title": "Stock",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sku",
+          "name",
+          "price"
+        ],
+        "title": "ProductCreate",
+        "type": "object"
+      },
+      "ProductListResponse": {
+        "description": "상품 목록 응답(페이지네이션).",
+        "examples": [
+          {
+            "items": [
+              {
+                "created_at": "2026-08-01T10:30:00+09:00",
+                "description": "적축 87키",
+                "id": "3f1c9c2e-0b1a-4a5e-9f3d-2c7b8a4d5e6f",
+                "is_active": true,
+                "name": "기계식 키보드",
+                "price": "129000.00",
+                "sku": "SKU-1001",
+                "stock": 25,
+                "updated_at": "2026-08-01T10:30:00+09:00"
+              }
+            ],
+            "limit": 50,
+            "skip": 0,
+            "total": 1
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "페이지 크기",
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "description": "건너뛴 레코드 수",
+            "minimum": 0.0,
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "description": "전체 상품 수",
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "ProductListResponse",
+        "type": "object"
+      },
+      "ProductResponse": {
+        "description": "상품 응답.\n\n``from_attributes=True`` 는 **ORM 객체**를 받기 때문에 쓴다. Raw 예제의 응답\nDTO 에는 이 설정이 없다 — 거기는 ORM 객체가 아니라 ``RowMapping`` 을 받는다.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "상품 설명(선택)",
+            "examples": [
+              "적축 87키"
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "description": "상품 ID(UUID)",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "description": "판매 여부",
+            "examples": [
+              true
+            ],
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "상품명",
+            "examples": [
+              "기계식 키보드"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "description": "판매가",
+            "examples": [
+              "129000.00"
+            ],
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+            "title": "Price",
+            "type": "string"
+          },
+          "sku": {
+            "description": "재고 관리 코드(전역 고유)",
+            "examples": [
+              "SKU-1001"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          },
+          "stock": {
+            "default": 0,
+            "description": "재고 수량",
+            "examples": [
+              25
+            ],
+            "minimum": 0.0,
+            "title": "Stock",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "name",
+          "price",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductResponse",
+        "type": "object"
+      },
+      "ProductUpdate": {
+        "description": "상품 수정 요청 — 전달된 필드만 부분 수정한다.\n\n예시가 **일부 필드만** 담고 있는 것이 의도다. 전체를 보내는 모양을 예시로 두면\nPATCH 를 PUT 처럼 쓰게 되고, 빠뜨린 필드가 덮어써진다고 오해하게 된다.",
+        "examples": [
+          {
+            "price": "119000.00",
+            "stock": 12
+          }
+        ],
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "상품 설명",
+            "title": "Description"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "판매 여부",
+            "title": "Is Active"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "상품명",
+            "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "판매가",
+            "title": "Price"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "재고 수량",
+            "title": "Stock"
+          }
+        },
+        "title": "ProductUpdate",
+        "type": "object"
+      },
+      "ReadyResponse": {
+        "description": "준비 상태(readiness) 응답 스키마",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReadyResponse",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "description": "토큰 재발급 요청.",
+        "properties": {
+          "refresh_token": {
+            "description": "유효한 Refresh Token",
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "description": "회원가입 요청.",
+        "properties": {
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "description": "비밀번호(8자 이상)",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ReplyCreate": {
+        "description": "댓글 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "댓글 본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "post_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "대상 게시글 ID(선택)",
+            "title": "Post Id"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "ReplyCreate",
+        "type": "object"
+      },
+      "ReplyListResponse": {
+        "description": "댓글 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReplyResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "ReplyListResponse",
+        "type": "object"
+      },
+      "ReplyResponse": {
+        "description": "댓글 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "댓글 본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "post_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "대상 게시글 ID(선택)",
+            "title": "Post Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReplyResponse",
+        "type": "object"
+      },
+      "ReplyUpdate": {
+        "description": "댓글 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "댓글 본문",
+            "title": "Content"
+          }
+        },
+        "title": "ReplyUpdate",
+        "type": "object"
+      },
+      "SnsPostCreate": {
+        "description": "피드 게시물 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "게시물 본문",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SnsPostCreate",
+        "type": "object"
+      },
+      "SnsPostListResponse": {
+        "description": "피드 게시물 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnsPostResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "SnsPostListResponse",
+        "type": "object"
+      },
+      "SnsPostResponse": {
+        "description": "피드 게시물 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "게시물 본문",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "like_count": {
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "like_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SnsPostResponse",
+        "type": "object"
+      },
+      "SnsPostUpdate": {
+        "description": "피드 게시물 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "본문",
+            "title": "Content"
+          }
+        },
+        "title": "SnsPostUpdate",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "description": "토큰 응답(OAuth2 bearer).",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "UserAccessLogListResponse": {
+        "description": "UserAccessLog 목록 응답 스키마",
+        "properties": {
+          "items": {
+            "description": "로그 목록",
+            "items": {
+              "$ref": "#/components/schemas/UserAccessLogResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "조회 개수",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "description": "건너뛴 개수",
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "description": "전체 개수",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "UserAccessLogListResponse",
+        "type": "object"
+      },
+      "UserAccessLogResponse": {
+        "description": "UserAccessLog 응답 스키마",
+        "properties": {
+          "browser_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "브라우저 이름",
+            "title": "Browser Name"
+          },
+          "browser_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "브라우저 버전",
+            "title": "Browser Version"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "도시",
+            "title": "City"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "국가",
+            "title": "Country"
+          },
+          "created_at": {
+            "description": "생성 시간",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "장치 브랜드",
+            "title": "Device Brand"
+          },
+          "device_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "장치 유형",
+            "title": "Device Type"
+          },
+          "id": {
+            "description": "로그 ID",
+            "title": "Id",
+            "type": "string"
+          },
+          "ip_address": {
+            "description": "IP 주소",
+            "title": "Ip Address",
+            "type": "string"
+          },
+          "is_bot": {
+            "description": "봇 여부",
+            "title": "Is Bot",
+            "type": "boolean"
+          },
+          "os_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "운영체제 이름",
+            "title": "Os Name"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "운영체제 버전",
+            "title": "Os Version"
+          },
+          "request_method": {
+            "description": "HTTP 메서드",
+            "title": "Request Method",
+            "type": "string"
+          },
+          "request_path": {
+            "description": "요청 경로",
+            "title": "Request Path",
+            "type": "string"
+          },
+          "response_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "응답 상태 코드",
+            "title": "Response Status"
+          },
+          "response_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "응답 시간 (ms)",
+            "title": "Response Time Ms"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "사용자 ID",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "ip_address",
+          "is_bot",
+          "request_path",
+          "request_method",
+          "created_at"
+        ],
+        "title": "UserAccessLogResponse",
+        "type": "object"
+      },
+      "UserCreate": {
+        "description": "사용자 생성 요청.",
+        "properties": {
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email"
+        ],
+        "title": "UserCreate",
+        "type": "object"
+      },
+      "UserListResponse": {
+        "description": "사용자 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "UserListResponse",
+        "type": "object"
+      },
+      "UserResponse": {
+        "description": "사용자 응답.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "id",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "description": "사용자 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "이메일",
+            "title": "Email"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "활성 여부",
+            "title": "Is Active"
+          }
+        },
+        "title": "UserUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/login"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  },
+  "info": {
+    "description": "\n## FastAPI Default Project Structure\n\nRepository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.\n\n### 주요 기능\n\n- **접속 로그 수집**: 모든 API 요청에 대한 접속 로그 자동 수집\n- **사용자 정보 파싱**: User-Agent 기반 OS, 브라우저, 장치 정보 분석\n- **통계 API**: 장치 유형, OS, 브라우저별 접속 통계\n\n### 아키텍처\n\n```\nRouter → Service → Repository → Database\n           ↑\n      UnitOfWork (트랜잭션 관리)\n```\n\n### 기술 스택\n\n- **FastAPI**: 고성능 비동기 웹 프레임워크\n- **SQLAlchemy 2.0**: 비동기 ORM (aiomysql)\n- **Pydantic v2**: 데이터 검증 및 설정 관리\n- **Scalar**: API 문서 UI\n\n### 환경 설정\n\n| 설정 | 설명 |\n|------|------|\n| `DEBUG=true` | 개발 모드 (DEBUG 로그, 테이블 자동 생성) |\n| `DEBUG=false` | 운영 모드 (INFO 로그, Alembic 마이그레이션 사용) |\n",
+    "title": "FastAPI Project",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "username/password(form)로 access·refresh 토큰을 발급합니다.",
+        "operationId": "authLogin",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_authLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "로그인(OAuth2 password)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "Bearer access token 으로 현재 로그인 사용자를 반환합니다(보호 엔드포인트).",
+        "operationId": "authMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedUserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "현재 사용자",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Refresh Token 으로 새 access·refresh 토큰을 발급합니다.",
+        "operationId": "authRefresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "토큰 재발급",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "사용자명·이메일·비밀번호로 사용자를 생성합니다.",
+        "operationId": "authRegister",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedUserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자명 중복"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "회원가입",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/blog/posts": {
+      "get": {
+        "description": "게시글 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listPosts",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 목록 조회",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "post": {
+        "description": "새 게시글을 생성합니다.",
+        "operationId": "createPost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 생성",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
+    "/api/v1/blog/posts/{post_id}": {
+      "delete": {
+        "description": "게시글을 삭제합니다.",
+        "operationId": "deletePost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 삭제",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "get": {
+        "description": "ID로 게시글을 조회합니다.",
+        "operationId": "getPost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 단건 조회",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "patch": {
+        "description": "게시글을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updatePost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 수정",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
+    "/api/v1/catalog/products": {
+      "get": {
+        "description": "상품 목록을 페이지네이션하여 조회합니다. SKU 오름차순으로 안정 정렬됩니다.",
+        "operationId": "listProducts",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "판매 중인 상품만 조회",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "판매 중인 상품만 조회",
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "상품 목록 조회",
+        "tags": [
+          "Catalog"
+        ]
+      },
+      "post": {
+        "description": "새 상품을 등록합니다. `sku` 는 전역 고유해야 합니다.",
+        "operationId": "createProduct",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "이미 존재하는 SKU"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "상품 생성",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
+    "/api/v1/catalog/products/{product_id}": {
+      "delete": {
+        "description": "상품을 삭제합니다.",
+        "operationId": "deleteProduct",
+        "parameters": [
+          {
+            "description": "상품 ID(UUID)",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "상품 ID(UUID)",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "상품을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "상품 삭제",
+        "tags": [
+          "Catalog"
+        ]
+      },
+      "get": {
+        "description": "ID 로 상품을 조회합니다.",
+        "operationId": "getProduct",
+        "parameters": [
+          {
+            "description": "상품 ID(UUID)",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "상품 ID(UUID)",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "상품을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "상품 단건 조회",
+        "tags": [
+          "Catalog"
+        ]
+      },
+      "patch": {
+        "description": "상품을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateProduct",
+        "parameters": [
+          {
+            "description": "상품 ID(UUID)",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "상품 ID(UUID)",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "상품을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "상품 수정",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs": {
+      "get": {
+        "description": "접속 로그 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "getAccessLogs",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAccessLogListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "접속 로그 목록 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/by-ip/{ip_address}": {
+      "get": {
+        "description": "특정 IP 주소의 접속 로그를 조회합니다.",
+        "operationId": "getAccessLogsByIp",
+        "parameters": [
+          {
+            "description": "조회할 IP 주소",
+            "in": "path",
+            "name": "ip_address",
+            "required": true,
+            "schema": {
+              "description": "조회할 IP 주소",
+              "examples": [
+                "192.168.1.1"
+              ],
+              "title": "Ip Address",
+              "type": "string"
+            }
+          },
+          {
+            "description": "건너뛸 레코드 수",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getaccesslogsbyip",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "IP별 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/by-user/{user_id}": {
+      "get": {
+        "description": "특정 사용자의 접속 로그를 조회합니다.",
+        "operationId": "getAccessLogsByUser",
+        "parameters": [
+          {
+            "description": "조회할 사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "조회할 사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "건너뛸 레코드 수",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getaccesslogsbyuser",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "사용자별 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/recent": {
+      "get": {
+        "description": "최근 접속 로그를 시간 역순으로 조회합니다.",
+        "operationId": "getRecentAccessLogs",
+        "parameters": [
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getrecentaccesslogs",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "최근 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/stats": {
+      "get": {
+        "description": "장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다.",
+        "operationId": "getAccessLogStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessLogStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "접속 로그 통계",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/reply/replies": {
+      "get": {
+        "description": "댓글 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listReplies",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 목록 조회",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "post": {
+        "description": "새 댓글을 생성합니다.",
+        "operationId": "createReply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 생성",
+        "tags": [
+          "Reply"
+        ]
+      }
+    },
+    "/api/v1/reply/replies/{reply_id}": {
+      "delete": {
+        "description": "댓글을 삭제합니다.",
+        "operationId": "deleteReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 삭제",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "get": {
+        "description": "ID로 댓글을 조회합니다.",
+        "operationId": "getReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 단건 조회",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "patch": {
+        "description": "댓글을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 수정",
+        "tags": [
+          "Reply"
+        ]
+      }
+    },
+    "/api/v1/reports/daily-sales": {
+      "get": {
+        "description": "기간 내 일자별 주문 수와 매출 합계를 조회합니다. 종료일은 **포함**이며, 결제 완료(`paid`) 주문만 집계합니다.",
+        "operationId": "getDailySalesReport",
+        "parameters": [
+          {
+            "description": "조회 시작일(포함)",
+            "in": "query",
+            "name": "start_date",
+            "required": true,
+            "schema": {
+              "description": "조회 시작일(포함)",
+              "examples": [
+                "2026-08-01"
+              ],
+              "format": "date",
+              "title": "Start Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "조회 종료일(포함)",
+            "in": "query",
+            "name": "end_date",
+            "required": true,
+            "schema": {
+              "description": "조회 종료일(포함)",
+              "examples": [
+                "2026-08-07"
+              ],
+              "format": "date",
+              "title": "End Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySalesReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "조회 기간이 올바르지 않음"
+          }
+        },
+        "summary": "일별 매출 리포트",
+        "tags": [
+          "Sales Reports"
+        ]
+      }
+    },
+    "/api/v1/sns/posts": {
+      "get": {
+        "description": "피드 게시물 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listSnsPosts",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 목록 조회",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "post": {
+        "description": "새 피드 게시물을 생성합니다.",
+        "operationId": "createSnsPost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnsPostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 생성",
+        "tags": [
+          "SNS"
+        ]
+      }
+    },
+    "/api/v1/sns/posts/{post_id}": {
+      "delete": {
+        "description": "피드 게시물을 삭제합니다.",
+        "operationId": "deleteSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 삭제",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "get": {
+        "description": "ID로 피드 게시물을 조회합니다.",
+        "operationId": "getSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 단건 조회",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "patch": {
+        "description": "피드 게시물을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnsPostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 수정",
+        "tags": [
+          "SNS"
+        ]
+      }
+    },
+    "/api/v1/user/users": {
+      "get": {
+        "description": "사용자 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listUsers",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 목록 조회",
+        "tags": [
+          "User"
+        ]
+      },
+      "post": {
+        "description": "새 사용자를 생성합니다. 사용자명은 고유해야 합니다.",
+        "operationId": "createUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자명 중복"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 생성",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/api/v1/user/users/{user_id}": {
+      "delete": {
+        "description": "사용자를 삭제합니다.",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 삭제",
+        "tags": [
+          "User"
+        ]
+      },
+      "get": {
+        "description": "ID로 사용자를 조회합니다.",
+        "operationId": "getUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 단건 조회",
+        "tags": [
+          "User"
+        ]
+      },
+      "patch": {
+        "description": "사용자를 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 수정",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "서버의 정상 동작 여부를 확인합니다.",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "헬스체크",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "트래픽을 받을 준비가 됐는지 확인합니다. writer DB 에 `SELECT 1` 을 최대 2초 안에 실행하고, 실패하거나 시간을 넘기면 503 을 반환합니다.",
+        "operationId": "readinessCheck",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "DB 를 사용할 수 없거나 응답이 늦어 준비되지 않음"
+          }
+        },
+        "summary": "준비 상태(readiness)",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "\n**서버 상태 확인 API**\n\nliveness 와 readiness 를 **분리**해서 제공합니다(ADR-013).\n\n| 경로 | 묻는 것 | DB 접속 |\n|---|---|---|\n| `GET /health` | 프로세스가 살아 있는가 | 하지 않음 |\n| `GET /ready` | 요청을 받을 준비가 됐는가 | writer 에 ping |\n\n`/health` 가 DB 를 보지 않는 이유는, liveness 가 DB 에 의존하면 DB 가 잠깐\n흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽이기 때문입니다. 준비되지 않은\n인스턴스는 재시작이 아니라 로드밸런서에서 빼는 것이 맞습니다.\n        ",
+      "name": "Health"
+    },
+    {
+      "description": "\n**인증 API**\n\nJWT 기반 회원가입·로그인·토큰 재발급과 현재 사용자 조회를 제공합니다.\n\n### 엔드포인트\n- `POST /register` — 회원가입 (bcrypt 해시 저장)\n- `POST /login` — 자격 검증 후 access/refresh 토큰 발급\n- `POST /refresh` — refresh 토큰으로 재발급\n- `GET /me` — 현재 토큰의 사용자\n\n### 응답 모델\n`AuthenticatedUserResponse` 는 `User` 태그의 `UserResponse` 와 **다른 모델**입니다 —\n인증 경로는 생성·수정 시각 없이 최소 정보만 돌려줍니다.\n\n`login` 과 `refresh` 는 DB 를 변경하지 않습니다. 쓰기 메서드지만 커밋하지 않습니다.\n        ",
+      "name": "Auth"
+    },
+    {
+      "description": "\n**접속 로그 조회 API**\n\n미들웨어가 수집한 접속 로그를 조회·집계합니다. 쓰기 엔드포인트는 없습니다 —\n기록은 요청 처리 경로가 자동으로 남깁니다.\n\n### 엔드포인트\n- 목록 조회 (페이지네이션)\n- 최근 접속 로그\n- IP별 / 사용자별 필터\n- 장치·OS·브라우저별 통계\n\n### 수집 정보\nIP 주소(`X-Forwarded-For`·`X-Real-IP` 우선), User-Agent 파싱 결과(OS·브라우저·장치),\n요청 경로와 응답 시간.\n        ",
+      "name": "Home"
+    },
+    {
+      "description": "\n**사용자 관리 API**\n\n사용자 레코드의 CRUD 를 제공합니다. 인증(로그인·토큰)은 `Auth` 태그가 담당합니다.\n\n### 엔드포인트\n- `POST /users` — 생성 (이메일·사용자명 중복 시 409)\n- `GET /users` — 목록 (페이지네이션, limit 상한 있음)\n- `GET /users/{user_id}` — 단건 조회\n- `PATCH /users/{user_id}` — 부분 수정 (전달한 필드만)\n- `DELETE /users/{user_id}` — 삭제\n\n응답 `UserResponse` 에는 비밀번호 해시가 포함되지 않습니다.\n        ",
+      "name": "User"
+    },
+    {
+      "description": "\n**블로그 게시글 API**\n\n게시글 CRUD 를 제공합니다.\n\n### 엔드포인트\n- `POST /posts` — 작성\n- `GET /posts` — 목록 (페이지네이션, limit 상한 100)\n- `GET /posts/{post_id}` — 단건 조회\n- `PATCH /posts/{post_id}` — 부분 수정\n- `DELETE /posts/{post_id}` — 삭제\n\n댓글은 `Reply` 태그가 담당합니다.\n        ",
+      "name": "Blog"
+    },
+    {
+      "description": "\n**댓글 API**\n\n게시글에 달리는 댓글 CRUD 를 제공합니다.\n\n### 엔드포인트\n- `POST /replies` — 작성 (`post_id` 로 게시글 지정)\n- `GET /replies` — 목록 (페이지네이션)\n- `GET /replies/{reply_id}` — 단건 조회\n- `PATCH /replies/{reply_id}` — 부분 수정\n- `DELETE /replies/{reply_id}` — 삭제\n        ",
+      "name": "Reply"
+    },
+    {
+      "description": "\n**SNS 게시글 API**\n\n짧은 글과 좋아요 수를 다루는 게시글 CRUD 를 제공합니다.\n\n### 엔드포인트\n- `POST /posts` — 작성\n- `GET /posts` — 목록 (페이지네이션)\n- `GET /posts/{post_id}` — 단건 조회\n- `PATCH /posts/{post_id}` — 부분 수정\n- `DELETE /posts/{post_id}` — 삭제\n\n`Blog` 와 별개의 도메인입니다 — 같은 `/posts` 경로를 쓰지만 프리픽스가 다릅니다.\n        ",
+      "name": "SNS"
+    },
+    {
+      "description": "\n**상품 카탈로그 API (ORM 예제)**\n\nSQLAlchemy ORM 으로 데이터에 접근하는 완결된 CRUD 예제입니다.\n`Sales Reports` 태그의 Raw SQL 예제와 나란히 비교하도록 만들어졌습니다 —\n두 기능은 **Repository 구현만 다르고** 나머지는 모두 같습니다.\n\n### 엔드포인트\n- `POST /products` — 등록 (SKU 중복 시 409)\n- `GET /products` — 목록 (limit 상한 100, SKU 오름차순 안정 정렬)\n- `GET /products/{product_id}` — 단건 조회\n- `PATCH /products/{product_id}` — 부분 수정\n- `DELETE /products/{product_id}` — 삭제\n\n### 데이터 접근\n`ProductRepository(BaseRepository[Product])` 가 ORM 모델을 돌려주고, 응답 DTO 가\n`from_attributes=True` 로 변환합니다. 금액은 `Numeric(12, 2)` 입니다 — float 으로\n두면 합계가 조용히 틀어집니다.\n\n> 인증 없는 참조 예제입니다. 실제 업무 기능으로 승격할 때 인증·인가를 다시 검토하세요.\n        ",
+      "name": "Catalog"
+    },
+    {
+      "description": "\n**매출 리포트 API (Raw SQL 예제)**\n\nSQLAlchemy `text()` 로 집계 쿼리를 실행하는 예제입니다. `Catalog` 태그의 ORM\n예제와 라우터·Dependency·Service·트랜잭션·DTO 검증 구조가 동일합니다.\n\n### 엔드포인트\n- `GET /daily-sales` — 기간 내 일자별 주문 수와 매출 합계\n\n결제 완료(`paid`) 주문만 집계하며, 종료일은 **포함**입니다. 조회 기간 상한은\n366일입니다 — 무제한 집계는 replica 를 통째로 묶습니다.\n\n### 데이터 접근\n`SalesReportRawRepository(RawRepositoryBase)` 가 `RowMapping` 을 돌려주고, Service 가\n`dict(row)` 를 **명시적으로** Pydantic 검증합니다. ORM 객체가 아니므로\n`from_attributes` 에 기댈 수 없습니다 — 컬럼 alias 가 바뀌면 그 자리에서 실패합니다.\n\n조회 전용이라 read-only 세션만 사용합니다. Raw SQL 이라는 이유로 쓰기 세션을\n쓰지 않습니다 — 세션 선택은 데이터 접근 방식이 아니라 하는 일이 결정합니다.\n\n> 인증 없는 참조 예제입니다. 실제 업무 기능으로 승격할 때 인증·인가를 다시 검토하세요.\n        ",
+      "name": "Sales Reports"
+    }
+  ]
+}

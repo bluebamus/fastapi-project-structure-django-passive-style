@@ -19,8 +19,10 @@
             return await self.repository.get_all(skip=skip, limit=limit)
 """
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.db.errors import convert_db_error
 from app.utils.logs import LoggerMixin
 
 
@@ -39,8 +41,16 @@ class BaseService(LoggerMixin):
         self.session = session
 
     async def commit(self) -> None:
-        """현재 트랜잭션을 커밋한다(쓰기 핸들러가 응답 반환 직전에 호출)."""
-        await self.session.commit()
+        """현재 트랜잭션을 커밋한다(쓰기 핸들러가 응답 반환 직전에 호출).
+
+        커밋 시점에도 DB 예외가 난다 — 지연된 제약 검사, 커넥션 유실 등. Repository
+        안에서만 변환기를 거치면 **이 경로가 그대로 뚫린다**: 원본 예외가 그대로
+        올라가 500 핸들러의 traceback 에 SQL 과 바인딩 값이 찍힌다(F-015).
+        """
+        try:
+            await self.session.commit()
+        except SQLAlchemyError as exc:
+            raise convert_db_error(exc, operation="COMMIT", model=type(self).__name__) from None
 
     async def rollback(self) -> None:
         """현재 트랜잭션을 롤백한다."""

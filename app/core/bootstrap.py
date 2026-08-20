@@ -25,21 +25,23 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.apps import Apps
 from app.core.apps import apps as default_registry
 from app.core.apps.wiring import create_admin, install_routers
-from app.core.db.session import create_db_tables, dispose_engine, engine
+from app.core.db.errors import driver_error_code
+from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_db
 from app.core.exception import AppException, ErrorResponse, ValidationException
-from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
+from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.utils.logs import get_logger
 from config import INSTALLED_APPS, app_settings
@@ -49,38 +51,14 @@ logger = get_logger("app.core.bootstrap")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """애플리케이션 수명 주기 — 자원 관리는 ``manage_application_resources`` 가 한다.
+
+    여기에는 조립만 남긴다. startup 중간에 실패했을 때의 해제 경로와 종료 순서가
+    자원 관리자 한 곳에 모여 있어야, "정상 종료에서는 닫는데 실패 경로에서는
+    새는" 상태가 생기지 않는다(development-plan §9.4·§9.5).
     """
-    애플리케이션 수명 주기 관리
-
-    시작 시:
-        - DEBUG=True: 데이터베이스 테이블 자동 생성 (개발 환경용)
-        - DEBUG=False: 테이블 생성 건너뜀 (운영 환경은 Alembic 사용)
-
-    종료 시:
-        - 진행 중인 백그라운드 로그 태스크 drain 후 데이터베이스 엔진 정리
-    """
-    logger.info("[Startup] 애플리케이션 시작 (DEBUG=%s)", app_settings.DEBUG)
-
-    # DEBUG 모드일 때만 테이블 자동 생성
-    # 운영 환경에서는 Alembic 마이그레이션 사용 권장
-    if app_settings.DEBUG:
-        try:
-            await create_db_tables()
-            logger.info("[Startup] 데이터베이스 테이블 생성 완료 (DEBUG 모드)")
-        except Exception as e:
-            logger.error("[Startup] 데이터베이스 테이블 생성 실패: %s", e)
-            raise
-    else:
-        logger.info("[Startup] 테이블 자동 생성 건너뜀 (DEBUG=False, Alembic 사용)")
-
-    yield
-
-    logger.info("[Shutdown] 애플리케이션 종료 시작")
-    # 엔진 정리 전에 진행 중인 백그라운드 로그 태스크를 drain (W1) —
-    # dispose 와의 경합으로 인한 마지막 로그 유실을 줄인다.
-    await access_log_tasks.drain()
-    await dispose_engine()
-    logger.info("[Shutdown] 애플리케이션 종료 완료")
+    async with manage_application_resources(app):
+        yield
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -178,23 +156,52 @@ def _register_exception_handlers(app: FastAPI) -> None:
         처리되지 않은 모든 예외를 캐치하여 500 에러 응답을 반환합니다.
         운영 환경에서는 상세 정보를 숨깁니다.
         """
-        logger.exception(
-            "[UnhandledException] %s",
-            type(exc).__name__,
-            extra={
-                "path": request.url.path,
-                "method": request.method,
-                "exception_type": type(exc).__name__,
-            },
-        )
-        # DEBUG 모드에서만 상세 정보 노출 (운영 환경에서는 민감 정보 유출 방지)
-        detail = str(exc) if app_settings.DEBUG else None
+        # DB 예외는 traceback 을 남기지 않는다.
+        #
+        # SQLAlchemy 예외의 str() 에는 실행된 SQL 과 바인딩된 값이 들어 있고,
+        # traceback 은 그것을 그대로 출력한다. 이 로거 이름은 ``app.core.*`` 이라
+        # SqlNoiseFilter 도 통과한다 — 필터로 막아둔 값이 여기로 새던 경로다(F-015).
+        #
+        # 정상 경로의 DB 예외는 이미 ``convert_db_error`` 가 경계에서 소독한다.
+        # 여기 도달했다는 것은 변환기를 거치지 않은 경로가 있다는 뜻이므로,
+        # **어떤 종류였는지와 드라이버 코드만** 남겨 그 경로를 찾을 단서를 준다.
+        if isinstance(exc, SQLAlchemyError):
+            logger.error(
+                "[UnhandledException] %s (변환기 미경유 DB 예외, driver_code=%s)",
+                type(exc).__name__,
+                driver_error_code(exc),
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "exception_type": type(exc).__name__,
+                },
+            )
+        else:
+            logger.exception(
+                "[UnhandledException] %s",
+                type(exc).__name__,
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "exception_type": type(exc).__name__,
+                },
+            )
+        # detail 은 **DEBUG 에서도** 비운다.
+        #
+        # 잡히지 않은 예외의 대부분은 DB 계층에서 올라온다. SQLAlchemy 의
+        # ``str(exc)`` 에는 실행된 SQL 과 **바인딩된 값**, 때로는 DSN 이 그대로 들어
+        # 있다 — 그것을 HTTP 응답으로 돌려주면 로그 필터(C-5)로 막아둔 것을 응답
+        # 경로로 새로 여는 셈이다. "DEBUG 니까 괜찮다"가 성립하려면 DEBUG 인 서버가
+        # 절대 외부에 노출되지 않아야 하는데, 그 전제는 사고로 자주 깨진다.
+        #
+        # 개발자가 볼 내용은 로그에 있다 — 바로 위 ``logger.exception`` 이 traceback
+        # 전체를 남긴다. 외부로는 error code 만 나간다.
         return JSONResponse(
             status_code=500,
             content=ErrorResponse(
                 error_code="INTERNAL_SERVER_ERROR",
                 message="내부 서버 오류가 발생했습니다.",
-                detail=detail,
+                detail=None,
             ).model_dump(mode="json"),
         )
 
@@ -204,6 +211,12 @@ class HealthResponse(BaseModel):
 
     status: str
     version: str
+
+
+class ReadyResponse(BaseModel):
+    """준비 상태(readiness) 응답 스키마"""
+
+    status: str
 
 
 def _add_health_and_docs(app: FastAPI) -> None:
@@ -228,6 +241,44 @@ def _add_health_and_docs(app: FastAPI) -> None:
             status="healthy",
             version=app_settings.VERSION,
         )
+
+    # liveness 와 readiness 를 나눈다.
+    #
+    # `/health` 는 "프로세스가 살아 있는가"만 답한다 — 여기서 DB 를 보면 DB 가
+    # 잠깐 흔들릴 때 오케스트레이터가 **멀쩡한 프로세스를 죽인다**.
+    # `/ready` 는 "트래픽을 받을 수 있는가"를 답한다. 준비되지 않았으면 재시작이
+    # 아니라 로드밸런서에서 빼는 것이 맞는 조치다.
+    @app.get(
+        "/ready",
+        response_model=ReadyResponse,
+        tags=["Health"],
+        summary="준비 상태(readiness)",
+        description=(
+            "트래픽을 받을 준비가 됐는지 확인합니다. writer DB 에 `SELECT 1` 을 "
+            f"최대 {READINESS_TIMEOUT_SECONDS:.0f}초 안에 실행하고, 실패하거나 "
+            "시간을 넘기면 503 을 반환합니다."
+        ),
+        operation_id="readinessCheck",
+        responses={
+            503: {
+                "model": ErrorResponse,
+                "description": "DB 를 사용할 수 없거나 응답이 늦어 준비되지 않음",
+            }
+        },
+    )
+    async def readiness_check() -> ReadyResponse:
+        """writer DB 를 확인하고 준비 상태를 반환한다."""
+        try:
+            await ping_writer_db()
+        except Exception as exc:
+            # 상세는 서버 로그에만 남긴다. 헬스 엔드포인트는 보통 인증 없이 열려
+            # 있어, 응답에 DSN·자격증명·드라이버 오류 원문이 실리면 그대로 유출된다.
+            logger.warning("[Readiness] DB 준비 확인 실패: %s", type(exc).__name__)
+            raise HTTPException(
+                status_code=503,
+                detail="서비스가 아직 요청을 받을 준비가 되지 않았습니다.",
+            ) from exc
+        return ReadyResponse(status="ready")
 
     # Scalar API 문서 (DEBUG 모드에서만 활성화)
     if app_settings.DEBUG:
