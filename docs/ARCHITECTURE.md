@@ -3,12 +3,14 @@
 이 문서는 프로젝트의 유일한 공식 아키텍처 소스입니다.
 코드와 문서 간 불일치가 있으면 코드가 정답이며, 이 문서를 업데이트하세요.
 
+주제별 심화 가이드 9종은 [docs/project-guide/v1.1/](project-guide/v1.1/README.md) 에 있습니다.
+
 ---
 
 ## 1. 폴더 분류체계
 
 ```
-fastapi-default-project-structure/
+fastapi-project-structure-django-passive-style/
 ├── main.py                          # 진입점: create_app() 호출만 (얇은 entrypoint)
 ├── config.py                        # Pydantic Settings (app/db/cors/log/redis/middleware/timezone)
 ├── pyproject.toml                   # 의존성 + [tool.uv] package = false
@@ -307,7 +309,15 @@ async def create_<name>(
 - 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받고 커밋하지 않습니다.
   `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를 시도하면
   `ReadOnlyRoutingError` 로 즉시 실패합니다.
-- `Service`는 `BaseService`를, `Repository`는 `BaseRepository`(제네릭 CRUD)를 상속합니다.
+- `Service`는 `BaseService`를 상속합니다. `Repository` 는 **두 계열 중 하나**를 상속합니다 —
+  ORM 이면 `BaseRepository`(제네릭 CRUD, `app/core/repositories/repository_base.py`),
+  Raw SQL 이면 `RawRepositoryBase`(`app/core/repositories/raw_repository_base.py`).
+  두 계열은 **상속 관계가 없습니다** — 하나의 Base 가 모델과 row 를 함께 돌려주면 호출부가
+  무엇을 받았는지 타입으로 알 수 없기 때문입니다. 참조 예제는
+  `app/features/catalog/repositories/product_repository.py`(ORM) 와
+  `app/features/reports/repositories/sales_report_repository.py`(Raw) 입니다.
+  어느 쪽을 고를지는 [ORM vs Raw 결정 가이드](project-guide/v1.1/09-orm-vs-raw-decision.md)
+  에 판단 기준과 Raw 전용 제약이 정리돼 있습니다.
 - 요청 밖(백그라운드/Celery) 세션은 `background_session()` 컨텍스트(별도 풀)를 씁니다.
 
 > **왜 의존성이 아니라 핸들러인가.** 이전에는 의존성이 `yield` 이후 커밋했습니다. 그런데

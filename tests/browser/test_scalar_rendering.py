@@ -15,9 +15,36 @@ Scalar 는 브라우저에서 JavaScript 로 `/openapi.json` 을 가져와 화�
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 pytestmark = pytest.mark.browser
+
+#: 지연 렌더링을 기다리는 상한. 넘으면 마지막으로 본 본문으로 단정을 실패시킨다.
+RENDER_TIMEOUT_SECONDS = 20.0
+
+
+async def _body_when_rendered(page, expected: tuple[str, ...]) -> str:
+    """기대 문자열이 전부 나타난 시점의 body 텍스트를 돌려준다.
+
+    Scalar 는 태그 섹션을 **지연 렌더링**한다. 고정 시간 대기(이전 구현: 2.5초)는
+    기계가 한가할 때만 맞고, 부하가 걸리면 아직 접혀 있는 화면을 읽어 실패한다 —
+    실제로 이 파일이 부하 상황에서 간헐적으로 빨간불이 됐다.
+
+    단정 자체는 호출부에 그대로 둔다. 여기서는 **기다리기만** 하므로, 문자열이 정말
+    없으면 상한을 채운 뒤 같은 실패가 난다.
+    """
+    deadline = time.monotonic() + RENDER_TIMEOUT_SECONDS
+    body = ""
+    while True:
+        body = await page.inner_text("body")
+        if all(text in body for text in expected):
+            return body
+        if time.monotonic() >= deadline:
+            return body
+        await page.wait_for_timeout(250)
+
 
 #: 사이드바에 반드시 나타나야 하는 태그. `tags_metadata.py` 의 선언과 같아야 한다.
 EXPECTED_TAGS = (
@@ -84,10 +111,10 @@ async def test_example_values_are_visible_in_the_catalog_section(docs_page, live
     await docs_page.goto(
         f"{live_server}/docs#tag/catalog", wait_until="networkidle", timeout=30_000
     )
-    await docs_page.wait_for_timeout(2_500)
-    body = await docs_page.inner_text("body")
+    expected_texts = ("상품 생성", "SKU-1001", "129000.00")
+    body = await _body_when_rendered(docs_page, expected_texts)
 
-    for expected in ("상품 생성", "SKU-1001", "129000.00"):
+    for expected in expected_texts:
         assert expected in body, f"Catalog 화면에 '{expected}' 가 보이지 않는다"
 
 
@@ -96,8 +123,7 @@ async def test_raw_example_section_renders(docs_page, live_server: str):
     await docs_page.goto(
         f"{live_server}/docs#tag/sales-reports", wait_until="networkidle", timeout=30_000
     )
-    await docs_page.wait_for_timeout(2_500)
-    body = await docs_page.inner_text("body")
+    body = await _body_when_rendered(docs_page, ("일별 매출 리포트",))
 
     assert "일별 매출 리포트" in body, "Sales Reports 화면이 그려지지 않았다"
 
