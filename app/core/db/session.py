@@ -10,9 +10,9 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
     - background_engine: 백그라운드 태스크용 분리 엔진 (pool_size=10, max_overflow=10)
     - AsyncSessionLocal: 메인 세션 팩토리
     - BackgroundSessionLocal: 백그라운드 세션 팩토리
-    - get_session(): FastAPI DI용 세션 제너레이터 (읽기/쓰기 자동 라우팅)
-    - get_read_session(): 읽기 전용 세션 제너레이터 (쓰기 시도 시 실패)
-    - get_write_session(): 쓰기 세션 제너레이터 (항상 primary)
+    - get_routed_db_session(): FastAPI DI용 세션 제너레이터 (읽기/쓰기 자동 라우팅)
+    - get_read_only_db_session(): 읽기 전용 세션 제너레이터 (쓰기 시도 시 실패)
+    - get_writer_db_session(): 쓰기 세션 제너레이터 (항상 primary)
     - get_background_session(): 백그라운드 태스크용 세션 제너레이터
 
 커넥션 풀 분리 이유:
@@ -28,13 +28,13 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
 사용 예시:
     # FastAPI 엔드포인트에서 (읽기/쓰기 자동 라우팅)
     @app.get("/users")
-    async def get_users(session: AsyncSession = Depends(get_session)):
+    async def get_users(session: AsyncSession = Depends(get_routed_db_session)):
         result = await session.execute(select(User))
         return result.scalars().all()
 
     # 읽기 전용임이 확실한 엔드포인트 (쓰기를 코드 수준에서 차단)
     @app.get("/users/stats")
-    async def stats(session: AsyncSession = Depends(get_read_session)):
+    async def stats(session: AsyncSession = Depends(get_read_only_db_session)):
         ...
 
     # 백그라운드 태스크에서
@@ -44,10 +44,13 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
             await session.commit()
 """
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import cast
 
+from sqlalchemy import Table, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -73,17 +76,19 @@ logger = get_logger("database")
 # 메인 엔진 (FastAPI 요청용) = primary(writer)
 # =============================================================================
 # API 요청 처리를 위한 커넥션 풀
-# - pool_size: 기본 유지 연결 수 (20)
-# - max_overflow: 추가 허용 연결 수 (20) → 최대 40개 동시 연결
+# 풀 크기는 config 의 DatabaseSettings 가 소유한다 — 배포 형태(worker 수, replica
+# 대수)에 따라 달라지고, 총 연결 수가 DB 상한을 넘지 않는지 거기서 검증한다.
+# - pool_size: 기본 유지 연결 수
+# - max_overflow: 추가 허용 연결 수
 # - pool_pre_ping: 연결 사용 전 유효성 검사 (죽은 연결 자동 복구)
 # - pool_recycle: 연결 재활용 주기 (MySQL wait_timeout보다 짧게 설정)
 engine = create_async_engine(
     url=db_settings.MYSQL_WRITER_URL,
     echo=False,  # SQL 로깅 (개발 시 True로 설정)
-    pool_size=20,
-    max_overflow=20,
-    pool_timeout=30,  # 풀에서 연결 대기 시간 (초)
-    pool_recycle=280,  # MySQL 기본 wait_timeout(28800s), 클라우드는 보통 300s
+    pool_size=db_settings.DB_POOL_SIZE,
+    max_overflow=db_settings.DB_MAX_OVERFLOW,
+    pool_timeout=db_settings.DB_POOL_TIMEOUT,
+    pool_recycle=db_settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
     pool_reset_on_return="rollback",  # 반환 시 롤백으로 세션 초기화
     connect_args={
@@ -109,10 +114,10 @@ def _create_read_engine(url: str) -> AsyncEngine:
     return create_async_engine(
         url=url,
         echo=False,
-        pool_size=20,
-        max_overflow=20,
-        pool_timeout=30,
-        pool_recycle=280,
+        pool_size=db_settings.DB_POOL_SIZE,
+        max_overflow=db_settings.DB_MAX_OVERFLOW,
+        pool_timeout=db_settings.DB_POOL_TIMEOUT,
+        pool_recycle=db_settings.DB_POOL_RECYCLE,
         pool_pre_ping=True,
         pool_reset_on_return="rollback",
         connect_args={
@@ -168,10 +173,10 @@ logger.info("[database] 라우팅 구성: %s", db_settings.describe_routing())
 background_engine = create_async_engine(
     url=db_settings.MYSQL_WRITER_URL,
     echo=False,
-    pool_size=10,  # 백그라운드용은 작게 설정
-    max_overflow=10,
-    pool_timeout=60,  # 백그라운드는 대기 시간 여유있게
-    pool_recycle=280,
+    pool_size=db_settings.DB_BACKGROUND_POOL_SIZE,
+    max_overflow=db_settings.DB_BACKGROUND_MAX_OVERFLOW,
+    pool_timeout=db_settings.DB_BACKGROUND_POOL_TIMEOUT,
+    pool_recycle=db_settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
     pool_reset_on_return="rollback",
     connect_args={
@@ -193,7 +198,7 @@ BackgroundSessionLocal = async_sessionmaker(
 async def background_session() -> AsyncGenerator[AsyncSession, None]:
     """요청 밖(백그라운드 태스크·Celery)에서 사용하는 세션 컨텍스트.
 
-    요청 스코프 DI(get_session)를 쓸 수 없는 곳에서 트랜잭션 경계를 제공한다.
+    요청 스코프 DI(get_routed_db_session)를 쓸 수 없는 곳에서 트랜잭션 경계를 제공한다.
     예외 시 롤백하고, 컨텍스트 종료 시 세션을 닫는다. 커밋은 호출자가 명시한다.
 
     Example:
@@ -209,38 +214,63 @@ async def background_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def create_db_tables() -> None:
-    """
-    데이터베이스 테이블을 생성합니다.
+def owned_tables() -> list[Table]:
+    """App Registry 가 소유한 모델의 테이블만 돌려준다.
 
-    애플리케이션 시작 시 lifespan에서 호출됩니다.
-    각 기능 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
-    테이블을 생성합니다.
+    ``Base.metadata`` 는 전역이라, 한 번이라도 import 된 모델은 registry 에 없어도
+    거기 남는다 — 테스트가 정의한 임시 모델까지 섞인다. 그 전체를 create_all 에
+    넘기면 **설치하지 않은 앱의 테이블이 개발 DB 에 생긴다**. 그래서 registry 가
+    실제로 소유한 것만 골라 ``tables=`` 로 명시한다 (C-3).
+    """
+    from app.core.apps import apps
+
+    # registry 는 매핑 클래스를 ``type`` 으로 돌려준다(프레임워크 중립). 여기서
+    # 우리 Base 하위임을 아는 지점이므로 좁혀 쓴다.
+    models = cast(list[type[Base]], apps.get_models())
+    return [cast(Table, model.__table__) for model in models]
+
+
+async def create_db_tables(*, populate: bool = True) -> int:
+    """등록 앱이 소유한 테이블을 생성한다.
+
+    Args:
+        populate: registry 를 여기서 채울지 여부. 조립부(resources)가 이미 채웠으면
+            ``False`` 로 넘긴다 — 같은 startup 에서 discovery 가 두 번 돌면 로그와
+            소요 시간이 어긋난다.
+
+    Returns:
+        생성 대상 테이블 수. 0이면 **DB 에 접속하지 않는다**.
 
     Note:
         모델 수집 대상은 ``config.INSTALLED_APPS`` 다. 디렉터리를 훑지 않는다 —
         등록하지 않은 앱의 테이블이 개발 DB 에만 생겨 운영과 어긋나는 일을 막는다.
     """
-    import asyncio
+    if populate:
+        from app.core.apps import apps
+        from config import INSTALLED_APPS
 
-    from app.core.apps import apps
-    from config import INSTALLED_APPS
+        # ready() 는 실행하지 않는다 — 테이블 생성은 앱 결선을 필요로 하지 않는다.
+        apps.populate(INSTALLED_APPS, run_ready=False)
 
-    # 등록 앱의 models 를 확보한다. 애플리케이션 조립부가 이미 populate 했으면 no-op 이고,
-    # 이 함수를 단독으로 부르는 경로(개발 스크립트)에서는 여기서 채운다.
-    # ready() 는 실행하지 않는다 — 테이블 생성은 앱 결선을 필요로 하지 않는다.
-    apps.populate(INSTALLED_APPS, run_ready=False)
-    registered = [model.__name__ for model in apps.get_models()]
-    logger.info("[database] 모델 등록: %d개 %s", len(registered), registered)
+    tables = owned_tables()
+    logger.info("[database] 모델 등록: %d개 %s", len(tables), [t.name for t in tables])
+
+    if not tables:
+        # 모델이 하나도 없으면 만들 것이 없다. 여기서 접속하면 "테이블 0개를
+        # 만들려고 DB 가 떠 있어야 하는" 이상한 의존이 생긴다.
+        logger.info("[database] 소유 테이블이 없어 DB 접속과 테이블 생성을 건너뛴다")
+        return 0
 
     logger.info("Creating database tables...")
 
     async with asyncio.timeout(30):
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(Base.metadata.create_all, tables=tables)
+
+    return len(tables)
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_routed_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI 의존성 주입용 세션 제너레이터
 
@@ -255,7 +285,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         @app.get("/users/{id}")
         async def get_user(
             id: str,
-            session: AsyncSession = Depends(get_session)
+            session: AsyncSession = Depends(get_routed_db_session)
         ):
             user = await session.get(User, id)
             return user
@@ -272,14 +302,18 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             yield session
         except Exception as e:
             await session.rollback()
+            # 예외 **메시지**는 남기지 않는다 — DB 예외의 str() 에는 실행된 SQL 과
+            # 바인딩된 값이 들어 있고, 이 로거 이름(app.core.*)은 sql_noise 필터를
+            # 통과한다(C-5). 타입과 소요시간만으로 어디서 굴렀는지는 충분히 좁혀진다.
             logger.error(
-                f"[get_session] ROLLBACK - error: {type(e).__name__}: {e}, "
-                f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
+                "[get_routed_db_session] ROLLBACK - error: %s, duration: %.1fms",
+                type(e).__name__,
+                (time.perf_counter() - start_time) * 1000,
             )
             raise e
 
 
-async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_read_only_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     읽기 전용 세션 제너레이터 (FastAPI DI)
 
@@ -292,14 +326,14 @@ async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
 
     Example:
         @app.get("/posts")
-        async def list_posts(session: AsyncSession = Depends(get_read_session)):
+        async def list_posts(session: AsyncSession = Depends(get_read_only_db_session)):
             result = await session.execute(select(Post))
             return result.scalars().all()
 
     Note:
         - DB_ROUTER_ENABLED=false 면 라우팅·쓰기 차단이 동작하지 않고
-          get_session() 과 동일하게 단일 엔진 세션을 반환합니다.
-        - 복제 지연을 허용할 수 없는 읽기라면 get_session() + using_writer() 를 쓰세요.
+          get_routed_db_session() 과 동일하게 단일 엔진 세션을 반환합니다.
+        - 복제 지연을 허용할 수 없는 읽기라면 get_routed_db_session() + using_writer() 를 쓰세요.
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)
@@ -310,7 +344,7 @@ async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def get_write_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_writer_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     쓰기 세션 제너레이터 (FastAPI DI)
 
@@ -321,7 +355,7 @@ async def get_write_session() -> AsyncGenerator[AsyncSession, None]:
         AsyncSession: primary 에 고정된 데이터베이스 세션
 
     Note:
-        get_session() 도 쓰기를 감지하면 primary 로 전환되므로 대부분의 경우
+        get_routed_db_session() 도 쓰기를 감지하면 primary 로 전환되므로 대부분의 경우
         구분 없이 써도 됩니다. 이 의존성은 "이 핸들러는 쓰기다"를 명시하고,
         첫 SELECT 조차 replica 로 새지 않도록 보장할 때 사용합니다.
     """
@@ -368,6 +402,27 @@ async def get_background_session() -> AsyncGenerator[AsyncSession, None]:
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
             raise e
+
+
+# readiness 검사 예산. 넘기면 준비되지 않은 것으로 본다 — 오케스트레이터를
+# 기다리게 하는 것보다 503 을 빨리 돌려주는 편이 낫다.
+READINESS_TIMEOUT_SECONDS = 2.0
+
+
+async def ping_writer_db(timeout: float = READINESS_TIMEOUT_SECONDS) -> None:
+    """writer DB 에 ``SELECT 1`` 을 실행한다 (readiness 용).
+
+    replica 가 아니라 **writer** 를 보는 이유는, 쓰기가 불가능한 인스턴스로
+    트래픽이 들어오는 것이 준비 실패의 실질적 의미이기 때문이다.
+
+    Raises:
+        TimeoutError: ``timeout`` 안에 응답하지 못한 경우.
+        Exception: 연결·쿼리 실패 시 드라이버 예외를 그대로 올린다. 호출자가
+            사용자 응답에 내용을 싣지 않도록 주의해야 한다(DSN·자격증명 노출).
+    """
+    async with asyncio.timeout(timeout):
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
 
 
 async def dispose_engine() -> None:

@@ -1,0 +1,45 @@
+# 줄바꿈 정규화 — 저장소에는 LF 로만 들어간다.
+#
+# 왜 필요한가:
+#   `core.autocrlf=false` 인 Windows 에서 도구마다 다른 줄바꿈을 쓴다. 실제로
+#   `ruff format` 이 파일을 통째로 다시 쓰면서 LF 를 CRLF 로 뒤집은 일이 두 번 있었고,
+#   그때마다 한 줄 고친 커밋이 **전체 파일 diff** 가 됐다(189줄 추가 / 145줄 삭제).
+#   그 diff 안에서는 실제 변경이 보이지 않는다 — 리뷰가 불가능해진다.
+#
+#   `text=auto eol=lf` 는 저장소(blob)에 **항상 LF** 로 커밋되게 한다. 작업 디렉터리
+#   에서는 그대로 LF 로 체크아웃되며, 이 프로젝트의 도구(uv·ruff·mypy·pytest)와
+#   에디터는 모두 LF 를 문제없이 다룬다.
+#
+# 적용 후 재정규화가 필요하면:
+#   git add --renormalize .
+* text=auto eol=lf
+
+# =============================================================================
+# 줄바꿈을 절대 건드리면 안 되는 것
+# =============================================================================
+# Windows 배치 파일은 CRLF 여야 cmd.exe 가 해석한다.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 바이너리 — 손대지 않는다.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.zip  binary
+*.gz   binary
+*.db   binary
+*.sqlite3 binary
+
+# =============================================================================
+# diff 품질
+# =============================================================================
+# Python diff hunk 헤더에 함수/클래스 이름이 나오게 한다.
+*.py   diff=python
+
+# lock 파일은 사람이 읽는 것이 아니다 — diff 를 접어 리뷰 소음을 줄인다.
+uv.lock linguist-generated=true -diff

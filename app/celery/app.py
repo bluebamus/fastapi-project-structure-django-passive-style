@@ -14,6 +14,11 @@ celery_app = Celery(
     backend=redis_settings.REDIS_URL,
     include=["app.celery.tasks"],
 )
+# worker 프로세스 종료 훅을 등록한다. import 만으로 signal 이 연결되므로 여기서
+# 한 번 끌어온다 — worker 는 이 모듈을 반드시 로드하기 때문이다. 이걸 빠뜨리면
+# 루프에 묶인 DB 커넥션이 종료 시 정리되지 않고 서버 쪽에 남는다.
+from app.celery import lifecycle  # noqa: E402,F401 - signal 등록 부수효과
+
 celery_app.conf.update(
     task_track_started=True,
     task_serializer="json",

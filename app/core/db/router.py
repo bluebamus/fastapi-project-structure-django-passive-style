@@ -19,12 +19,12 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
 
 사용 예시:
     # 1) 투명 라우팅 — 기존 코드를 그대로 두면 알아서 갈린다
-    async def handler(session: AsyncSession = Depends(get_session)):
+    async def handler(session: AsyncSession = Depends(get_routed_db_session)):
         await session.execute(select(Post))     # → reader
         session.add(Post(...))                  # → writer (이후 세션은 writer 고정)
 
     # 2) 명시적 읽기 전용 — 쓰기를 시도하면 ReadOnlyRoutingError
-    async def handler(session: AsyncSession = Depends(get_read_session)):
+    async def handler(session: AsyncSession = Depends(get_read_only_db_session)):
         await session.execute(select(Post))     # → reader
 
     # 3) 이스케이프 해치 — 복제 지연을 허용할 수 없는 읽기
@@ -42,7 +42,7 @@ import itertools
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Engine, UpdateBase
+from sqlalchemy import Engine, TextClause, UpdateBase
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,17 @@ from sqlalchemy.orm import Session
 _WRITER_PINNED = "_db_router_writer_pinned"  # 이 세션은 writer 로 고정됨
 _READER_PINNED = "_db_router_reader_pinned"  # 이 세션이 선택한 replica 엔진
 _READ_ONLY = "_db_router_read_only"  # 이 세션은 쓰기 금지
+
+# ``TextClause`` 의 읽기/쓰기 의도를 실어 나르는 execution_options 키.
+#
+# Raw SQL 은 문자열이라 라우터가 성격을 알 수 없다. 첫 토큰을 파싱하는 방법은
+# 주석·공백·대소문자까지는 버티지만 ``WITH x AS (...) DELETE ...`` 같은 CTE DML 을
+# 읽기로 오판한다 — 그러면 DML 이 replica 로 가거나 읽기 전용 세션을 통과한다.
+# 그래서 SQL 을 해석하는 대신 **호출부가 의도를 붙인다**(:func:`read_intent` /
+# :func:`write_intent`). 의도가 없는 ``TextClause`` 는 쓰기로 본다(fail-closed).
+DB_INTENT = "db_intent"
+READ_INTENT = "read"
+WRITE_INTENT = "write"
 
 
 class ReadOnlyRoutingError(RuntimeError):
@@ -115,9 +126,48 @@ def mark_read_only(session: Session | AsyncSession) -> None:
     _session_info(session)[_READ_ONLY] = True
 
 
+def is_read_only_session(session: Session | AsyncSession) -> bool:
+    """이 세션이 읽기 전용으로 표시돼 있는지.
+
+    Raw Base 가 실행 **전에** 쓰기를 거부할 때 쓴다. 세션 info 키는 이 모듈의 구현
+    세부사항이므로 밖에서 복제하지 않고 이 helper 를 거친다 — 키 이름이 바뀌면
+    복제한 쪽은 조용히 항상 ``False`` 가 되고, 그때 차단이 사라진다.
+    """
+    return bool(_session_info(session).get(_READ_ONLY))
+
+
+def read_intent(statement: TextClause) -> TextClause:
+    """이 Raw 구문을 읽기로 표시한다 — reader 로 갈 수 있다."""
+    return statement.execution_options(**{DB_INTENT: READ_INTENT})
+
+
+def write_intent(statement: TextClause) -> TextClause:
+    """이 Raw 구문을 쓰기로 표시한다 — writer 고정, 읽기 전용 세션에서는 거부."""
+    return statement.execution_options(**{DB_INTENT: WRITE_INTENT})
+
+
+def statement_intent(clause: Any) -> str | None:
+    """구문에 붙은 읽기/쓰기 의도. 붙어 있지 않으면 ``None``."""
+    getter = getattr(clause, "get_execution_options", None)
+    if getter is None:
+        return None
+    value = getter().get(DB_INTENT)
+    return value if value in (READ_INTENT, WRITE_INTENT) else None
+
+
 def _is_write(clause: Any, flushing: bool) -> bool:
-    """이 구문이 쓰기인지 판별한다 (ORM flush 또는 Core INSERT/UPDATE/DELETE)."""
-    return flushing or isinstance(clause, UpdateBase)
+    """이 구문이 쓰기인지 판별한다.
+
+    ORM flush 와 Core ``UpdateBase`` 는 타입으로 확정된다. ``TextClause`` 는 문자열이라
+    타입으로 알 수 없으므로 **명시적 read 의도가 붙은 것만** 읽기로 본다. 의도가 없는
+    Raw SQL 은 쓰기로 취급한다(fail-closed) — 읽기로 잘못 보면 DML 이 replica 로 새지만,
+    쓰기로 잘못 보면 SELECT 하나가 writer 로 갈 뿐이다.
+    """
+    if flushing or isinstance(clause, UpdateBase):
+        return True
+    if isinstance(clause, TextClause):
+        return statement_intent(clause) != READ_INTENT
+    return False
 
 
 def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
@@ -143,7 +193,7 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
                 if info.get(_READ_ONLY):
                     raise ReadOnlyRoutingError(
                         "읽기 전용 세션에서 쓰기를 시도했습니다. "
-                        "쓰기에는 get_session()/get_write_session() 을 사용하세요."
+                        "쓰기에는 get_routed_db_session()/get_writer_db_session() 을 사용하세요."
                     )
                 # 이후 SELECT 가 복제 지연에 걸리지 않도록 이 세션을 writer 에 고정한다.
                 if router.sticky_after_write:

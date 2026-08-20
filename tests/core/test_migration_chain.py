@@ -25,6 +25,9 @@ _EXPECTED_TABLES = {
     "blog_posts",
     "replies",
     "sns_posts",
+    # ORM/Raw 예제가 소유하는 테이블 (Phase 5)
+    "catalog_products",
+    "sales_orders",
 }
 
 

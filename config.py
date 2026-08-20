@@ -50,6 +50,10 @@ INSTALLED_APPS: list[str] = [
     "app.features.sns.apps.SnsConfig",
     "app.features.user.apps.UserConfig",
     "app.features.auth.apps.AuthConfig",
+    # ORM/Raw 데이터 접근을 나란히 비교하는 예제 두 개. 순서가 계약이므로 기존
+    # 앱 뒤에 둔다 — 앞에 끼우면 라우터 등록 순서가 바뀐다.
+    "app.features.catalog.apps.CatalogConfig",
+    "app.features.reports.apps.ReportsConfig",
 ]
 
 
@@ -189,6 +193,16 @@ class AppSettings(BaseSettings):
         description="관리자 페이지 활성화 (인증 없음 — 운영에서는 false 권장)",
     )
 
+    # 운영·스테이징에서 인증 없는 /admin 을 여는 것을 **의식적으로** 승인했다는 표시.
+    #
+    # 주석만으로는 사고를 못 막는다 — 개발 기본값(ADMIN=true)을 그대로 들고 배포하면
+    # 자격증명 없는 관리자 페이지가 그대로 열린다. 기본값을 뒤집지 않는 대신(2026-08-12
+    # 결정 유지), 운영에서는 **명시적 승인**을 요구해 사고와 의도를 구분한다.
+    ADMIN_UNAUTHENTICATED_ACK: bool = Field(
+        default=False,
+        description="production/staging 에서 인증 없는 /admin 을 여는 것을 승인 (프록시 차단 전제)",
+    )
+
     # 실행 환경 (헬스체크 응답에 포함)
     ENV: Literal["development", "staging", "production", "test"] = Field(
         default="development",
@@ -208,6 +222,35 @@ class AppSettings(BaseSettings):
         default=8000,
         description="개발 서버 바인딩 포트",
     )
+
+    @model_validator(mode="after")
+    def _guard_unauthenticated_admin(self) -> "AppSettings":
+        """운영·스테이징에서 인증 없는 /admin 이 **사고로** 열리는 것을 막는다(fail-fast).
+
+        이 프로젝트는 SQLAdmin 에 인증 백엔드를 붙이지 않기로 확정했다(영구 비목표).
+        그래서 ``ADMIN=true`` 는 곧 "자격증명 없이 사용자·게시글·접속로그를 조회·수정·
+        삭제할 수 있는 화면이 열린다"는 뜻이다.
+
+        개발 기본값(``ADMIN=true``)은 그대로 둔다 — 받자마자 DB 를 들여다볼 수 있어야
+        한다는 결정(2026-08-12)을 뒤집지 않는다. 대신 운영 환경에서는 둘 중 하나를
+        **명시적으로** 고르게 한다.
+
+        * ``ADMIN=false`` — /admin 자체가 없다(404).
+        * ``ADMIN_UNAUTHENTICATED_ACK=true`` — 프록시 등으로 앞을 막았다고 승인한다.
+
+        아무것도 고르지 않은 상태(=개발 기본값 그대로 배포)만 거부한다.
+        """
+        if (
+            self.ENV in ("production", "staging")
+            and self.ADMIN
+            and not self.ADMIN_UNAUTHENTICATED_ACK
+        ):
+            raise ValueError(
+                f"ENV={self.ENV} 에서 ADMIN=true 는 인증 없는 관리자 페이지를 공개합니다. "
+                "ADMIN=false 로 끄거나, 프록시에서 /admin 을 차단했다면 "
+                "ADMIN_UNAUTHENTICATED_ACK=true 로 명시적으로 승인하세요."
+            )
+        return self
 
 
 # =============================================================================
@@ -465,6 +508,81 @@ class DatabaseSettings(BaseSettings):
             "readers": [mask_dsn(url) for url in self.MYSQL_REPLICA_URLS],
         }
 
+    # =========================================================================
+    # 커넥션 풀
+    #
+    # 하드코딩돼 있던 값을 설정으로 올린다. 풀 크기는 배포 형태(worker 프로세스 수,
+    # replica 대수)에 따라 달라지는데, 코드에 박아두면 그때마다 이미지를 다시 만들어야
+    # 한다. 더 중요한 건 **총 연결 수를 계산할 수 있게 된다**는 점이다 — 아래
+    # ``max_total_connections`` 가 그것을 DB 의 max_connections 와 대조한다.
+    # =========================================================================
+    DB_POOL_SIZE: int = Field(
+        default=20,
+        ge=1,
+        description="요청 처리 엔진의 기본 유지 연결 수",
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default=20,
+        ge=0,
+        description="요청 처리 엔진의 추가 허용 연결 수",
+    )
+    DB_POOL_TIMEOUT: int = Field(
+        default=30,
+        ge=1,
+        description="풀에서 연결을 기다리는 시간(초)",
+    )
+    # MySQL 기본 wait_timeout 은 28800초지만 클라우드 프록시는 보통 300초 안팎에서
+    # 끊는다. 그보다 짧게 잡아야 죽은 연결을 잡고 있다가 실패하지 않는다.
+    DB_POOL_RECYCLE: int = Field(
+        default=280,
+        ge=1,
+        description="연결 재활용 주기(초). DB/프록시의 wait_timeout 보다 짧아야 한다",
+    )
+    DB_BACKGROUND_POOL_SIZE: int = Field(
+        default=10,
+        ge=1,
+        description="백그라운드 태스크 엔진의 기본 유지 연결 수",
+    )
+    DB_BACKGROUND_MAX_OVERFLOW: int = Field(
+        default=10,
+        ge=0,
+        description="백그라운드 태스크 엔진의 추가 허용 연결 수",
+    )
+    DB_BACKGROUND_POOL_TIMEOUT: int = Field(
+        default=60,
+        ge=1,
+        description="백그라운드 엔진이 연결을 기다리는 시간(초)",
+    )
+
+    # 이 앱을 몇 개 프로세스로 띄우는지. 풀은 **프로세스마다** 만들어지므로 총
+    # 연결 수는 여기 곱해진다. 기본 1은 "모르면 최소로 본다"는 뜻이고, 실제
+    # 배포 값을 넣어야 아래 검증이 의미를 갖는다.
+    DB_WORKER_PROCESSES: int = Field(
+        default=1,
+        ge=1,
+        description="이 앱을 실행하는 프로세스 수(uvicorn worker + celery worker)",
+    )
+    # DB 서버의 max_connections. 0이면 검증하지 않는다(모르는 값을 지어내지 않는다).
+    DB_MAX_SERVER_CONNECTIONS: int = Field(
+        default=0,
+        ge=0,
+        description="DB 서버의 max_connections. 0이면 총 연결 수 검증을 건너뛴다",
+    )
+
+    @property
+    def max_total_connections(self) -> int:
+        """이 배포가 DB 에 열 수 있는 **최대** 연결 수.
+
+        프로세스마다 writer 풀 1개 + replica 대수만큼의 reader 풀 + background 풀
+        1개가 생긴다. 이 값을 모르면 "왜 갑자기 Too many connections 가 나지"를
+        장애 중에 계산하게 된다.
+        """
+        per_engine = self.DB_POOL_SIZE + self.DB_MAX_OVERFLOW
+        background = self.DB_BACKGROUND_POOL_SIZE + self.DB_BACKGROUND_MAX_OVERFLOW
+        reader_engines = len(self._replica_entries) if self.DB_REPLICATION_ENABLED else 0
+        per_process = per_engine * (1 + reader_engines) + background
+        return per_process * self.DB_WORKER_PROCESSES
+
     @model_validator(mode="after")
     def _validate_routing(self) -> "DatabaseSettings":
         """모순된 라우팅 설정을 기동 시점에 차단한다(fail-fast).
@@ -486,6 +604,19 @@ class DatabaseSettings(BaseSettings):
         # 호스트 표기 오류는 엔진 생성 시점의 난해한 예외가 아니라 여기서 잡는다.
         for entry in self._replica_entries:
             split_host_port(entry, self.MYSQL_REPLICA_PORT)
+
+        # 총 연결 수가 DB 서버 상한을 넘으면 기동 시점에 막는다. 이 초과는 평소엔
+        # 안 보이다가 **트래픽이 몰릴 때만** "Too many connections" 로 터진다 —
+        # 가장 나쁜 시점에 드러나는 종류의 설정 오류다.
+        if self.DB_MAX_SERVER_CONNECTIONS:
+            total = self.max_total_connections
+            if total > self.DB_MAX_SERVER_CONNECTIONS:
+                raise ValueError(
+                    f"풀 설정이 DB 상한을 넘습니다: 최대 {total} 연결 > "
+                    f"DB_MAX_SERVER_CONNECTIONS={self.DB_MAX_SERVER_CONNECTIONS}. "
+                    "DB_POOL_SIZE·DB_MAX_OVERFLOW·DB_WORKER_PROCESSES 를 줄이거나 "
+                    "서버의 max_connections 를 올리세요."
+                )
 
         return self
 
@@ -614,6 +745,17 @@ class LogSettings(BaseSettings):
     LOG_FILE_LEVEL: str = Field(
         default="INFO",
         description="파일 로그 레벨",
+    )
+
+    # SQL 본문·바인딩 파라미터 로그 노출 스위치.
+    #
+    # 기본값이 false 인 이유: 이 프로젝트의 기본 DEBUG=true 는 유효 로그 레벨을 DEBUG 로
+    # 만들고, 그 상태에서 SQLAlchemy·드라이버는 실행한 SQL 과 **바인딩된 값**을 그대로
+    # 찍는다. 값에는 비밀번호 해시·토큰·개인정보가 들어가고 로그는 보통 외부 collector 로
+    # 흘러간다. SQL 을 봐야 하는 개발자만 명시적으로 연다.
+    LOG_SQL_ECHO_ENABLED: bool = Field(
+        default=False,
+        description="SQL 본문·바인딩 파라미터를 로그에 남길지 여부 (기본 false — 비밀 유출 방지)",
     )
 
     # === 파일 설정 ===
@@ -1106,3 +1248,26 @@ api_settings = get_api_settings()
 session_settings = get_session_settings()
 smtp_settings = get_smtp_settings()
 upload_settings = get_upload_settings()
+
+
+# =============================================================================
+# 교차 설정 검증 — 한 클래스 안에서는 볼 수 없는 조합을 기동 시점에 막는다
+# =============================================================================
+def _validate_cross_settings() -> None:
+    """설정 클래스 경계를 넘는 위험한 조합을 fail-fast 로 차단한다.
+
+    ``LOG_SQL_ECHO_ENABLED`` 는 SQL 본문과 **바인딩된 값**을 로그로 내보내는
+    스위치다. 개발 중 쿼리를 눈으로 보기 위한 것이고, 운영에서 켜지면 비밀번호
+    해시·토큰·개인정보가 그대로 로그 수집기로 흘러간다. 그런데 이 값은
+    ``LogSettings``, 환경은 ``AppSettings`` 에 있어 어느 한쪽의 validator 로는
+    잡히지 않는다 — 그래서 여기서 본다.
+    """
+    if app_settings.ENV in ("production", "staging") and log_settings.LOG_SQL_ECHO_ENABLED:
+        raise ValueError(
+            f"ENV={app_settings.ENV} 에서 LOG_SQL_ECHO_ENABLED=true 는 허용되지 않습니다. "
+            "SQL 본문과 바인딩된 값(비밀번호 해시·토큰 포함)이 로그로 유출됩니다. "
+            "development/test 에서만 켜세요."
+        )
+
+
+_validate_cross_settings()

@@ -43,11 +43,11 @@ print("__RESULT__" + json.dumps({{
 
 def _boot(admin: str) -> dict:
     proc = subprocess.run(  # noqa: S603 - 인터프리터·스크립트가 이 파일에 고정돼 있다
-        [sys.executable, "-c", _PROBE.format(admin=admin)],
+        [sys.executable, "-X", "utf8", "-c", _PROBE.format(admin=admin)],
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="strict",
         cwd=_REPO_ROOT,
         timeout=300,
         check=False,

@@ -62,7 +62,7 @@ fastapi-default-project-structure/
 │   ├── core/                        # 설정 계약, admin 뷰 정책, 마이그레이션 체인
 │   └── utils/                       # 로깅·인증·페이지네이션
 │
-├── migrations/env.py                # import_all_models()(SSOT) 로 전 기능 모델 자동 수집
+├── migrations/env.py                # App Registry 로 설치 앱의 모델만 수집 (runtime 과 동일 경로)
 ├── .github/workflows/ci.yml         # CI 게이트 (ruff·format·mypy 콜드캐시·pytest·bandit·alembic)
 └── docs/
     ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
@@ -107,6 +107,8 @@ INSTALLED_APPS: list[str] = [
     "app.features.sns.apps.SnsConfig",
     "app.features.user.apps.UserConfig",
     "app.features.auth.apps.AuthConfig",
+    "app.features.catalog.apps.CatalogConfig",
+    "app.features.reports.apps.ReportsConfig",
 ]
 ```
 
@@ -278,13 +280,13 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 ```python
 # app/features/<name>/dependencies/<name>_dependencies.py — 구성만 한다
 async def get_<name>_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    session: AsyncSession = Depends(get_writer_db_session),   # 쓰기용
 ) -> <Name>Service:
     return <Name>Service(session)
 
 
 async def get_<name>_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용
+    session: AsyncSession = Depends(get_read_only_db_session),  # 조회용
 ) -> <Name>Service:
     return <Name>Service(session)
 
@@ -301,8 +303,8 @@ async def create_<name>(
 
 - 뷰(view)는 HTTP 역할과 **커밋 시점 결정**을 맡습니다: 파라미터 수신 → 주입된 Service 호출
   → (쓰기면) `await service.commit()` → 응답 변환.
-- 예외로 빠져나가면 `get_session` teardown이 `rollback()` 합니다.
-- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_session` 을 받고 커밋하지 않습니다.
+- 예외로 빠져나가면 `get_writer_db_session` teardown 이 `rollback()` 합니다.
+- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받고 커밋하지 않습니다.
   `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를 시도하면
   `ReadOnlyRoutingError` 로 즉시 실패합니다.
 - `Service`는 `BaseService`를, `Repository`는 `BaseRepository`(제네릭 CRUD)를 상속합니다.

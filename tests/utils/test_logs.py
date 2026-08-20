@@ -144,7 +144,10 @@ def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
         assert handler["backupCount"] == logs_config.log_settings.LOG_BACKUP_COUNT
         assert handler["maxBytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
         # 핸들러마다 컨텍스트 필터가 붙어야 appname/classname 이 채워진다.
-        assert handler["filters"] == ["context"]
+        # 목록 전체를 고정하지 않는다 — SQL 유출 차단 필터(sql_noise)가 함께 붙는다(C-5).
+        # ADR-019 가 지키는 것은 "console + RotatingFileHandler" 라는 handler 구성이지
+        # 필터 개수가 아니다.
+        assert "context" in handler["filters"]
         assert str(tmp_path) in handler["filename"]
 
     # 에러 전용 파일은 ERROR 만 받아야 의미가 있다.

@@ -27,10 +27,11 @@ print("__RESULT__" + json.dumps(banned))
 def test_registry_core_imports_no_web_framework():
     """registry core 만 import 했을 때 fastapi/sqladmin 이 딸려오면 안 된다."""
     proc = subprocess.run(  # noqa: S603 - 인터프리터·스크립트가 이 파일에 고정돼 있다
-        [sys.executable, "-c", PROBE],
+        [sys.executable, "-X", "utf8", "-c", PROBE],
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="strict",
         timeout=120,
         check=False,
     )

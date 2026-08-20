@@ -86,11 +86,13 @@ def _run_probe(tmp_path: Path, env_body: str) -> subprocess.CompletedProcess[str
 
     # 인터프리터·스크립트가 모두 이 파일 안에 고정되어 있고 셸을 거치지 않는다.
     return subprocess.run(  # noqa: S603
-        [sys.executable, "-c", PROBE],
+        [sys.executable, "-X", "utf8", "-c", PROBE],
         cwd=tmp_path,
         env=child_env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         timeout=120,
     )
 

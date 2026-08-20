@@ -39,7 +39,9 @@ curl http://127.0.0.1:8000/health
 
 ### 왜 필요한가
 
-`DEBUG=true`(기본값)면 앱 시작 시 `create_db_tables()` 가 실행된다. 즉 **아무 설정 없이
+`DEBUG=true`(기본값)면 앱 시작 시 `create_db_tables()` 가 실행된다. 이 함수는 디렉터리를
+훑지 않고 **이미 populate 된 App Registry 의 모델 metadata** 로 테이블을 만든다 —
+`INSTALLED_APPS` 에 없는 앱의 테이블은 개발 DB 에도 생기지 않는다. 즉 **아무 설정 없이
 `uvicorn main:app` 을 그냥 실행하면 MySQL이 없어서 startup 단계에서 실패한다.**
 
 ```text
@@ -161,7 +163,8 @@ Admin·`ready()` 어디에도 나오지 않는다. `main.py`·`migrations/env.py
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 기본값이 테이블 생성을 시도 | MySQL을 띄우거나 `DEBUG=false` |
 | `/docs` 가 404 | `DEBUG=false` 에서는 문서가 꺼진다 | `DEBUG=true` (MySQL 필요) |
 | 기능 API만 500 | 앱은 떴지만 DB가 없다 | 2단계 진행 |
-| 새 기능이 마운트 안 됨 | `main.py` 에 `include_router` 미등록 | import + `app.include_router(<name>.router, prefix="/api")` 추가 |
+| 새 기능이 마운트 안 됨 | `config.INSTALLED_APPS` 에 `AppConfig` 미등록 | `config.py` 의 `INSTALLED_APPS` 에 `"app.features.<name>.apps.<Name>Config"` 추가 후 재기동. `main.py` 는 손대지 않는다 |
+| 앱은 등록했는데 route 가 안 뜸 | `api/routers/router.py` 의 `<name>_router` 컨벤션 이름 불일치, 또는 내부 import 실패 | 이름 확인. module 은 있는데 공개 이름이 없거나 import 가 깨지면 **기동이 실패**한다 |
 
 ---
 

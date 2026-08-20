@@ -35,6 +35,12 @@ ENV_ACCESS_PATTERN = re.compile(r"os\.environ|os\.getenv")
 SOURCE_ROOTS = ("app", "migrations", "scripts")
 SOURCE_FILES = ("main.py",)
 
+# 이 규칙이 막는 것은 "애플리케이션 설정을 config.py 밖에서 읽는 것"이다. 검수 게이트는
+# 설정을 읽지 않는다 — **자식 프로세스에 넘길 환경**을 구성한다(UTF-8 강제·캐시 격리).
+# 그건 config.py 의 책임이 아니고, 여기 넣지 않으면 게이트가 자기 목적을 수행할 수 없다.
+# 예외는 파일 이름으로 좁힌다 — 디렉터리째 빼면 다음 스크립트가 조용히 따라 들어온다.
+ENV_ACCESS_ALLOWED = frozenset({"review_gate.py"})
+
 
 def _env_example_keys() -> set[str]:
     """`.env.example` 이 문서화한 설정 키 전체."""
@@ -63,7 +69,10 @@ def _python_sources() -> list[Path]:
     return [
         path
         for path in paths
-        if path.exists() and "tests" not in path.parts and "__pycache__" not in path.parts
+        if path.exists()
+        and "tests" not in path.parts
+        and "__pycache__" not in path.parts
+        and path.name not in ENV_ACCESS_ALLOWED
     ]
 
 
