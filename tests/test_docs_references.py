@@ -23,8 +23,33 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: 사용자가 "따라 하는" 문서 3종.
-BASE_DOCS = ("README.md", "docs/ARCHITECTURE.md", "docs/QUICKSTART.md")
+#: 사용자가 "따라 하는" 진입 문서 3종.
+ENTRY_DOCS = ("README.md", "docs/ARCHITECTURE.md", "docs/QUICKSTART.md")
+
+
+def _current_guide_docs() -> tuple[str, ...]:
+    """``docs/project-guide/`` 의 **최신 버전 폴더만** 검사 대상으로 돌려준다.
+
+    옛 버전 폴더는 그 시점의 기록이라 현재 코드와 어긋나는 것이 정상이다 — 그것까지
+    실재를 요구하면 버전 폴더 규약 자체가 성립하지 않는다. 반면 최신 버전은 학습자가
+    **지금 따라 하는** 문서라, 코드에 없는 이름이 있으면 그대로 막힌다.
+
+    L-007 이 그렇게 생겼다. 가이드가 ``get_session()`` 을 가르쳤는데 코드에는 없었고,
+    이 검사가 진입 문서 3종만 보고 있어서 아무도 몰랐다(L-008).
+    """
+    root = REPO_ROOT / "docs" / "project-guide"
+    versions = sorted(
+        (d for d in root.iterdir() if d.is_dir() and re.fullmatch(r"v\d+(?:\.\d+)*", d.name)),
+        # 문자열 정렬이면 v1.10 이 v1.2 앞에 온다 — 숫자 튜플로 비교한다.
+        key=lambda d: tuple(int(part) for part in d.name[1:].split(".")),
+    )
+    assert versions, "docs/project-guide/ 에 버전 폴더가 없다 — 검사가 헛통과한다"
+    latest = versions[-1]
+    return tuple(f"docs/project-guide/{latest.name}/{f.name}" for f in sorted(latest.glob("*.md")))
+
+
+#: 진입 문서 + 현행 가이드. 학습자가 실제로 따라 하는 문서 전체.
+BASE_DOCS = ENTRY_DOCS + _current_guide_docs()
 
 #: 변경 이력 섹션의 제목. 이 줄부터 문서 끝까지는 과거 기록이라 검사 대상이 아니다.
 #: 번호가 붙을 수 있다 — `## 8. 변경 이력`.
@@ -69,6 +94,20 @@ NON_ENV_UPPERCASE = frozenset(
         "CRUD",
         "README",
         "TODO",
+        # SQL 키워드 — Raw SQL 예제가 늘면서 대문자로 자주 나온다.
+        # (DELETE 는 위에 HTTP 메서드로 이미 있다)
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "WITH",
+        "FROM",
+        "WHERE",
+        "GROUP",
+        "ORDER",
+        "COUNT",
+        "SUM",
+        # MySQL 날짜 함수. 07 문서가 "SQL 이 아니라 Python 에서 계산하는 이유" 로 인용한다.
+        "DATE_ADD",
     }
 )
 
