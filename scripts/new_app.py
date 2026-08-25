@@ -132,7 +132,11 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
-@router.get("/ping", summary="{_pascal(name)} 헬스 확인")
+@router.get(
+    "/ping",
+    summary="{_pascal(name)} 헬스 확인",
+    operation_id="ping{_pascal(name)}",
+)
 async def ping() -> dict[str, str]:
     """앱이 실제로 마운트됐는지 확인하는 최소 엔드포인트."""
     return {{"app": "{name}", "status": "ok"}}
@@ -310,8 +314,13 @@ INSTALLED_APPS: list[str] = [
 {config_entry(name)}
 ]
 
+골격이 쓰는 태그 "{_pascal(name)}" 도 아직 선언되지 않았다. app/core/tags_metadata.py 에
+아래 항목을 추가한다 — 선언하지 않은 태그는 OpenAPI 검사에서 실패한다.
+
+    {{"name": "{_pascal(name)}", "description": "{_pascal(name)} 기능."}},
+
 다음 단계
-1. 위 한 줄을 config.py 에 추가한다.
+1. 위 두 항목을 config.py 와 app/core/tags_metadata.py 에 추가한다.
 2. 모델을 정의했다면 migration 을 만들고 적용한다:
      uv run alembic revision --autogenerate -m "add {name}"
      uv run alembic upgrade head

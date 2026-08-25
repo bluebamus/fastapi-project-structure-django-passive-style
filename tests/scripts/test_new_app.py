@@ -95,6 +95,10 @@ def test_next_steps_prints_the_exact_registration_line():
     assert config_entry("orders") in message
     assert "INSTALLED_APPS" in message
     assert "아직 **설치되지 않았다.**" in message
+    # 태그 선언은 생성기가 대신할 수 없다(중앙 파일을 건드리지 않는 정책). 그래서
+    # 붙여 넣을 항목을 출력해야 한다 — 선언 없는 태그는 OpenAPI 검사에서 실패한다.
+    assert "tags_metadata.py" in message
+    assert '{"name": "Orders"' in message
 
 
 def test_generated_output_claims_no_auto_discovery(features: Path):
@@ -154,6 +158,12 @@ def test_generated_app_is_inactive_until_registered():
         app = FastAPI()
         install_routers(app, registered)
         assert f"/api/v1/{name}/ping" in app.openapi()["paths"]
+
+        # 골격이 이 저장소의 OpenAPI 계약을 곧바로 만족해야 한다. FastAPI 가 채우는
+        # operationId 는 `test_every_operation_id_is_authored` 가 거부하므로, 생성기가
+        # 직접 붙이지 않으면 "만든 즉시 게이트가 빨간" 골격이 된다.
+        operation = app.openapi()["paths"][f"/api/v1/{name}/ping"]["get"]
+        assert operation["operationId"] == f"ping{name.capitalize()}"
     finally:
         for module in [n for n in _sys.modules if n.startswith(f"app.features.{name}")]:
             del _sys.modules[module]
