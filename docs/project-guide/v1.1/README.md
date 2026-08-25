@@ -6,8 +6,7 @@
 | 작성일 | 2026-08-20 |
 | 대상 프로젝트 | fastapi-project-structure-django-passive-style |
 | 적용 코드 기준 | Git `b88f654` (ORM/Raw Repository Phase 0~7 반영) |
-| 문서 상태 | 현재 구현 기준 |
-| 이전 버전 | [v1.0](../v1.0/README.md) — 2026-08-18 기준. 기록으로 남기며 현행 참조가 아니다 |
+| 문서 상태 | 현재 구현 기준 (유일한 현행 버전) |
 
 ## 목적
 
@@ -15,10 +14,11 @@
 개발자가 전체 구조, 조립 순서, 요청 처리, 데이터 접근, 기능별 흐름과 운영 주의사항을
 빠르게 파악하도록 돕는다. 코드에 존재하는 현재 동작만 기준으로 한다.
 
-**v1.0 과의 차이**: v1.0 은 Phase 3 시점의 코드를 서술했고 ORM/Raw 두 계층을 "향후 계획"
-으로 다뤘다. v1.1 은 Phase 7 까지 구현된 현재 코드를 기준으로 하며, Raw 계층과 두 참조
-예제(`app/features/catalog/repositories/product_repository.py`,
-`app/features/reports/repositories/sales_report_repository.py`)를 현재 기능으로 서술한다.
+이 문서 세트는 Raw 계층과 두 참조 예제
+(`app/features/catalog/repositories/product_repository.py`,
+`app/features/reports/repositories/sales_report_repository.py`)를 **현재 기능**으로
+서술한다. 이전 버전(v1.0)은 ORM/Raw 를 "향후 계획" 으로 다루고 존재하지 않는 세션 API 를
+가르치고 있어 삭제했다 — 필요하면 git 이력에서 읽는다.
 
 ## 권장 읽기 순서
 
@@ -64,10 +64,10 @@
 - [루트 README](../../../README.md): 설치와 기본 사용법
 - [기존 아키텍처 문서](../../ARCHITECTURE.md): 앱 레지스트리 중심 상세 설계
 - [빠른 시작](../../QUICKSTART.md): 로컬 실행 절차
-- [Django 스타일 앱 레지스트리 문서](../../django-style-app-registry/README.md): 설계 결정과 호환성 자료
-- [ORM/Raw Repository 설계 문서](../../orm-raw-repository/2026-08-13/requirements.md):
-  `docs/orm-raw-repository/2026-08-13/requirements.md` — 2026-08-13 시점의 **설계 결정
-  기록**이다. 구현은 Phase 0~7 로 완료됐으므로, 현재 동작은 이 인덱스의 문서들을 본다.
+- [Django 스타일 앱 레지스트리 문서](../../django-style-app-registry/README.md): 저장소의 목적과 Django 호환 범위
+- 설계 결정의 근거(ADR): `docs/crp/groups/orm-raw-repository/design-baseline.md` ·
+  `docs/crp/groups/learning-path/design-baseline.md` — *"왜 이렇게 정했나"* 를 다룬다.
+  이 인덱스의 문서들은 *"어떻게 쓰나"* 를 다룬다.
 
 ## 표기 규칙
 

@@ -132,12 +132,20 @@ config·models 단계는 runtime 과 **같은 구현** 을 공유한다.
 4. alembic upgrade head
 ```
 
-## 8. 요구사항 대응표
+## 8. 이 문서의 주장을 지키는 검사
 
-| 이 문서의 절 | 요구사항 |
+문서는 조용히 낡는다. 각 절이 주장하는 것을 실제로 잠그는 검사는 아래와 같다 —
+의심스러우면 문서가 아니라 이 파일들을 읽는다.
+
+| 이 문서의 절 | 검사 |
 |---|---|
-| §3 동일 | FR-02·FR-03·FR-05, CR-01~CR-07, NFR-01·NFR-02·NFR-04·NFR-05 |
-| §4 확장 | FR-04·FR-06·FR-07, CR-08, NFR-06 |
-| §5 비지원 | 통합 계획 §4.2 제외 범위 |
-| §6 `ready()` 제약 | FR-08, SEC-05 |
-| §7 제거 주의 | BC-05, 통합 계획 §11 위험표 |
+| §3 동일 (lifecycle·조회 API·예외) | `tests/core/apps/test_config.py` · `test_registry_*.py` · `test_population_order.py` |
+| §4 확장 (Router·Admin 결선, route 충돌) | `tests/core/apps/test_wiring.py` · `tests/core/test_admin_wiring.py` |
+| §3 선택 모듈 부재 vs 내부 import 실패 | `tests/core/apps/test_optional_modules.py` |
+| §4 core 독립성 (FastAPI·SQLAdmin 미의존) | `tests/core/apps/test_core_independence.py` · `tests/core/test_admin_lazy_loading.py` |
+| §5 비지원 | 검사 없음 — 구현하지 않기로 한 것이라 잠글 대상이 없다 |
+| §6 `ready()` 제약 | `tests/core/apps/test_installed_apps.py::test_ready_hooks_perform_no_io` (AST 검사) |
+| §7 제거 주의 | `tests/core/apps/test_manual_registration.py` · `tests/core/test_alembic_metadata.py` |
+
+이 표에 없는 주장은 사람이 지키는 것이다. 어긋난 것을 발견하면 코드를 확인한 뒤
+문서를 고친다.
