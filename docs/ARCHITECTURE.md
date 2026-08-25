@@ -391,6 +391,7 @@ uv run alembic upgrade head
 
 | 날짜 | 변경 내용 |
 |------|----------|
+| 2026-08-25 | **골격 목적 기준 검수 + 문서 정리**: 완료된 착수 명세 5종과 폐기된 가이드 버전(`docs/orm-raw-repository/`, 통합 계획, 운영 준비 계획, `project-guide/v1.0/`)을 삭제했다 — 15파일 5,840줄. "무엇을 만들 것인가" 를 지시하는 문서는 이미 만들어진 지금 길만 늘리고, 결정 근거는 `docs/crp/groups/` 와 git 이력에 남는다. 아울러 문서가 없는 기능을 있다고 서술한 것들을 정정했다(`require_admin`·`AppRegistry.discover()` 부재, `/ready` 실재, Raw 계층 실재, reports 경로 오기). 코드는 `scripts/new_app.py` 한 곳만 고쳤다 — 생성기 골격에 `operation_id` 가 없어 만든 즉시 OpenAPI 계약 검사에 걸리던 것을 닫았다. 공개 route inventory·응답 스키마·registry 계약은 불변. 기록: `docs/crp/groups/skeleton-purpose-audit/`. |
 | 2026-08-13 | **레이트 리밋 제거**: `app/core/rate_limit.py`·`slowapi` 의존성·`RATE_LIMIT_*` 설정·`auth` 라우트 데코레이터를 모두 삭제했다. 요청 한도가 필요하면 리버스 프록시나 API gateway 단에서 건다 — 인메모리 카운터는 워커별로 갈라져 실질 한도를 보장하지 못했다. 나머지 미들웨어·예외 핸들러·공개 route inventory 는 불변. |
 | 2026-08-12 | **default `a980b71` 기준선 위에 Django app registry 이식**: 구현 tree 를 기준 저장소 tracked tree 로 교체한 뒤 `app/core/apps/`(`AppConfig`·`Apps`·`wiring`)와 `app/core/bootstrap.create_app()` 을 추가. 설치 앱의 진실 공급원이 `config.INSTALLED_APPS` 로 일원화됐다 — `main.py` 의 `include_router` 나열, 중앙 admin 취합 파일, 디렉터리 스캔 모델 수집을 모두 대체한다. 기능 `__init__.py` 는 가벼운 marker 가 되고, home sink 등록은 `HomeConfig.ready()` 로 이동. 공개 route inventory·auth·rate limit·미들웨어·migration chain 은 불변. 호환 범위: `docs/django-style-app-registry/DJANGO-APP-COMPATIBILITY.md`. |
 | 2026-06-23 | 기능 모델 레지스트리 아키텍처로 전환, 이 문서 최초 작성 |

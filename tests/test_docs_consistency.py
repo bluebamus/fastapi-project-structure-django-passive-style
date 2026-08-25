@@ -26,13 +26,10 @@ DOCS = [
     *sorted((REPO_ROOT / "docs" / "django-style-app-registry").glob("*.md")),
 ]
 
-# 작업 **전** 상태를 기록한 역사 문서 — 옛 결선 방식이 나오는 것이 정상이다.
-# 지우거나 덮어쓰지 않고 상태를 명시해 보존한다(문서 세트 인덱스의 변경 관리 규칙 4).
-HISTORICAL_DOCS = {
-    "DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md",
-    "PRODUCTION-READINESS-DEVELOPMENT-PLAN.md",
-}
-CURRENT_DOCS = [path for path in DOCS if path.name not in HISTORICAL_DOCS]
+# 예외 없이 전부 현행 문서다. 옛 결선 방식을 서술하던 착수 계획 두 편은 구축이 끝난
+# 뒤 삭제했으므로(git 이력에 남아 있다) 면제 목록을 둘 이유가 없다 — 존재하지 않는
+# 파일을 면제하는 집합은 아무것도 하지 않으면서 검사 범위가 좁아 보이게 만든다.
+CURRENT_DOCS = DOCS
 
 # 이 저장소에서 사라진 결선 방식. 문서에 남아 있으면 사용자를 잘못 이끈다.
 REMOVED_REFERENCES = [
