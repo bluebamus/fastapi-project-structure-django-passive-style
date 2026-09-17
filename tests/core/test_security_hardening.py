@@ -1,4 +1,4 @@
-"""E 게이트 — default 구현 피드백 보안 하드닝 (development-plan §10.1 E).
+"""E 게이트 — 선행 구현 피드백 보안 하드닝 (development-plan §10.1 E).
 
 sibling 저장소(`fastapi-default-project-structure`)에서 실제로 터진 결함들을
 이 저장소 착수 게이트로 이관한 것이다. 네 가지를 기계로 고정한다.

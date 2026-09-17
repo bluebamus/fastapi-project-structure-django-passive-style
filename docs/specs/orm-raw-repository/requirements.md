@@ -11,7 +11,7 @@
 | 관련 지침서 | `docs/specs/orm-raw-repository/workflow-guide.md` |
 | 상태 | 개발 착수 전 요구사항 기준선 |
 | 코드 검토 기준 | 2026-08-13 passive-style 작업 트리, 307개 테스트 수집 기준 |
-| 구현 피드백 기준 | 2026-08-18 `fastapi-default-project-structure` `db49e9c` 및 CRP F-001~F-018 |
+| 구현 피드백 기준 | 2026-08-18 선행 참조 구현의 검수 결과(CRP 결함 원장 F-001~F-018) |
 
 ## 2. 목표
 
@@ -529,7 +529,7 @@ Raw update/delete/insert를 사용할 때도 ORM과 같은 트랜잭션 규칙�
 - read-only session에서 ORM/Core DML뿐 아니라 `TextClause`의 INSERT/UPDATE/DELETE도 실행 전에
   차단된다. 현재 `app/core/db/router.py::_is_write()`는 `UpdateBase`와 flush만 판별하므로 이
   보강 전에는 Raw DML 안전성을 충족한 것으로 보지 않는다.
-- 문자열 첫 token 검사만으로 보안을 확정하지 않는다. default 프로젝트의 구현은 일반 DML과
+- 문자열 첫 token 검사만으로 보안을 확정하지 않는다. 선행 참조 구현은 일반 DML과
   `SELECT ... FOR UPDATE`를 보강했지만 CTE로 감싼 DML을 읽기로 오판하는 잔여 위험을 남겼다.
   passive-style에서는 Raw public API가 statement에 명시적인 read/write intent를 붙이고 router가
   이를 우선 사용한다. intent가 없는 `TextClause`는 reader로 보내지 않는 fail-closed 정책을 쓴다.
