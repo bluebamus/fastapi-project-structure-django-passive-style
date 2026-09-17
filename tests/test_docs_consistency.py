@@ -21,18 +21,15 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "QUICKSTART.md",
+    REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
+    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
     *sorted((REPO_ROOT / "docs" / "django-style-app-registry").glob("*.md")),
 ]
 
-# 작업 **전** 상태를 기록한 역사 문서 — 옛 결선 방식이 나오는 것이 정상이다.
-# 지우거나 덮어쓰지 않고 상태를 명시해 보존한다(문서 세트 인덱스의 변경 관리 규칙 4).
-HISTORICAL_DOCS = {
-    "DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md",
-    "PRODUCTION-READINESS-DEVELOPMENT-PLAN.md",
-}
-CURRENT_DOCS = [path for path in DOCS if path.name not in HISTORICAL_DOCS]
+# 예외 없이 전부 현행 문서다. 옛 결선 방식을 서술하던 착수 계획 두 편은 구축이 끝난
+# 뒤 삭제했으므로(git 이력에 남아 있다) 면제 목록을 둘 이유가 없다 — 존재하지 않는
+# 파일을 면제하는 집합은 아무것도 하지 않으면서 검사 범위가 좁아 보이게 만든다.
+CURRENT_DOCS = DOCS
 
 # 이 저장소에서 사라진 결선 방식. 문서에 남아 있으면 사용자를 잘못 이끈다.
 REMOVED_REFERENCES = [
@@ -116,7 +113,7 @@ def test_installed_apps_examples_match_real_entries():
     """문서의 등록 예제가 실제 ``INSTALLED_APPS`` 형식과 같다."""
     from config import INSTALLED_APPS
 
-    architecture = (REPO_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    architecture = (REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     for entry in INSTALLED_APPS:
         assert entry in architecture, f"ARCHITECTURE.md 의 예제에 {entry} 가 없다"
 
@@ -127,7 +124,7 @@ def test_generator_output_matches_documented_line():
 
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert config_entry("orders").strip() in (
-        readme + (REPO_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+        readme + (REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     )
 
 
@@ -142,8 +139,8 @@ def test_generator_output_matches_documented_line():
 #: 기준 문서 3종. 사용자가 "따라 하는" 경로가 여기 있다.
 BASE_DOCS = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "QUICKSTART.md",
+    REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
+    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
 ]
 
 #: 옛 결선 방식을 "현재 절차"로 안내하는 문장 패턴.

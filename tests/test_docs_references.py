@@ -24,7 +24,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 #: 사용자가 "따라 하는" 진입 문서 3종.
-ENTRY_DOCS = ("README.md", "docs/ARCHITECTURE.md", "docs/QUICKSTART.md")
+ENTRY_DOCS = ("README.md", "docs/guides/ARCHITECTURE.md", "docs/guides/QUICKSTART.md")
 
 
 def _current_guide_docs() -> tuple[str, ...]:
@@ -218,7 +218,7 @@ def test_installed_apps_example_lists_every_installed_app():
     """`ARCHITECTURE.md` 의 등록 예제가 실제 `INSTALLED_APPS` 를 전부 담는다."""
     from config import INSTALLED_APPS
 
-    text = _current_section("docs/ARCHITECTURE.md")
+    text = _current_section("docs/guides/ARCHITECTURE.md")
     missing = [entry for entry in INSTALLED_APPS if entry not in text]
 
     assert not missing, f"ARCHITECTURE.md 예제에 빠진 앱: {missing}"

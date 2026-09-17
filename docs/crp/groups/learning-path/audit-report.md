@@ -32,8 +32,8 @@
 | 문서 | `INSTALLED_APPS` | `AppConfig` |
 |---|---|---|
 | `README.md` | 11회 | 5회 |
-| `docs/QUICKSTART.md` | 4회 | 1회 |
-| `docs/ARCHITECTURE.md` | 12회 | 7회 |
+| `docs/guides/QUICKSTART.md` | 4회 | 1회 |
+| `docs/guides/ARCHITECTURE.md` | 12회 | 7회 |
 | `docs/project-guide/v1.0/` | 5개 파일 | — |
 
 세 진입 문서 전부가 다루고, 핵심 개념("디렉터리를 만드는 것만으로는 설치되지 않는다")도
@@ -139,8 +139,8 @@ Phase 4~7 은 Raw Base·예제 두 개·게이트·검사를 모두 만들었고
 | 파일 | 작업 |
 |---|---|
 | `README.md` | ① 제목 `Default` → `Django Passive Style` (L-005) ② 구조 트리에 `catalog`·`reports` 실물 추가 (L-006) ③ "핵심 패턴" 에 Raw Repository 절 추가 ④ 최상단에 학습 경로 안내(→ QUICKSTART → project-guide) |
-| `docs/QUICKSTART.md` | "새 기능 추가" 절에 **ORM/Raw 선택** 한 문단 + 예제 두 개 위치 |
-| `docs/ARCHITECTURE.md` | 계층 설명에 Raw Base 추가. `project-guide` 로의 링크 |
+| `docs/guides/QUICKSTART.md` | "새 기능 추가" 절에 **ORM/Raw 선택** 한 문단 + 예제 두 개 위치 |
+| `docs/guides/ARCHITECTURE.md` | 계층 설명에 Raw Base 추가. `project-guide` 로의 링크 |
 
 ### T-3. 학습 경로 자체를 기계로 잠그기
 
@@ -255,12 +255,12 @@ L-001·L-002 가 다시 생기면 실패해야 한다. 이게 없으면 다음 P
 for kw in INSTALLED_APPS AppConfig Raw RawRepositoryBase catalog reports; do
   printf "%-20s README=%s QUICK=%s ARCH=%s\n" "$kw" \
     "$(grep -c "$kw" README.md)" \
-    "$(grep -c "$kw" docs/QUICKSTART.md)" \
-    "$(grep -c "$kw" docs/ARCHITECTURE.md)"
+    "$(grep -c "$kw" docs/guides/QUICKSTART.md)" \
+    "$(grep -c "$kw" docs/guides/ARCHITECTURE.md)"
 done
 
 # 2-4 project-guide 참조 여부
-grep -c "project-guide" README.md docs/QUICKSTART.md docs/ARCHITECTURE.md
+grep -c "project-guide" README.md docs/guides/QUICKSTART.md docs/guides/ARCHITECTURE.md
 
 # L-002 시점 대조
 git log -1 --format="%ci" -- docs/project-guide/

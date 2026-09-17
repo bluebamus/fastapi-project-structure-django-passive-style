@@ -80,7 +80,7 @@ sequenceDiagram
 
 ## 4-1. Raw SQL 조회 요청
 
-대표 흐름은 `GET /api/v1/reports/sales/daily`다. **§3 과 비교하면 다른 곳이 한 군데뿐**이다.
+대표 흐름은 `GET /api/v1/reports/daily-sales`다. **§3 과 비교하면 다른 곳이 한 군데뿐**이다.
 
 1. Router가 `get_report_service_readonly`를 요청한다.
 2. dependency가 `get_read_only_db_session()`으로 세션을 열고 `ReportService`를 만든다.
