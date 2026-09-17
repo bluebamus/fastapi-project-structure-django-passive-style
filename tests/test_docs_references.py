@@ -17,6 +17,8 @@ Dependency 이름을 바꾸고 Phase 7 에서 옛 이름을 지웠는데, 문서
 from __future__ import annotations
 
 import re
+import unicodedata
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -34,13 +36,14 @@ ENTRY_DOCS = ("README.md", "docs/guides/ARCHITECTURE.md", "docs/guides/DEVELOPME
 BASE_DOCS = ENTRY_DOCS
 
 #: 재구성으로 사라진 문서 위치. 현행 문서가 이곳을 가리키면 학습자를 없는 문서로 보낸다.
+#: HTML 안내서 2편(``server-lifecycle-guide.html``·``feature-development-guide.html``)은
+#: 2026-09-17 재구성에서 지웠다가 같은 날 되살렸으므로 이 목록에서 뺐다 — 대신 아래
+#: ``HTML_GUIDES`` 검사가 실재·링크·코드 경로를 본다.
 RETIRED_DOC_LOCATIONS = (
     "docs/project-guide/",
     "project-guide/v",
     "docs/django-style-app-registry/",
     "QUICKSTART.md",
-    "server-lifecycle-guide.html",
-    "feature-development-guide.html",
     "09-orm-vs-raw-decision.md",
 )
 
@@ -297,7 +300,7 @@ def test_entry_docs_do_not_point_at_retired_docs():
 def test_readme_title_identifies_this_repository():
     """README 첫 줄이 이 저장소를 식별한다.
 
-    L-005 는 기준선 교체 때 형제 저장소의 제목이 남은 것이었다. 학습자가 **가장 먼저
+    L-005 는 기준선 교체 때 다른 저장소의 제목이 남은 것이었다. 학습자가 **가장 먼저
     보는 한 줄**이라 틀리면 나머지를 다 의심하게 된다.
     """
     title = next(
@@ -307,7 +310,7 @@ def test_readme_title_identifies_this_repository():
     )
 
     assert "Django Passive Style" in title, f"README 제목이 이 저장소를 식별하지 않는다: {title!r}"
-    assert "Default" not in title, f"형제 저장소 이름 잔재가 README 제목에 있다: {title!r}"
+    assert "Default" not in title, f"다른 저장소 이름 잔재가 README 제목에 있다: {title!r}"
 
 
 def test_readme_structure_tree_lists_both_example_features():
@@ -326,3 +329,272 @@ def test_readme_structure_tree_lists_both_example_features():
     missing = [name for name in ("catalog/", "reports/") if name not in tree]
 
     assert not missing, f"README 구조 트리에 없는 예제 기능: {missing}"
+
+
+# =============================================================================
+# HTML 안내서 (2026-09-17 복원)
+#
+# HTML 은 Markdown 검사(백틱·``](...)`` 패턴)에 걸리지 않는다. 같은 성질 — 가리키는
+# 대상이 실재하는가, 사라진 문서를 가리키지 않는가 — 을 HTML 표기(``<code>``·
+# ``data-source``·``href``)로 따로 본다.
+# =============================================================================
+
+#: README 「문서 안내」가 나열하는 문서 — 이 순서가 계약이다.
+DOC_INDEX_ORDER = (
+    "README.md",
+    "docs/guides/ARCHITECTURE.md",
+    "docs/guides/DEVELOPMENT.md",
+    "docs/guides/server-lifecycle-guide.html",
+    "docs/guides/feature-development-guide.html",
+    "docs/specs/orm-raw-repository/requirements.md",
+    "docs/specs/orm-raw-repository/development-plan.md",
+    "docs/specs/orm-raw-repository/workflow-guide.md",
+    "docs/crp/groups/",
+)
+
+HTML_GUIDES = (
+    "docs/guides/server-lifecycle-guide.html",
+    "docs/guides/feature-development-guide.html",
+)
+
+#: ``<code>`` 안에서 저장소 루트 기준으로 해석하는 최상위 파일.
+ROOT_FILES = frozenset(
+    {"config.py", "main.py", "pyproject.toml", "compose.test.yaml", ".env.example", "alembic.ini"}
+)
+
+#: ``<code>`` 안의 경로 후보. 확장자로 파일 경로만 고른다.
+CODE_PATH_PATTERN = re.compile(
+    r"^\.?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:py|ya?ml|toml|md|html|ini|example)$"
+)
+
+
+class _HtmlScan(HTMLParser):
+    """HTML 안내서에서 검사할 조각(id·href·data-source·code·날것 꺾쇠)을 모은다."""
+
+    def __init__(self) -> None:
+        # 엔티티를 풀지 않는다 — `&lt;` 는 정상, 본문에 남은 날것 `<`·`>` 만 잡는다.
+        super().__init__(convert_charrefs=False)
+        self.ids: set[str] = set()
+        self.hrefs: list[str] = []
+        self.sources: list[tuple[str, str | None]] = []
+        self.codes: list[str] = []
+        self.raw_brackets: list[str] = []
+        self._skip = 0
+        self._code_depth = 0
+        self._code_buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if values.get("id"):
+            self.ids.add(values["id"] or "")
+        if tag == "a" and values.get("href"):
+            self.hrefs.append(values["href"] or "")
+        if values.get("data-source"):
+            self.sources.append((values["data-source"] or "", values.get("data-symbol")))
+        if tag in ("script", "style"):
+            self._skip += 1
+        if tag == "code":
+            self._code_depth += 1
+            self._code_buf = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style"):
+            self._skip -= 1
+        if tag == "code" and self._code_depth:
+            self._code_depth -= 1
+            self.codes.append("".join(self._code_buf))
+
+    def handle_data(self, data: str) -> None:
+        if self._skip:
+            return
+        if "<" in data or ">" in data:
+            self.raw_brackets.append(data.strip()[:80])
+        if self._code_depth:
+            self._code_buf.append(data)
+
+
+def _scan_html(path: str) -> _HtmlScan:
+    scan = _HtmlScan()
+    scan.feed((REPO_ROOT / path).read_text(encoding="utf-8"))
+    scan.close()
+    return scan
+
+
+def _github_slug(heading: str) -> str:
+    """GitHub 이 Markdown 제목에 붙이는 앵커 — 구두점·기호를 지우고 공백을 ``-`` 로."""
+    kept = [
+        char
+        for char in heading.strip().lower()
+        if char in "-_" or unicodedata.category(char)[0] not in ("P", "S")
+    ]
+    return "".join(kept).replace(" ", "-")
+
+
+def _markdown_anchors(path: Path) -> set[str]:
+    text = re.sub(r"```.*?```", "", path.read_text(encoding="utf-8"), flags=re.DOTALL)
+    anchors: set[str] = set(re.findall(r'<a id="([^"]+)"></a>', text))
+    seen: dict[str, int] = {}
+    for heading in re.findall(r"^#{1,6}\s+(.+?)\s*$", text, re.MULTILINE):
+        slug = _github_slug(heading)
+        count = seen.get(slug, 0)
+        anchors.add(slug if count == 0 else f"{slug}-{count}")
+        seen[slug] = count + 1
+    return anchors
+
+
+def _anchor_exists(target: Path, anchor: str) -> bool:
+    if target.suffix == ".md":
+        return anchor in _markdown_anchors(target)
+    if target.suffix == ".html":
+        scan = _HtmlScan()
+        scan.feed(target.read_text(encoding="utf-8"))
+        return anchor in scan.ids
+    return True
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_exists_and_is_indexed_in_readme(path: str):
+    """HTML 안내서가 실재하고 README 「문서 안내」에서 링크된다."""
+    assert (REPO_ROOT / path).is_file(), f"{path} 가 없다"
+    readme = _current_section("README.md")
+    assert f"]({path})" in readme, f"README 문서 안내가 {path} 를 링크하지 않는다"
+
+
+def test_readme_doc_index_lists_documents_in_order():
+    """README 「문서 안내」 표가 약속한 머리글과 나열 순서를 지킨다."""
+    readme = _current_section("README.md")
+    start = readme.index("## 문서 안내")
+    following = readme.find("\n## ", start + 5)
+    section = readme[start : following if following != -1 else len(readme)]
+
+    assert "| 문서 | 역할 | 언제 보나 |" in section, "문서 안내 표 머리글이 다르다"
+    positions = []
+    for doc in DOC_INDEX_ORDER:
+        assert doc in section, f"문서 안내에 {doc} 가 없다"
+        positions.append(section.index(doc))
+    assert positions == sorted(positions), "문서 안내의 나열 순서가 약속과 다르다"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_data_sources_exist(path: str):
+    """``data-source`` 가 실제 파일을, ``data-symbol`` 이 그 파일 안의 정의를 가리킨다."""
+    scan = _scan_html(path)
+    assert scan.sources, f"{path} 에서 data-source 를 하나도 못 찾았다 — 검사가 헛통과한다"
+
+    problems = []
+    for source, symbol in scan.sources:
+        file = REPO_ROOT / source
+        if not file.is_file():
+            problems.append(f"없는 파일: {source}")
+            continue
+        if symbol and not re.search(
+            rf"(?:def|class)\s+{re.escape(symbol)}\b|^{re.escape(symbol)}\s*=",
+            file.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        ):
+            problems.append(f"{source} 에 {symbol} 정의가 없다")
+
+    assert not problems, f"{path}: {sorted(set(problems))}"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_code_paths_exist(path: str):
+    """``<code>`` 안의 저장소 경로(루트 디렉터리·최상위 파일)가 실재한다."""
+    candidates = {code.strip() for code in _scan_html(path).codes}
+    rooted = {
+        c
+        for c in candidates
+        if CODE_PATH_PATTERN.match(c) and (c.split("/", 1)[0] in ROOT_DIRS or c in ROOT_FILES)
+    }
+    assert rooted, f"{path} 에서 루트 기준 경로를 하나도 못 찾았다 — 검사가 헛통과한다"
+
+    dead = sorted(c for c in rooted if not (REPO_ROOT / c).exists())
+    assert not dead, f"{path} 가 없는 경로를 가리킨다: {dead}"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_relative_links_and_anchors_resolve(path: str):
+    """상대 ``href`` 가 실재하는 파일과 앵커를 가리킨다."""
+    scan = _scan_html(path)
+    here = (REPO_ROOT / path).parent
+    broken = []
+    for href in scan.hrefs:
+        if href.startswith(("http://", "https://", "mailto:")):
+            continue
+        file_part, _, anchor = href.partition("#")
+        if not file_part:
+            if anchor not in scan.ids:
+                broken.append(href)
+            continue
+        target = (here / file_part).resolve()
+        if not target.exists() or (anchor and not _anchor_exists(target, anchor)):
+            broken.append(href)
+
+    assert not broken, f"{path} 의 깨진 링크: {broken}"
+
+
+@pytest.mark.parametrize("path", BASE_DOCS)
+def test_markdown_link_anchors_resolve(path: str):
+    """Markdown 링크의 ``#앵커`` 가 대상 문서에 실재한다(파일 실재는 다른 검사가 본다)."""
+    doc = REPO_ROOT / path
+    broken = []
+    for target in re.findall(r"\]\(([^)\s]+)\)", doc.read_text(encoding="utf-8")):
+        if target.startswith(("http://", "https://", "mailto:")) or "#" not in target:
+            continue
+        file_part, _, anchor = target.partition("#")
+        resolved = (doc.parent / file_part).resolve() if file_part else doc
+        if resolved.exists() and not _anchor_exists(resolved, anchor):
+            broken.append(target)
+
+    assert not broken, f"{path} 의 깨진 앵커: {broken}"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_text_escapes_angle_brackets(path: str):
+    """본문 텍스트의 ``<``·``>`` 는 ``&lt;``·``&gt;`` 로 쓴다 — 날것이면 태그로 읽힐 수 있다."""
+    raw = _scan_html(path).raw_brackets
+
+    assert not raw, f"{path} 에 이스케이프되지 않은 꺾쇠가 있다: {raw[:5]}"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_does_not_point_at_retired_docs(path: str):
+    """HTML 안내서가 재구성으로 사라진 문서 위치를 가리키지 않는다."""
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    stale = [loc for loc in RETIRED_DOC_LOCATIONS if loc in text]
+
+    assert not stale, f"{path} 가 사라진 문서 위치를 가리킨다: {stale}"
+
+
+@pytest.mark.parametrize("path", HTML_GUIDES)
+def test_html_guide_does_not_reference_removed_symbols(path: str):
+    """HTML 안내서의 ``<code>`` 가 제거된 심볼을 가리키지 않는다."""
+    codes = "\n".join(_scan_html(path).codes)
+    stale = sorted(
+        name
+        for name in REMOVED_SYMBOLS
+        if re.search(rf"(?<![\w_]){re.escape(name)}(?![\w])", codes)
+    )
+
+    assert not stale, f"{path} 가 제거된 심볼을 가리킨다: {stale}"
+
+
+def test_lifecycle_guide_appendix_lists_every_setting():
+    """서버 수명주기 안내서 부록이 ``config.py`` 의 설정 필드를 빠짐없이 싣는다."""
+    import inspect
+
+    from pydantic_settings import BaseSettings
+
+    import config as config_module
+
+    codes = set(_scan_html("docs/guides/server-lifecycle-guide.html").codes)
+    fields = {
+        name
+        for obj in vars(config_module).values()
+        if inspect.isclass(obj) and issubclass(obj, BaseSettings) and obj is not BaseSettings
+        for name in obj.model_fields
+    }
+    assert fields, "config.py 에서 설정 필드를 못 찾았다 — 검사가 헛통과한다"
+
+    missing = sorted(fields - codes)
+    assert not missing, f"server-lifecycle-guide.html 부록에 없는 설정: {missing}"
