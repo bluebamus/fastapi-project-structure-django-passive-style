@@ -3,7 +3,8 @@ Reply v1 API 엔드포인트 — 댓글 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
-커밋은 쓰기 핸들러 본문이 응답을 만들기 전에 `await service.commit()` 으로 한 번 한다(별도 UnitOfWork 없음).
+쓰기 핸들러는 응답 DTO 를 먼저 검증한 뒤 `await service.commit()` 으로 한 번 커밋한다(별도 UnitOfWork 없음).
+검증이 실패하면 커밋하지 않는다(tests/test_validate_before_commit.py).
 """
 
 from typing import Any
@@ -43,8 +44,9 @@ async def create_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.create_reply(payload)
+    response = ReplyResponse.model_validate(reply)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return ReplyResponse.model_validate(reply)
+    return response
 
 
 @router.get(
@@ -98,8 +100,9 @@ async def update_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.update_reply(reply_id, payload)
+    response = ReplyResponse.model_validate(reply)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return ReplyResponse.model_validate(reply)
+    return response
 
 
 @router.delete(

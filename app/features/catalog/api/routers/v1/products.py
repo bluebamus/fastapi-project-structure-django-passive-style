@@ -1,7 +1,7 @@
 """Catalog v1 API — 상품 CRUD (**ORM 예제**).
 
 View 는 HTTP 역할만 한다: 파라미터 수신 → 주입된 Service 호출 → 응답 DTO 변환.
-쓰기는 응답을 만들기 **전에** 한 번 커밋한다(ADR-008).
+쓰기는 응답 DTO 를 검증한 **뒤**, 응답을 돌려주기 **전에** 한 번 커밋한다(ADR-008).
 
 Raw 예제의 View(`app/features/reports/api/routers/v1/sales_reports.py`)와 이 파일을
 비교하면, 달라지는 것이 Repository 뿐임이 드러난다.
@@ -48,8 +48,9 @@ async def create_product(
     service: CatalogService = Depends(get_catalog_service),
 ) -> ProductResponse:
     product = await service.create_product(payload)
+    response = ProductResponse.model_validate(product)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 
 
 @router.get(
@@ -108,8 +109,9 @@ async def update_product(
     service: CatalogService = Depends(get_catalog_service),
 ) -> ProductResponse:
     product = await service.update_product(product_id, payload)
+    response = ProductResponse.model_validate(product)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 
 
 @router.delete(

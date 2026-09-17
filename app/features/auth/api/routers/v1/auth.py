@@ -1,6 +1,7 @@
 """Auth v1 API — 회원가입 / 로그인 / 토큰 재발급 / 현재 사용자.
 
 뷰는 HTTP 역할만: 입력 수신 → 주입된 AuthService 호출 → 응답 변환.
+쓰기(register)는 응답 DTO 를 검증한 뒤 커밋한다.
 """
 
 from typing import Any
@@ -49,8 +50,9 @@ async def register(
     service: AuthService = Depends(get_auth_service),
 ) -> AuthenticatedUserResponse:
     user = await service.register(payload)
+    response = AuthenticatedUserResponse.model_validate(user)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return AuthenticatedUserResponse.model_validate(user)
+    return response
 
 
 @router.post(

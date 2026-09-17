@@ -180,7 +180,7 @@ async def create_item(
     service: <Name>Service = Depends(get_<name>_service),
 ) -> ItemResponse:
     item = await service.create_item(payload)
-    response = ItemResponse.model_validate(item)   # 응답 검증을 커밋 전에(§4.2)
+    response = ItemResponse.model_validate(item)   # 응답 검증을 커밋 전에(§4.2 — 모든 쓰기 핸들러의 규칙)
     await service.commit()                         # 예외 시 세션 Dependency 가 rollback
     return response
 
@@ -285,8 +285,8 @@ POST /api/v1/catalog/products
  → get_catalog_service: get_writer_db_session → CatalogService(session) → ProductRepository(session)
  → create_product(payload) → repository.create(payload.model_dump())
      → CRUDBase._add: session.add → await flush(INSERT·기본값·제약 확인) → await refresh
- → view: await service.commit()
- → ProductResponse.model_validate(product) → 201
+ → view: response = ProductResponse.model_validate(product)   # 검증이 실패하면 커밋하지 않는다
+ → view: await service.commit() → return response → 201
 ```
 
 - `Product` 는 `catalog_products`, `sku` unique, 금액은 `Numeric(12, 2)` ↔ `Decimal`. API 는 price·stock 에 `ge=0` 을 두지만 DB 선언이 같은 규칙을 강제하지는 않는다 — 입력은 스키마, 동시성 상황의 최종 무결성은 DB 제약이 지킨다.
@@ -342,8 +342,9 @@ HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여�
 ### 4.2 커밋과 응답
 
 - 쓰기 view 는 성공 응답을 만들기 전에 **정확히 한 번** 커밋한다. 조회 Dependency 는 커밋하지 않는다.
-- 새 기능은 **응답 DTO 검증 → commit → 반환** 순서를 권장한다(§2.8). 검증 실패 후 이미 저장된 상태를 줄인다.
-  현재 예제(catalog 등)는 commit 후 검증하며 이 순서로 바꾸지는 않았다. 어느 쪽이든 커밋을 Dependency teardown 에 두지 않는다.
+- 순서는 **응답 DTO 검증 → commit → 반환** 하나다(§2.8). 모든 기능의 생성·수정 핸들러가 이 순서를 따른다.
+  반대로 하면 DTO 검증 실패가 500 을 내는데 데이터는 이미 커밋돼 남는다. 회귀 가드: `tests/test_validate_before_commit.py`
+  (전 기능의 생성·수정 핸들러에서 DTO 검증을 실패시켜 500·커밋 0회·DB 불변을 확인). 커밋을 Dependency teardown 에 두지 않는다.
 - DTO 가 접근할 관계·컬럼은 Repository 에서 명시적으로 로드한다. 커밋 이후나 DTO 검증 중 lazy load 가 암묵 I/O 를 일으키지 않게 한다
   (`expire_on_commit=False` 가 모든 관계 로딩을 해결하지는 않는다).
 - PATCH 스키마의 `None` 은 "미전달"과 다르다. `exclude_unset=True` 는 안 보낸 필드만 뺀다 — 명시적 null 을 허용할지 거부할지 정하고 테스트한다.
@@ -474,6 +475,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | OpenAPI 계약(operationId·태그·응답 모델·스키마 이름) | `tests/test_openapi_contract.py` · `tests/test_layering_and_openapi.py` |
 | 계층 의존 방향 | `tests/test_layering_and_openapi.py` |
 | 조회 경로는 커밋 0회 / 쓰기는 1회 | `tests/test_read_path_no_commit.py` · 기능별 `test_transaction_boundary.py` |
+| 쓰기 핸들러는 응답 DTO 검증 후 커밋 | `tests/test_validate_before_commit.py` |
 | ORM·Raw 예제는 Repository 만 다르다 | `tests/test_orm_raw_parity.py` |
 | migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migration_chain.py` |
 | 설정 계약·`.env.example` 일치 | `tests/core/test_settings_contract.py` |
