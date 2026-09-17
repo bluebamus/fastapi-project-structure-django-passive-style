@@ -20,7 +20,7 @@
 두 데이터 접근 방식을 **Repository 구현만 다르고 나머지는 동일한** 구조로 제공한다.
 Dependency → Service → Repository 흐름, read-only/writer 세션 선택, 트랜잭션 경계, Pydantic
 검증, App Registry 기반 라우터 취합, OpenAPI/Scalar 문서 품질, 예외·테스트·정적검사 기준은
-두 방식이 같아야 한다. 요구·계획·지침 3종 명세는 `docs/orm-raw-repository/2026-08-13/` 에 있다.
+두 방식이 같아야 한다. 요구·계획·지침 3종 명세는 `docs/specs/orm-raw-repository/` 에 있다.
 
 sibling 저장소 `fastapi-default-project-structure` 는 같은 작업을 이미 완주했고(`db49e9c`,
 CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피드백**으로 이관받는다.

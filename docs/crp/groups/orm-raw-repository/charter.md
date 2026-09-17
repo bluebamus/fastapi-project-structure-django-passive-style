@@ -16,7 +16,7 @@
 | 문서 계약 | `app/core/tags_metadata.py`, OpenAPI/Scalar | 소스 | plan §8 |
 | 통합 테스트 환경 | `compose.test.yaml`, `pyproject.toml` (`mysql` marker) | 설정 | **신규** (ADR-004) |
 | 기준 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/QUICKSTART.md` | 문서 | passive 정합성 복구 (plan §10.1 D) |
-| 명세 3종 | `docs/orm-raw-repository/2026-08-13/{requirements,development-plan,workflow-guide}.md` | 문서 | 요구·계획·지침 원본 |
+| 명세 3종 | `docs/specs/orm-raw-repository/{requirements,development-plan,workflow-guide}.md` | 문서 | 요구·계획·지침 원본 |
 
 - 착수 기준선 커밋: `9c93803` · 소스 `.py` **158** · 테스트 파일 **62** · 수집 테스트 **307**
 - 기준선 상태(Round 0): 306 passed / 1 failed
