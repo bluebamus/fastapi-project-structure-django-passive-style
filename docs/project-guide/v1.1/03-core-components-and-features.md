@@ -35,7 +35,9 @@
 |---|---|
 | `Base` | 모든 SQLAlchemy model의 declarative base |
 | `CRUDBase` | 내부 단건 add/get/update/delete 기본 연산 |
-| `BaseRepository` | CRUD, bulk, 필터, eager/partial load, batch, join, upsert 계열 기능 |
+| `BaseRepository` | ORM 공개 CRUD **8개** (`create`·`get_by_id`·`get_one`·`get_all`·`count`·`exists`·`update`·`delete`) |
+| `RawCRUDBase` | Raw SQL 실행 primitive — `TextClause` 입력, `RowMapping`/scalar/rowcount 반환 |
+| `RawRepositoryBase` | Raw 공개 API **4개** (`fetch_one`·`fetch_all`·`fetch_scalar`·`execute`) + `query_name` 검증 + read/write intent |
 | `BaseService` | session 보관과 공통 `commit()`·`rollback()` |
 | `DatabaseRouter` | statement 성격과 세션 표시에 따른 writer/reader 선택 |
 | `get_routed_db_session()` | 일반 요청 세션, 예외 시 rollback |
@@ -51,7 +53,8 @@
 
 ### API 문서와 헬스체크
 
-- `GET /health`: 상태와 애플리케이션 버전을 반환한다.
+- `GET /health`: 프로세스 생존만 본다(liveness). DB 를 건드리지 않는다.
+- `GET /ready`: writer DB 에 `SELECT 1` 을 2초 안에 실행한다(readiness). 실패는 원인을 숨긴 503.
 - `GET /docs`: DEBUG 환경에서 Scalar UI를 반환한다.
 - `/openapi.json`: DEBUG 환경에서만 제공한다.
 - Swagger UI와 ReDoc은 비활성화되어 있다.
@@ -99,14 +102,16 @@
 
 ## 8. 현재 제공하지 않는 기능
 
-- Admin 인증 backend
-- `/ready` 데이터베이스 readiness probe
+- Admin 인증 backend (영구 비목표 — production/staging 은 `ADMIN_UNAUTHENTICATED_ACK` 미승인 시 기동 거부)
+- 관리자 권한 Dependency (`require_admin` 같은 것은 없다)
 - 자동 기능 디렉터리 탐색
-- Raw SQL Repository 기반
-- ORM/Raw 공통 dual-backend 계약
-- API rate limiting
+- API rate limiting (2026-08-13 제거 — 인메모리 카운터는 워커별로 갈라진다)
+- JWT token blacklist·refresh token 저장소·강제 로그아웃
 
 위 항목을 구현된 기능으로 전제하지 않아야 한다.
+
+반대로 **제공한다**: Raw SQL Repository 계층(`RawRepositoryBase`)과 `/ready` readiness
+probe 는 구현돼 있다(§3 참고).
 
 ## 9. 관련 문서
 

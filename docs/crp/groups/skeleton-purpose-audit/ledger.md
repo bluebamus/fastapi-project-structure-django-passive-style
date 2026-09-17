@@ -1,0 +1,15 @@
+# Ledger — skeleton-purpose-audit (발견 사항 대장)
+
+> 발견은 append-only. 상태만 바꾼다: Open → Fixed / Accepted / Rejected.
+
+| ID | 심각도 | 발견일 | 내용 | 상태 | 근거·해소 |
+|---|---|---|---|---|---|
+| S-001 | **MED** | 2026-08-25 | **골격 생성기가 자기 게이트를 통과하지 못한다.** `scripts/new_app.py` 가 만든 뷰에 `operation_id` 가 없어 FastAPI 자동 생성값(`ping_api_v1_..._ping_get`)이 들어가는데, `tests/test_openapi_contract.py::test_every_operation_id_is_authored` 가 그것을 거부한다. 게다가 생성기가 붙이는 `tags=["Orders"]` 는 `tags_metadata.py` 에 선언이 없어 **태그 정합 검사까지** 걸린다. 문서(v1.1/05 §6)는 "직접 붙이세요" 라는 우회 안내만 달고 있었다 — 한 줄이면 되는 것을 사용자에게 떠넘긴 상태 | **Fixed** | 템플릿에 `operation_id="ping{Pascal}"` 추가(ADR-S01). 태그는 중앙 파일이라 생성기가 건드리지 않고 붙여 넣을 항목을 출력한다(ADR-S04). 회귀: `tests/scripts/test_new_app.py`. **fail-on-revert 실증** — 되돌리면 `assert 'ping_api_v1_...' == 'pingScaffoldprobe...'` 로 실패 |
+| S-002 | **HIGH** | 2026-08-25 | **`PASSIVE-APP-PROJECT-DESIGN.md` 가 없는 기능을 있다고 서술한다.** §5.4·§10.7 이 "관리자용 API 는 `require_admin` Dependency 로 보호한다. home·user API 가 참조 구현" 이라고 적었으나 `require_admin` 은 `app/` 전체에 **0건**이다. §4·§7 은 `AppRegistry.discover()`·`AppRegistry.import_models()` 를 조립 순서로 안내하는데 그 클래스도 메서드도 없다(실물은 `Apps.populate()`) | **Fixed** | 문서 전면 재작성. 478줄 → 목적·원칙 중심으로 축약하고 ARCHITECTURE 중복 제거. Admin 은 "인증 백엔드 없음 + production ACK 게이트" 로 정정 |
+| S-003 | MED | 2026-08-25 | 같은 문서 §3.4 가 **폐기된 트랜잭션 모델**("기능 Dependency 가 Service 를 yield 한 뒤 정상 완료 시 `session.commit()`")을 현행으로 서술. 실제는 쓰기 핸들러 본문 커밋(ADR-008) | **Fixed** | S-002 재작성에 포함. 되돌린 이유(FastAPI 상위 버전에서 yield 종료 코드가 응답 전송 후 실행)를 함께 남겼다 |
+| S-004 | MED | 2026-08-25 | `project-guide/v1.1` 이 **자기 자신과 모순**된다. 01·06·09 는 Raw 계층을 "구현됨" 으로 서술하는데, 03 §8 과 08 §10-6 은 "현재 제공하지 않는 기능" 목록에 `Raw SQL Repository 기반` 을 그대로 두고 있었다. `/ready` 도 08 §4 가 "없다" 고 적었으나 `app/core/bootstrap.py:252` 에 실재 | **Fixed** | v1.0 사본에서 넘어온 잔재. 03 §3 표에 Raw 계열 3항목 추가, §8 을 실제 미제공 목록으로 교체, 08 §4·§10 정정 |
+| S-005 | LOW | 2026-08-25 | `v1.1/04` §4-1 의 예시 경로가 틀렸다 — `/api/v1/reports/sales/daily`. 실물은 `/daily-sales`(`app/features/reports/api/routers/v1/sales_reports.py:30`). 07 은 맞게 적혀 있어 **두 문서가 서로 다른 경로**를 가르치던 상태 | **Fixed** | 04 를 실물로 정정. learning-path RL-01 이 예고한 "이름은 맞는데 내용이 틀린" 부류 — 심볼 검사로는 잡히지 않는다 |
+| S-006 | LOW | 2026-08-25 | **CI 주석이 존재한 적 없는 문서를 인용한다.** `AUDIT_REPORT.md §7`·`ledger LEDGER-1` 은 이 저장소에 없다(형제 저장소에서 딸려온 인용). `development-plan §10.1 C`·`NFR-08`·`INTEGRATION-PLAN §5.7` 은 이번에 삭제된 문서 | **Fixed** | 근거는 살리고 인용만 제거. 판정 규칙의 정본이 `scripts/review_gate.py` 임을 헤더에 명시 |
+| S-007 | LOW | 2026-08-25 | `tests/test_docs_consistency.py` 의 `HISTORICAL_DOCS` 가 삭제된 두 파일을 면제하고 있었다 — 존재하지 않는 파일을 면제하는 집합 | **Fixed** | 제거하고 `CURRENT_DOCS = DOCS` 로 단순화(ADR-S05) |
+| S-008 | LOW | 2026-08-25 | 작업 중 08 문서에 백틱으로 감싼 `EXPLAIN` 을 넣었더니 환경변수 검사가 미선언 변수로 잡았다 | **Fixed** | 백틱 제거. **검사가 내 실수를 잡았다** — run-log 에 기록된 `DATE_ADD` 사례와 같은 함정이다 |
+| S-009 | LOW | 2026-08-25 | 생성기가 `dependencies/`·`schemas/`·`repositories/` 를 만들지 않는데 ARCHITECTURE §3.3 과 설계 문서는 그 계층을 표준 구조로 제시한다 | **Accepted** | 골격은 최소여야 한다 — 쓰지 않을 빈 디렉터리를 만드는 것보다 필요할 때 만드는 편이 낫다. 두 문서 모두 그 계층을 **선택**으로 표기하고 있어 실질 모순이 아니다 → residual-risk RS-01 |

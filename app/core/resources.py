@@ -7,7 +7,8 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 종료 순서 (역순 등록으로 강제한다)::
 
     1. in-flight background task drain   — DB 를 쓰는 주체를 먼저 멈춘다
-    2. DB writer/reader/background engine dispose
+    2. Redis client close
+    3. DB writer/reader/background engine dispose
 
 ``AsyncExitStack`` 은 callback 을 **등록 역순**으로 실행하므로 위 순서의 역순으로
 등록한다. 각 cleanup 은 :func:`_run_cleanup` 이 감싸서 실패·timeout 을 로깅만 하고
@@ -19,8 +20,8 @@ logging 은 여기서 다루지 않는다. 이 저장소는 ADR-019(console + Ro
 테이블 자동 생성은 파일 존재 여부가 아니라 **App Registry 가 소유한 테이블 수**로
 판정한다. 소유 테이블이 0개면 DB 에 접속조차 하지 않는다.
 
-자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. Celery worker 의 event
-loop 와 그 루프에 묶인 pool 은 worker 프로세스가 소유하며 여기서 닫지 않는다
+자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. startup 검증용 Redis client는
+여기서 닫지만, Celery worker의 event loop와 별도 broker/backend 연결은 worker가 소유한다
 (`app/celery/lifecycle.py`).
 """
 
@@ -33,17 +34,19 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from app.core.db.session import create_db_tables, dispose_engine, owned_tables
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.utils.logs import get_logger
-from config import app_settings
+from config import app_settings, redis_settings
 
 logger = get_logger("resources")
 
 # 자원별 shutdown 예산. 합이 전체 예산을 넘지 않아야 한다.
 BACKGROUND_DRAIN_TIMEOUT_SECONDS = 5.0
 DB_DISPOSE_TIMEOUT_SECONDS = 10.0
+REDIS_TIMEOUT_SECONDS = 5.0
 
 # drain 예산 중 "완료를 기다리는" 몫. 나머지는 timeout 이후 pending 을 취소하고
 # 회수(gather)하는 데 쓴다. 바깥 guard 와 같은 값을 주면 취소 회수 도중 잘려,
@@ -102,6 +105,29 @@ async def _dispose_db_engines() -> None:
     await _run_cleanup("DB engine", dispose_engine, DB_DISPOSE_TIMEOUT_SECONDS)
 
 
+@asynccontextmanager
+async def _redis(app: FastAPI) -> AsyncIterator[None]:
+    """Redis 연결을 startup 에 검증하고 shutdown 에 닫는다."""
+    client = Redis.from_url(
+        redis_settings.REDIS_URL,
+        socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+        socket_timeout=REDIS_TIMEOUT_SECONDS,
+    )
+    app.state.redis = None
+    try:
+        try:
+            await client.ping()
+        except Exception as exc:
+            logger.error("[startup] Redis 연결 실패: %s", type(exc).__name__)
+            raise
+        app.state.redis = client
+        logger.info("[startup] Redis 연결 확인 완료")
+        yield
+    finally:
+        app.state.redis = None
+        await _run_cleanup("Redis client", client.aclose, REDIS_TIMEOUT_SECONDS)
+
+
 async def _prepare_database(resources: ApplicationResources) -> None:
     """registry 를 채우고, 소유 테이블 수를 근거로 자동 생성 여부를 판정한다."""
     from app.core.apps import apps
@@ -142,7 +168,8 @@ async def manage_application_resources(
             # 등록 역순으로 실행된다 → 원하는 종료 순서의 역순으로 등록한다.
             # DB 를 쓰는 주체(background task)를 먼저 멈춘 뒤 engine 을 닫아야
             # 이미 닫힌 pool 을 만지는 태스크가 남지 않는다.
-            cleanup.push_async_callback(_dispose_db_engines)  # 2번째로 실행
+            cleanup.push_async_callback(_dispose_db_engines)  # 3번째로 실행
+            await cleanup.enter_async_context(_redis(app))
             cleanup.push_async_callback(_drain_background_tasks)  # 1번째로 실행
 
             await _prepare_database(resources)

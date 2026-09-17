@@ -1,8 +1,8 @@
-# 품질 게이트 — docs/django-style-app-registry/DJANGO-STYLE-MANUAL-APP-INTEGRATION-PLAN.md
-# §5.7 의 AC-13(정적 검사) · AC-14(테스트·커버리지) · AC-09(스키마) 자동화.
+# 품질 게이트 — 정적 검사 · 테스트/커버리지 · 스키마 정합을 자동화한다.
 #
-# 여기 있는 검사는 전부 그 인수 조건을 1:1로 옮긴 것이다. 새 검사를 넣기 전에 §5.7 을
-# 먼저 고친다 — CI 가 명세보다 앞서 나가면 "왜 막혔는지" 근거가 사라진다.
+# 판정 규칙의 정본은 `scripts/review_gate.py` 다. 두 곳에 같은 규칙을 손으로 적어 두면
+# 반드시 갈린다 — 실제로 `deselected` 를 위반으로 세는 실수를 로컬 게이트에서 고치고
+# CI 에 반영하지 않아 한 번 겪었다. 규칙을 바꾸는 사람은 두 파일을 **함께** 본다.
 #
 # 배포·빌드는 다루지 않는다. 이미지 빌드·푸시·릴리스는 별도 인프라 저장소 소관이다
 # (design-baseline C-5: 이 저장소는 FastAPI 코드/설정만 담는다).
@@ -70,13 +70,13 @@ jobs:
         run: uv run ruff format --check .
 
       # mypy 캐시는 의도적으로 복원하지 않는다.
-      # 따뜻한 캐시의 결과를 게이트 결과로 기록해 3라운드 연속 오기한 적이 있다(ledger LEDGER-1).
+      # 따뜻한 캐시의 결과를 게이트 결과로 기록해 연속으로 오기한 적이 있다.
       # CI 는 매번 콜드 캐시로 도는 것이 그 사고에 대한 구조적 방어다.
       - name: mypy (콜드 캐시)
         run: uv run mypy --cache-dir "${GATE_TMP}/mypy" .
 
       # 실질 이슈만 막는다. LOW 는 테스트의 assert·문자열 상수 오탐이 대부분이라 게이트에서 뺀다
-      # (AUDIT_REPORT.md §7: LOW 113건 전수 검토 결과 실질 이슈 0건).
+      # (LOW 는 전수 검토 결과 실질 이슈가 0건이었다).
       #
       # JSON reporter 를 쓰는 이유: txt reporter 는 리포트를 콘솔 인코딩으로 쓰다가
       # 한글 결과에서 UnicodeEncodeError 로 **죽는다**(F-008). 그러면 "검사 실패"가
@@ -91,7 +91,7 @@ jobs:
       # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
       # charter §3 은 "조용한 SKIP·xfail 0" 을 인수 기준으로 둔다 — 통과 개수만 보고
       # 넘어가면 비활성화된 테스트가 초록불 뒤에 숨는다. 그래서 요약을 직접 판정한다.
-      # NFR-08: 프로젝트 전체 85% 이상. 커버리지 임계값이 없으면 "테스트를 안 쓰고
+      # 프로젝트 전체 85% 이상. 커버리지 임계값이 없으면 "테스트를 안 쓰고
       # 기능을 늘리는" 방향으로 조용히 미끄러진다.
       # 커버리지 데이터·pytest tmp·로그를 실행별 경로로 보낸다. 저장소 루트의
       # `.coverage` 를 쓰면 앞선 실행의 병렬 데이터가 남아 combine 이 형식 충돌로
@@ -132,7 +132,8 @@ jobs:
 
       # ── 스키마 드리프트 ──────────────────────────────────────────────────
       # 단일 head 만으로는 "체인은 하나인데 모델과 어긋난 상태" 를 못 잡는다.
-      # SQLite 에 실제로 적용한 뒤 autogenerate 가 할 일이 없는지 확인한다(AC-09).
+      # SQLite 에 실제로 적용한 뒤 autogenerate 가 할 일이 없는지 확인한다 —
+      # migration 과 모델 metadata 가 어긋나면 여기서 걸린다.
       - name: alembic 적용 + 드리프트 검사
         env:
           ALEMBIC_DATABASE_URL: sqlite:///./ci_schema_check.sqlite3
@@ -146,7 +147,7 @@ jobs:
         if: always()
         run: rm -rf "${GATE_TMP}"
 
-  # ── MySQL 8.4 통합 (development-plan §10.1 C · ADR-004) ──────────────────
+  # ── MySQL 8.4 통합 (design-baseline ADR-004) ─────────────────────────────
   # 로컬과 **같은** compose.test.yaml 을 쓴다. GitHub Actions 의 services: 블록을
   # 쓰지 않는 이유가 이것이다 — 설정이 두 곳으로 갈리면 "로컬은 되는데 CI 는 안 되는"
   # 상태가 생기고, 그때 어느 쪽이 기준인지 알 수 없다.

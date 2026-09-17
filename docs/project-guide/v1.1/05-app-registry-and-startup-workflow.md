@@ -129,14 +129,17 @@ uv run python -m scripts.new_app orders --with-models --with-admin
 생성기 자체는 설정 파일을 수정하지 않으므로 생성 직후 앱은 미설치 상태다.
 생성기 구현은 `scripts/new_app.py` 에 있다.
 
-> **주의 — 생성기 골격은 현재 OpenAPI 계약을 만족하지 않는다.**
+> **등록 전에 태그 선언 한 줄이 더 필요하다.**
 >
-> `scripts/new_app.py` 가 만드는 endpoint 에는 `operation_id` 가 없다. 그런데
-> `tests/test_openapi_contract.py` 는 모든 operation 이 **직접 지은** `operation_id` 를
-> 갖기를 요구한다. 생성 직후 그대로 검수 게이트를 돌리면 이 규칙에서 걸린다.
+> 생성기는 `operation_id`·`summary` 를 붙인 endpoint 를 만든다(자동 생성 `operationId`
+> 는 `tests/test_openapi_contract.py` 가 거부하므로 골격이 직접 짓는다).
 >
-> 생성 후 각 endpoint 에 `operation_id`·`summary` 를 직접 붙이고, 새 태그를 썼다면
-> `app/core/tags_metadata.py` 에도 설명을 추가한다. 참고할 실물은
+> 다만 골격이 쓰는 태그(`tags=["Orders"]`)의 **선언**은 생성기가 대신할 수 없다 —
+> `app/core/tags_metadata.py` 는 `config.py` 와 같은 중앙 파일이라 건드리지 않는 것이
+> 이 저장소의 정책이다. 생성기가 붙여 넣을 항목을 출력하므로 그대로 추가한다.
+> 선언하지 않은 태그는 태그 정합 검사에서 걸린다.
+>
+> 직접 추가하는 endpoint 를 쓸 때 참고할 실물은
 > `app/features/catalog/api/routers/v1/products.py` 다.
 
 ## 7. 실패 진단

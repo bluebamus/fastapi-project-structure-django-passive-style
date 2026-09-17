@@ -251,7 +251,7 @@ DB DSN을 로그에 표시할 때는 `mask_dsn()` 또는 `describe_routing()`이
 
 - [전체 요청 워크플로](04-request-workflow.md)
 - [기능별 워크플로](07-feature-workflows.md)
-- [향후 ORM/Raw 고도화 요구사항](../../orm-raw-repository/2026-08-13/requirements.md)
+- [ORM/Raw 선택 기준](09-orm-vs-raw-decision.md)
 
 ## 변경 이력
 

@@ -15,7 +15,7 @@ uv run alembic upgrade head
 uv run uvicorn main:app --reload
 ```
 
-기본 `DEBUG=true`에서는 시작 시 `create_all`도 실행되지만, migration과 실제 스키마의 차이를 조기에 확인하려면 로컬에서도 Alembic 적용을 권장한다. 상세 설치 변수는 [빠른 시작 문서](../../QUICKSTART.md)를 따른다.
+기본 `DEBUG=true`에서는 시작 시 `create_all`도 실행되지만, migration과 실제 스키마의 차이를 조기에 확인하려면 로컬에서도 Alembic 적용을 권장한다. 상세 설치 변수는 [빠른 시작 문서](../../guides/QUICKSTART.md)를 따른다.
 
 ## 2. 운영 배포 전 필수 설정
 
@@ -60,11 +60,14 @@ middleware는 `X-Forwarded-For`, `X-Real-IP`를 우선 사용한다. 신뢰할 �
 
 ## 4. 기동·가용성 검사
 
-- `GET /health`는 프로세스 상태와 버전을 반환하는 liveness 성격의 endpoint다.
-- 현재 `/health`는 DB나 Redis 연결을 검사하지 않는다.
-- 현재 `/ready` endpoint는 없다.
+- `GET /health`는 프로세스 상태와 버전을 반환하는 liveness endpoint다. **DB 를 보지 않는다** —
+  liveness 가 DB 에 의존하면 DB 가 잠깐 흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽인다.
+- `GET /ready`는 writer DB 에 `SELECT 1` 을 2초 timeout 으로 실행한다. 성공 200, DB 오류나
+  timeout 은 **원인을 숨긴 503**(DSN·SQL·driver 원문 미노출). 준비되지 않은 인스턴스는
+  재시작이 아니라 LB 에서 빼는 것이 맞다.
+- Redis 는 readiness 조건에 포함하지 않는다 — Celery broker 는 worker 프로세스 소관이다.
 
-<!-- VERIFY: 배포 오케스트레이터의 readiness 조건과 DB/Redis 의존성 검사 방식은 운영 플랫폼에서 별도 정의해야 한다. -->
+<!-- VERIFY: 배포 오케스트레이터가 /health 를 liveness 로, /ready 를 readiness 로 연결하는지는 운영 플랫폼에서 확인해야 한다. -->
 
 ## 5. Background와 Celery 운영
 
@@ -141,12 +144,12 @@ flowchart LR
 
 ## 10. 알려진 제한과 후속 개선 후보
 
-1. Admin 인증 부재: 운영 기본 비활성 유지 또는 인증 gateway 도입
-2. Readiness probe 부재: DB·Redis 의존성을 포함한 `/ready` 설계
-3. JWT 즉시 폐기 부재: refresh token rotation과 revoke 저장소 검토
-4. 접속 로그 best-effort: 감사 요건이 있으면 durable queue 사용
-5. Proxy header 신뢰 범위: trusted proxy 목록과 header 정규화 도입
-6. Raw Repository: 계획 문서 검토·구현·회귀 검증 전까지 현재 기능으로 안내하지 않음
+1. Admin 인증 부재: 운영 기본 비활성 유지 또는 인증 gateway 도입 (영구 비목표로 확정된 항목)
+2. JWT 즉시 폐기 부재: refresh token rotation과 revoke 저장소 검토
+3. 접속 로그 best-effort: 감사 요건이 있으면 durable queue 사용
+4. Proxy header 신뢰 범위: trusted proxy 목록과 header 정규화 도입
+5. Raw 집계의 실행 계획·실제 replica 지연·부하 한계는 검증하지 않았다 —
+   의미 있는 검증에 운영급 데이터 규모가 필요하다
 
 ## 11. 관련 문서
 
