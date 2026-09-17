@@ -168,7 +168,8 @@ fastapi-project-structure-django-passive-style/
 │   ├── guides/                  # 현행 사용자·개발자 가이드
 │   │   ├── ARCHITECTURE.md      # 아키텍처 공식 문서 (SSOT)
 │   │   └── QUICKSTART.md        # 최소 실행 경로
-│   └── project-guide/v1.1/      # 심화 가이드 9종(현행)
+│   ├── project-guide/v1.1/      # 심화 가이드 9종(현행)
+│   └── specs/orm-raw-repository/ # ORM/Raw 요구명세·개발계획·지침 원본 (착수 기준선)
 └── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
 ```
 
