@@ -4,7 +4,7 @@
 |---|---|
 | 작업 그룹 | `orm-raw-repository` |
 | 기간 | 2026-08-18 ~ 2026-08-19 |
-| 근거 문서 | `docs/orm-raw-repository/2026-08-13/` (요구명세·개발계획서·워크플로 지침서) |
+| 근거 문서 | `docs/specs/orm-raw-repository/` (요구명세·개발계획서·워크플로 지침서) |
 | 브랜치 | `feat/orm-raw-repository-phase0` |
 | 라운드 | 0 ~ 10 (Phase 0 ~ 7) |
 | 최종 상태 | **전체 통과** — 열린 결함 0건 |

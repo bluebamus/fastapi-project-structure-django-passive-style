@@ -39,8 +39,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #                        기본 config 를 고른다)
 #
 # **순서가 계약이다.** registry population(config → models → ready), Router 등록,
-# Admin view 등록이 모두 이 순서를 따른다. 같은 path 를 여러 앱이 선언하면 먼저
-# 등록된 쪽이 이긴다.
+# Admin view 등록이 모두 이 순서를 따른다. 같은 method+path 를 여러 앱이 선언하면
+# 기동이 ImproperlyConfigured 로 실패한다(app/core/apps/wiring.py).
 #
 # 환경변수로 덮어쓰지 않는다 — 설치 앱 구성은 코드 리뷰 대상이어야 한다.
 INSTALLED_APPS: list[str] = [
