@@ -479,6 +479,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | ORM·Raw 예제는 Repository 만 다르다 | `tests/test_orm_raw_parity.py` |
 | migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migration_chain.py` |
 | 설정 계약·`.env.example` 일치 | `tests/core/test_settings_contract.py` |
+| staging/production 비밀키 placeholder·access=refresh 거부(import 시점) | `tests/core/test_deployment_safety.py` |
 | 자원 수명(Redis·DDL·종료 순서) | `tests/core/test_bootstrap.py` · `tests/core/test_runtime_lifecycle.py` |
 | SQL·비밀값 비노출, 500 불투명 | `tests/core/test_security_hardening.py` · `tests/core/test_db_error_conversion.py` |
 | 생성기 동작·경계 | `tests/scripts/test_new_app.py` |
@@ -494,7 +495,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 세션·DB Router | transaction boundary, `tests/test_read_path_no_commit.py`, `tests/core/test_db_router.py`·`tests/core/test_db_router_env.py` |
 | 인증 | auth endpoint, `tests/utils/test_auth.py`, `tests/test_email_validation.py` |
 | Middleware | `tests/core/test_access_log_decoupling.py`, `tests/core/test_background_tasks.py`, `tests/core/test_cors_settings.py` |
-| 설정 | `tests/core/test_settings_contract.py`, `.env.example` 동시 갱신 |
+| 설정 | `tests/core/test_settings_contract.py`·`tests/core/test_deployment_safety.py`, `.env.example` 동시 갱신 |
 | 문서 | 문서 검사 두 파일 |
 
 ### 6.5 새 기능의 테스트 범위

@@ -1285,3 +1285,47 @@ def _validate_cross_settings() -> None:
 
 
 _validate_cross_settings()
+
+
+# =============================================================================
+# 배포 안전 검증 — 운영·스테이징에 placeholder 비밀키를 들고 가는 사고를 막는다
+# =============================================================================
+def is_placeholder_secret(value: str) -> bool:
+    """예시·기본값 그대로인 비밀키인지 판정한다(빈 값, ``your-`` 시작, ``change-this`` 포함)."""
+    v = value.strip().lower()
+    return "change-this" in v or v.startswith("your-") or v == ""
+
+
+def validate_deployment_safety() -> None:
+    """ENV=staging|production 에서 서명/세션 비밀키를 fail-fast 로 검증한다.
+
+    코드 기본값과 `.env.example` 의 키는 누구나 아는 값이라, 그대로 배포하면
+    JWT 를 위조할 수 있다. access 와 refresh 키가 같으면 refresh 토큰을 access
+    토큰으로 바꿔 쓰는 공격면이 생긴다. 위반은 한 번에 모두 모아 알리고,
+    메시지에는 설정 **이름만** 담는다 — 값은 로그로 흘러가면 안 된다.
+    development/test 는 검사하지 않는다(받자마자 뜨는 개발 경험 유지).
+    """
+    if app_settings.ENV not in ("production", "staging"):
+        return
+    secrets = {
+        "ACCESS_TOKEN_SECRET_KEY": jwt_settings.ACCESS_TOKEN_SECRET_KEY,
+        "REFRESH_TOKEN_SECRET_KEY": jwt_settings.REFRESH_TOKEN_SECRET_KEY,
+        "SESSION_SECRET_KEY": session_settings.SESSION_SECRET_KEY,
+    }
+    problems = [
+        f"{name} 가 placeholder 입니다"
+        for name, value in secrets.items()
+        if is_placeholder_secret(value)
+    ]
+    if jwt_settings.ACCESS_TOKEN_SECRET_KEY == jwt_settings.REFRESH_TOKEN_SECRET_KEY:
+        problems.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
+    if problems:
+        raise ValueError(
+            f"ENV={app_settings.ENV} 에서 비밀키 설정이 안전하지 않습니다: "
+            + "; ".join(problems)
+            + ". 서로 다른 값으로 교체하세요 — "
+            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+
+
+validate_deployment_safety()
