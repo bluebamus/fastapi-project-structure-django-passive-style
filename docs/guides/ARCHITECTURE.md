@@ -396,6 +396,9 @@ flowchart TD
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
 | `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
+| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
+
+`_validate_cross_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
 
 **주요 환경변수** (전체 목록과 설명은 `.env.example`)
 
@@ -409,7 +412,8 @@ flowchart TD
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `3306` / `root` / 빈 값 / `fastapi_db` | primary(writer) DSN |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅(§4.4) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `localhost` / `6379` / `0` / 없음 | startup ping 대상이자 Celery broker/backend |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7) |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). staging/production 은 placeholder·동일 키 거부 |
+| `SESSION_SECRET_KEY` | `change-this-...` | 세션 키(소비처 없음). staging/production 은 placeholder 거부 |
 
 ### 3.3 `create_app()` 조립 순서
 
@@ -776,7 +780,7 @@ OAuth2 **password flow** + JWT access/refresh. 자격증명은 `user` 기능의 
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | access 수명 |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | refresh 수명 |
 | `JWT_ALGORITHM` | `HS256` | 서명 알고리즘 |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 서로 다른 값으로 **배포 전 반드시 교체** — 기본값이면 누구나 토큰을 위조한다 |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 서로 다른 값으로 **배포 전 반드시 교체** — 기본값이면 누구나 토큰을 위조한다. staging/production 은 placeholder 이거나 두 키가 같으면 기동이 실패한다(`validate_deployment_safety()`, §3.2) |
 
 - payload 에 subject·`type`(access/refresh)·발급·만료 시각이 들어간다. 종류가 다른 토큰은 거부된다.
 - `refresh` 는 access·refresh 를 둘 다 새로 발급한다. 서버 측 폐기 목록·refresh 저장소·강제 로그아웃은 없다 — 유출된 refresh 토큰은 만료까지 유효하다.
@@ -842,7 +846,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 1 | `DEBUG=false` | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다 |
 | 2 | `ENV=production`(또는 staging) + `ADMIN=false` | `ADMIN=true` 인데 승인이 없으면 기동이 거부된다. 승인(`ADMIN_UNAUTHENTICATED_ACK=true`)했다면 프록시에서 `/admin` 을 반드시 막는다 |
 | 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 인증 없는 `/admin` 과 곱해지면 관리 화면이 네트워크에 열린다 |
-| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 토큰 위조, 기본 자격증명 노출 |
+| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
 | 5 | CORS 는 실제 frontend origin 만 | `CORS_ALLOW_ORIGINS=["*"]` 와 `CORS_ALLOW_CREDENTIALS=true` 조합은 설정 로드가 거부한다 |
 | 6 | Redis 는 인증·사설망 | startup 필수 자원이자 Celery broker |
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
