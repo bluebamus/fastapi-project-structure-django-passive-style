@@ -1,7 +1,7 @@
 [project]
-name = "fastapi-default-project-structure"
+name = "fastapi-project-structure-django-passive-style"
 version = "0.1.0"
-description = "FastAPI Default Project Structure with Repository Pattern"
+description = "FastAPI project skeleton with Django-style manual app installation (config.INSTALLED_APPS)"
 authors = [
     {name = "Your Name", email = "you@example.com"}
 ]
@@ -97,12 +97,12 @@ markers = [
     # compose.test.yaml 의 MySQL 8.4 가 떠 있어야 하는 테스트.
     # 미가용이면 자동 skip 한다(tests/integration/conftest.py). CI 는 skip 을 실패로 본다.
     #   docker compose -f compose.test.yaml up -d --wait
-    #   pytest -m mysql
+    #   uv run python -m pytest -m mysql
     "mysql: MySQL 8.4 통합 테스트 (compose.test.yaml 필요)",
     # 실제 브라우저(Chromium)로 Scalar 문서를 여는 테스트. 스키마가 규격에 맞는 것과
     # 화면이 그려지는 것은 다르다 — 그 사이를 잇는다.
     #   uv run python -m playwright install chromium
-    #   pytest -m browser
+    #   uv run python -m pytest -m browser   (compose MySQL + localhost:6379 Redis 도 필요)
     "browser: Playwright 브라우저 테스트 (chromium 설치 필요)",
 ]
 
@@ -177,7 +177,7 @@ target-version = "py312"
 line-length = 100
 
 # 제외 경로
-# .pytest_tmp/.mypy_tmp 는 README 의 실행 명령이 저장소 안에 만드는 임시 산출물이다.
+# .pytest_tmp/.mypy_tmp 는 `--basetemp`·`--cache-dir` 를 저장소 안으로 줄 때 생기는 임시 산출물이다.
 # 테스트가 그 안에 .py 픽스처를 쓰면 ruff 가 그것까지 잡아 게이트가 빨개진다.
 exclude = [
     ".git",

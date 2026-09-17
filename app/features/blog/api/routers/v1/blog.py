@@ -2,7 +2,8 @@
 Blog v1 API 엔드포인트 — 게시글 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
-비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
+커밋은 쓰기 핸들러 본문이 응답을 만들기 전에 `await service.commit()` 으로 한 번 한다(별도 UnitOfWork 없음).
 """
 
 from typing import Any

@@ -1,8 +1,10 @@
 """쓰기 도메인의 트랜잭션 경계 회귀 테스트 (계획서 P1-2).
 
-`get_blog_service` 는 `yield` 이후 `session.commit()` 을 호출하는 구조다. 이 경계는
-FastAPI 의 yield dependency 종료 코드 실행 시점에 의존하므로, 버전을 올릴 때 조용히
-바뀔 수 있다. 여기서 네 가지 성질을 고정해 업그레이드 시 회귀를 잡는다.
+현재 구조: `get_blog_service` 는 writer 세션으로 `BlogService` 를 조립해 **return** 만 하고,
+쓰기 핸들러 본문이 응답을 만들기 전에 `await service.commit()` 을 부른다. 예외가 나면
+세션 Dependency(`get_writer_db_session`)가 rollback 한다. 아래 측정 기록은 커밋을
+Dependency 의 `yield` 뒤에 두던 옛 구조에서 이 구조로 바꾼 근거다.
+여기서 네 가지 성질을 고정해 FastAPI 업그레이드·구조 변경 시 회귀를 잡는다.
 
 1. 읽기 경로는 커밋하지 않는다
 2. 쓰기 성공은 정확히 1회 커밋한다

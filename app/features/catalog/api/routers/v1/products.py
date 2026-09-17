@@ -56,7 +56,11 @@ async def create_product(
     "/products",
     response_model=ProductListResponse,
     summary="상품 목록 조회",
-    description="상품 목록을 페이지네이션하여 조회합니다. SKU 오름차순으로 안정 정렬됩니다.",
+    description=(
+        "상품 목록을 페이지네이션하여 조회합니다. active_only=true 이면 판매 중인 상품만 "
+        "SKU 오름차순으로 돌려주고, false 이면 정렬을 지정하지 않습니다. "
+        "total 은 필터와 무관한 전체 상품 수입니다."
+    ),
     operation_id="listProducts",
 )
 async def list_products(
