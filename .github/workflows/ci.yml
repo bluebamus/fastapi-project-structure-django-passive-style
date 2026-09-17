@@ -177,6 +177,7 @@ jobs:
         run: docker compose -f compose.test.yaml up -d --wait
 
       # 빈 DB 에서 시작한다 — migration 체인이 실제로 처음부터 적용되는지 본다.
+      # 아래 DSN 의 계정·DB·포트(3309)는 compose.test.yaml 의 기본값과 같다(MYSQL_TEST_PORT 미설정).
       - name: alembic upgrade head
         env:
           ALEMBIC_DATABASE_URL: mysql+pymysql://fastapi_passive_test:fastapi_passive_test_password@127.0.0.1:3309/fastapi_passive_test?charset=utf8mb4
