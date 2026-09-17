@@ -30,7 +30,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 
 | 구분 | 기술 |
 |---|---|
-| Runtime | Python ≥ 3.12 (`.python-version` 3.14), uv |
+| Runtime | Python ≥ 3.13 (`.python-version` 3.14 — 로컬·CI 인터프리터), uv |
 | Framework | FastAPI 0.141.x |
 | ORM / Migration | SQLAlchemy 2.0 async, Alembic |
 | Database | MySQL (aiomysql / 마이그레이션은 PyMySQL) |
