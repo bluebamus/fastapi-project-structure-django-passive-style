@@ -12,8 +12,8 @@
 유스케이스, 트랜잭션 경계, Pydantic 응답, OpenAPI/Scalar 문서화와 테스트 기준은 동일하다.
 
 이 계획은 2026-08-13 passive-style 코드베이스를 기준으로 검증·보정했고, 2026-08-18에는
-고도화가 완료된 `fastapi-default-project-structure`의 `db49e9c` 및 CRP 결함 원장 F-001~F-018을
-추가 대조했다. default-style의 구현을 그대로 복사하지 않고 검증된 교훈을 현재 App Registry
+고도화가 완료된 선행 참조 구현의 CRP 결함 원장 F-001~F-018을
+추가 대조했다. 그 구현을 그대로 복사하지 않고 검증된 교훈을 현재 App Registry
 조립 방식과 ADR-019 파일 로깅 정책에 맞게 이식한다. 기존
 `INSTALLED_APPS`/`AppConfig`/`Apps` 계약을 보존한다.
 
@@ -63,7 +63,7 @@
     않아 DB engine dispose 이후에도 task가 실행될 수 있다.
 14. Celery worker의 영속 event loop와 background DB engine pool은 worker 종료 signal에서
     dispose/close되지 않는다. FastAPI lifespan은 Celery worker에서 실행되지 않는다.
-15. 이 문서는 default-style에서 복사되어 App Registry, `AppConfig`, `INSTALLED_APPS`,
+15. 이 문서는 App Registry 이전 구조의 초안에서 출발해 App Registry, `AppConfig`, `INSTALLED_APPS`,
     `bootstrap.create_app()` 계약을 반영하지 못했다. 구현 전에 모든 조립 예시를 passive-style로
     보정해야 한다.
 16. 현재 저장소에는 문서가 전제한 `compose.test.yaml`이 없다. MySQL 방언 검증을 시작하기
@@ -71,7 +71,7 @@
 17. 운영 회전 파일 logging 제거는 기존 `app/utils/logs/config.py`의 ADR-019와 충돌한다.
     Queue logging은 ADR 개정 없이는 구현 범위로 확정할 수 없다.
 18. `README.md`와 `docs/ARCHITECTURE.md` 일부 tree·변경 이력에는 `feature/__init__.py`의
-    Router/Model 재노출과 `import_all_models()` 같은 이전 default-style 설명이 남아 있다.
+    Router/Model 재노출과 `import_all_models()` 같은 이전 구조의 설명이 남아 있다.
     최종 문서 단계에서 현재 registry 계약과 일치하도록 함께 정리해야 한다.
 19. `create_app()`은 격리 registry를 주입할 수 있지만 현재 `create_db_tables()`는 전역
     `apps`/`INSTALLED_APPS`를 다시 population하고 전역 `Base.metadata` 전체를 생성한다.
@@ -92,7 +92,7 @@
     설정화와 상한 검증이 필요하다.
 25. 현재 `/health`만 존재하며 DB readiness는 구현되어 있지 않다. `/ready` 추가는 route
     inventory/OpenAPI 변경을 포함한 명시 작업이어야 한다.
-26. default 프로젝트에서는 기본 `DEBUG=true`만으로 SQLAlchemy·driver DEBUG 로그에 실행 SQL과
+26. 선행 참조 구현에서는 기본 `DEBUG=true`만으로 SQLAlchemy·driver DEBUG 로그에 실행 SQL과
     bind 값이 실제 유출됐다(F-008). passive-style도 third-party logger를 root handler로
     전파하면서 별도 SQL filter가 없어 같은 위험이 있다.
 27. passive `migrations/env.py`의 `fileConfig()`는 기본 `disable_existing_loggers=True`다.
@@ -109,25 +109,25 @@
 32. `ADMIN=true`가 기본이고 `/admin`에 인증이 없다. 또한 `.env.example`의 wildcard CORS와
     credentials 조합은 현재 Settings validation에 의해 거부되는 값이라, 복사 가능한 예제라는
     문서 계약과 보안 기본값을 동시에 위반한다.
-33. default 구현의 Raw DML 선두 키워드 판별은 일반 DML과 `FOR UPDATE`는 막았지만 CTE DML을
+33. 선행 참조 구현의 Raw DML 선두 키워드 판별은 일반 DML과 `FOR UPDATE`는 막았지만 CTE DML을
     읽기로 오판하는 잔여 위험을 수용했다. passive-style은 명시적 statement intent와 미분류
     `TextClause` fail-closed로 이 한계를 승계하지 않는다.
 34. MySQL 통합 테스트가 인프라 부재로 skip되면 로컬 편의에는 유용하지만 CI까지 초록으로
     보일 수 있다. 병합 게이트에서는 MySQL skip을 실패로 처리하고 실행 건수를 보고해야 한다.
-35. default 구현은 DEBUG 모드의 일반 500 응답에 `str(exc)`를 넣는다. Repository 밖에서 발생한
+35. 선행 참조 구현은 DEBUG 모드의 일반 500 응답에 `str(exc)`를 넣는다. Repository 밖에서 발생한
     SQLAlchemy·driver 예외는 SQL, bind 값과 내부 경로를 HTTP 응답으로 노출할 수 있으므로 일반
     500 detail은 환경과 무관하게 불투명해야 한다.
-36. default ORM Repository는 안전한 응답 detail과 달리 application logger에 DB 예외 객체를
+36. 선행 참조 구현의 ORM Repository는 안전한 응답 detail과 달리 application logger에 DB 예외 객체를
     `%s`로 전달한다. `SqlNoiseFilter`는 application logger를 통과시키므로 formatter가 SQL과
     params를 다시 출력할 수 있다. canary 검사는 record message가 아니라 traceback을 포함한 최종
     handler 출력까지 확인해야 한다.
-37. default `compose.test.yaml`의 `3308:3306`은 고정 test credential의 MySQL을 모든 host
+37. 선행 참조 구현의 test compose 포트 매핑 `3308:3306`은 고정 test credential의 MySQL을 모든 host
     interface에 노출한다. passive-style은 loopback bind를 기본으로 하고 CI에서는 service network를
     우선한다.
 38. Bandit text reporter는 Windows cp949에서 비 ASCII finding 문맥을 출력하다 실패할 수 있다.
     보안 게이트는 자식 stdio를 UTF-8로 고정하거나 JSON reporter를 사용하고 reporter 실패를
     통과로 처리하지 않아야 한다.
-39. default `review_gate.py`는 고정 `.pytest_tmp`/`.mypy_tmp`를 재사용하고 실패 detail을
+39. 선행 참조 구현의 `review_gate.py`는 고정 `.pytest_tmp`/`.mypy_tmp`를 재사용하고 실패 detail을
     `stdout or stderr`로 선택한다. 병렬 실행·잔류 권한 때문에 tool이 실패할 수 있고 stdout이 한 줄이라도
     있으면 실제 stderr traceback이 숨겨진다. 실행별 고유 temp/cache와 양쪽 스트림 보고가 필요하다.
 
@@ -336,7 +336,7 @@ RawRepositoryBase -> RawCRUDBase
 `UpdateBase`로 인식하지 못하므로 Raw Base가 각 statement에 `read`/`write` execution intent를
 붙이고 router가 이를 우선 판정한다. `fetch_*`는 read, `execute`와 `SELECT ... FOR UPDATE`는
 write다. intent가 없는 `TextClause`는 reader로 보내지 않는 fail-closed 정책을 사용한다.
-default 구현의 선두 키워드 방식처럼 CTE DML을 오판하는 잔여 위험을 승계하지 않는다.
+선행 참조 구현의 선두 키워드 방식처럼 CTE DML을 오판하는 잔여 위험을 승계하지 않는다.
 Raw Base가 private `_READ_ONLY` key를 복제하지 않도록 router에 공개
 `is_read_only_session(db_session)` helper를 추가한다.
 
@@ -817,7 +817,7 @@ read-only DML 차단, duplicate/FK 예외 변환과 migration chain이다. schem
 #### D. 기준 문서의 passive-style 정합성 복구
 
 `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICKSTART.md`에서 현재 코드와 충돌하는 이전
-default-style 문장을 수정한다.
+구조의 문장을 수정한다.
 
 필수 수정 항목:
 
@@ -839,9 +839,9 @@ default-style 문장을 수정한다.
 완료 게이트: 세 문서의 tree·개발 절차·문제 해결 절차가 실제 코드와 일치하고 문서 정합성
 테스트가 이를 자동 보호한다.
 
-#### E. Default 구현 피드백 보안 하드닝
+#### E. 선행 구현 피드백 보안 하드닝
 
-default 프로젝트의 완료 구현과 CRP 기록에서 재현된 결함을 passive-style 착수 게이트로
+선행 참조 구현과 그 CRP 기록에서 재현된 결함을 passive-style 착수 게이트로
 이관한다.
 
 - 모든 ADR-019 console/file/error handler에 SQL-noise/redaction filter를 적용하고 실제 secret
@@ -981,7 +981,7 @@ task/loop/pool을 실패 경로에서도 해제하며 기존 logging 동작은 �
 ### Phase 7. 문서 및 최종 검수
 
 - 개발 지침서와 실제 코드 경로·시그니처 대조
-- README/ARCHITECTURE/QUICKSTART의 이전 default-style 잔재를 registry 계약에 맞게 업데이트
+- README/ARCHITECTURE/QUICKSTART의 이전 구조 잔재를 registry 계약에 맞게 업데이트
 - `tests/test_docs_consistency.py`의 passive-style 금지·필수 패턴 회귀 검사 통과
 - 문서가 참조하는 경로·심볼·환경변수 실재 여부 기계 검사
 - Windows UTF-8 출력, AST 계층 불변식, 공개 API baseline과 MySQL skip 금지를 포함한

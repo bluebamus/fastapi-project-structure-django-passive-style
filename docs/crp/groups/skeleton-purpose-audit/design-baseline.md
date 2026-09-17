@@ -33,6 +33,7 @@
 | REQ-S03 | 2026-08-25 | 불필요한 문서 삭제 | 완료된 착수 명세 5종 + 폐기된 가이드 버전 삭제 | Active | ADR-S02·S03 |
 | REQ-S04 | 2026-08-25 | 필요한 문서 업데이트 | 코드와 어긋난 서술을 실물 기준으로 정정 | Active | ledger S-002~S-006 |
 | REQ-S05 | 2026-09-17 | "docs 가이드를 모두 업데이트" → "날짜 폴더의 명세를 적합한 폴더에 두고 추적, 참조 갱신" → "남은 작업 진행" | 코드 주석이 인용하는 착수 명세를 저장소 안에서 따라갈 수 있게 한다 | Active | ADR-S06 |
+| REQ-S06 | 2026-09-17 | 문서 재구성·최적화 — 삭제된 문서의 정보까지 포함해 중복을 한 문서로 모으고, 꼭 필요한 문서만 남기며, 이 저장소 관점에서만 서술 | 주제마다 소유 문서를 하나로 정하고(진입·아키텍처·개발 + 명세 기준선), 삭제 문서의 여전히 참인 정보를 코드와 대조해 흡수하며, 문서에서 다른 저장소 언급을 없앤다(CRP 이력 제외) | Active | ADR-S07 |
 
 ## 3. 설계 결정 기록 (ADR)
 
@@ -44,6 +45,7 @@
 | ADR-S04 | 2026-08-25 | 태그 선언(`tags_metadata.py`)은 생성기가 자동 추가하지 않고 **붙여 넣을 항목을 출력**한다 | `config.INSTALLED_APPS` 와 같은 중앙 파일이다. 사람이 결정하는 것과 컨벤션이 처리하는 것의 경계를 생성기가 넘지 않는다 | Active | — |
 | ADR-S05 | 2026-08-25 | 검사에서 면제 목록(`HISTORICAL_DOCS`)을 없앤다 | 면제 대상 파일이 사라졌다. 존재하지 않는 파일을 면제하는 집합은 아무것도 하지 않으면서 검사 범위가 좁아 보이게 만든다 — 이 저장소가 반복해 고쳐 온 "헛도는 검사" 와 같은 부류다 | Active | — |
 | ADR-S06 | 2026-09-17 | 요구명세·개발계획·워크플로 지침 3종을 `docs/specs/orm-raw-repository/` 에 **되살린다**(통합 계획·운영 준비 계획은 삭제 유지). `orm-raw-repository` 그룹 문서의 경로를 새 위치로 바꾼다. | `app/core/resources.py`·`bootstrap.py`·`app/celery/lifecycle.py`·테스트 docstring 등 15곳 이상이 `development-plan §9.4` 형태로 근거를 인용한다 — git 이력에만 있으면 인용을 따라갈 수 없다. 사용자 지시(2026-09-17): 명세는 날짜 없는 폴더에 두고 추적한다(세 저장소 공통 구조). "한쪽이 낡는다"(ADR-S02)는 사본이 아니라 원본 하나만 두므로 해당하지 않는다. | Active | ADR-S02 (일부) |
+| ADR-S07 | 2026-09-17 | 현행 문서를 `README.md`(진입·빠른 시작·구조·API·**유일한 문서 색인**)·`docs/guides/ARCHITECTURE.md`(동작 레퍼런스·운영·변경 이력)·`docs/guides/DEVELOPMENT.md`(작성 절차·규칙·테스트) 3종으로 통합한다. `docs/guides/QUICKSTART.md`·`docs/project-guide/v1.1/`(10)·`docs/django-style-app-registry/`(3)·HTML 안내서 2종·`docs/specs/orm-raw-repository/README.md` 는 내용을 흡수한 뒤 삭제한다. 명세 3종은 고정 기준선으로 유지하되 다른 저장소 이름만 중립화한다. 문서 검사는 대상 문서를 새 소유 문서로 옮기고, 학습 경로 검사(`project-guide/`·`09-orm-vs-raw-decision.md` 링크)는 `ARCHITECTURE.md`·`DEVELOPMENT.md`·`DEVELOPMENT.md#orm-raw`(+앵커 실재)·사라진 문서 위치 미참조 검사로 대체한다. | 같은 주제가 MD·HTML·버전 가이드·registry 문서에 4중으로 있었고 서로 어긋났다(예: 운영 Admin 차단 존재 여부, 공개 API 수 18/30 vs 22/37, 파일 로그 조건, `exists()` 시그니처). 원본이 하나여야 낡지 않는다(ADR-S02 의 근거와 같다). 삭제한 계획서의 요구 ID 는 코드 주석이 계속 인용하므로 의미 색인을 ARCHITECTURE §2.8 에 남긴다. | Active | ADR-S06 의 폴더 README(색인 단일화), learning-path 의 v1.1 가이드 형태(내용은 흡수) |
 
 ## 4. 불가침 제약
 
@@ -60,3 +62,4 @@
 |---|---|
 | 2026-08-25 | 최초 작성 — REQ-S01~S04, ADR-S01~S05, INV-S1~S5 |
 | 2026-09-17 | REQ-S05 · ADR-S06 — 착수 명세 3종 복원(`docs/specs/orm-raw-repository/`), ADR-S02 일부 supersede |
+| 2026-09-17 | REQ-S06 · ADR-S07 — 문서 3종 통합(README·ARCHITECTURE·DEVELOPMENT), 가이드·registry·HTML·명세 README 삭제, 문서 검사 대상 이전 |

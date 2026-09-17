@@ -40,7 +40,7 @@ View -> Dependency -> Service -> Repository -> AsyncSession
    - 예제 migration 전에 MySQL 8.4 `compose.test.yaml`과 `mysql` pytest marker를 추가한다.
    - compose health → Alembic upgrade → MySQL test → downgrade/re-upgrade → `down -v` 순서를
      로컬과 CI에서 동일하게 사용한다.
-5. **Default 구현 피드백 보안 점검**
+5. **선행 구현 피드백 보안 점검**
    - SQLAlchemy/DB driver에 secret canary를 bind하고 console/file/error handler 유출 여부를
      먼저 측정한다.
    - Alembic 실행 전후 application logger가 살아 있는지 확인한다.
@@ -363,7 +363,7 @@ SELECT ... FOR UPDATE            -> intent=write
 intent 없는 TextClause           -> fail-closed(writer 또는 실행 거부)
 ```
 
-default 프로젝트의 선두 키워드 판별은 일반 INSERT/UPDATE/DELETE와 `FOR UPDATE`는 처리했지만
+선행 참조 구현의 선두 키워드 판별은 일반 INSERT/UPDATE/DELETE와 `FOR UPDATE`는 처리했지만
 `WITH ... DELETE` 같은 CTE DML을 읽기로 오판했다. 따라서 CTE가 필요한 이 프로젝트에서는
 첫 단어 파싱을 최종 보안 경계로 사용하지 않는다.
 

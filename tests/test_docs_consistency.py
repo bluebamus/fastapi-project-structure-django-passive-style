@@ -19,12 +19,17 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+#: 현행 문서 전부 — 진입(README)·아키텍처·개발 가이드. 2026-09-17 재구성에서
+#: QUICKSTART·project-guide·django-style-app-registry 의 내용을 이 세 문서로 합쳤다.
+#: ``docs/guides/`` 는 glob 으로 모아 새 가이드가 생기면 자동으로 검사 대상이 된다.
 DOCS = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
-    *sorted((REPO_ROOT / "docs" / "django-style-app-registry").glob("*.md")),
+    *sorted((REPO_ROOT / "docs" / "guides").glob("*.md")),
 ]
+
+#: 반드시 있어야 하는 현행 문서. glob 이 비거나 파일이 사라지면 아래 검사가 헛통과한다.
+REQUIRED_DOCS = {"README.md", "ARCHITECTURE.md", "DEVELOPMENT.md"}
 
 # 예외 없이 전부 현행 문서다. 옛 결선 방식을 서술하던 착수 계획 두 편은 구축이 끝난
 # 뒤 삭제했으므로(git 이력에 남아 있다) 면제 목록을 둘 이유가 없다 — 존재하지 않는
@@ -60,21 +65,26 @@ PROMISED_SYMBOLS = {
 
 def test_documents_exist():
     """대조 대상이 비어 있으면 아래 검사가 헛통과한다."""
-    assert len(DOCS) >= 6
+    names = {path.name for path in DOCS}
+    missing = REQUIRED_DOCS - names
+    assert not missing, f"현행 문서가 없다: {sorted(missing)}"
     for path in DOCS:
         assert path.is_file(), path
 
 
 #: 변경 이력 섹션은 과거를 기록하는 자리다 — 옛 이름이 나오는 것이 정상이다.
-CHANGELOG_HEADINGS = ("## 8. 변경 이력", "## 10. 개발 내역과 설계의 발전")
+#: 절 번호가 바뀌어도 잡히도록 번호는 선택으로 둔다(`## 12. 변경 이력`).
+#: `tests/test_docs_references.py` 의 ``HISTORY_HEADING`` 과 같은 규칙이다.
+CHANGELOG_HEADING = re.compile(
+    r"^##\s*(?:\d+\.\s*)?(변경 이력|이력|Changelog|개발 내역과 설계의 발전)\s*$", re.MULTILINE
+)
 
 
 def _current_text(path: Path) -> str:
     """변경 이력 섹션을 제외한 본문."""
     text = path.read_text(encoding="utf-8")
-    for heading in CHANGELOG_HEADINGS:
-        text = text.partition(heading)[0]
-    return text
+    match = CHANGELOG_HEADING.search(text)
+    return text[: match.start()] if match else text
 
 
 @pytest.mark.parametrize("path", CURRENT_DOCS, ids=lambda p: p.name)
@@ -119,19 +129,19 @@ def test_installed_apps_examples_match_real_entries():
 
 
 def test_generator_output_matches_documented_line():
-    """README 가 안내하는 등록 한 줄이 생성기 출력과 같은 형식이다."""
+    """README 와 개발 가이드가 안내하는 등록 한 줄이 생성기 출력과 같은 형식이다."""
     from scripts.new_app import config_entry
 
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert config_entry("orders").strip() in (
-        readme + (REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md").read_text(encoding="utf-8")
-    )
+    line = config_entry("orders").strip()
+    for name in ("README.md", "docs/guides/DEVELOPMENT.md"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert line in text, f"{name} 의 등록 예제가 생성기 출력({line})과 다르다"
 
 
 # =============================================================================
 # passive-style 정합성 (development-plan §10.1 D)
 #
-# 이 저장소는 default-style 에서 갈라져 나왔다. 문서가 옛 절차를 그대로 들고 있으면
+# 이 저장소는 수동 등록 이전 구조에서 출발했다. 문서가 옛 절차를 그대로 들고 있으면
 # 따라 하는 사람이 `main.py` 를 열어 `include_router` 를 찾다가 막힌다 — 실제로
 # 남아 있던 문장들이다. 아래 검사가 그 문장의 부활을 막는다.
 # =============================================================================
@@ -140,7 +150,7 @@ def test_generator_output_matches_documented_line():
 BASE_DOCS = [
     REPO_ROOT / "README.md",
     REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
+    REPO_ROOT / "docs" / "guides" / "DEVELOPMENT.md",
 ]
 
 #: 옛 결선 방식을 "현재 절차"로 안내하는 문장 패턴.
