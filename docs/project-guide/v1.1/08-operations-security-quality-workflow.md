@@ -15,7 +15,7 @@ uv run alembic upgrade head
 uv run uvicorn main:app --reload
 ```
 
-기본 `DEBUG=true`에서는 시작 시 `create_all`도 실행되지만, migration과 실제 스키마의 차이를 조기에 확인하려면 로컬에서도 Alembic 적용을 권장한다. 상세 설치 변수는 [빠른 시작 문서](../../QUICKSTART.md)를 따른다.
+기본 `DEBUG=true`에서는 시작 시 `create_all`도 실행되지만, migration과 실제 스키마의 차이를 조기에 확인하려면 로컬에서도 Alembic 적용을 권장한다. 상세 설치 변수는 [빠른 시작 문서](../../guides/QUICKSTART.md)를 따른다.
 
 ## 2. 운영 배포 전 필수 설정
 

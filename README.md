@@ -22,6 +22,11 @@ Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공
 
 ---
 
+## HTML 단계별 가이드
+
+- [서버 수명주기 안내서](./docs/guides/server-lifecycle-guide.html): `.env` 설정 → 설치 목록·AppConfig·모델·ready → lifespan → Redis·DB → 요청 → 종료를 클래스·함수 중심으로 추적합니다.
+- [신규 뷰·테이블 개발 안내서](./docs/guides/feature-development-guide.html): MVC 대응, DI, ORM/Raw, 트랜잭션, 비동기, migration, 테스트와 현재 구현의 제한을 설명합니다.
+
 ## 개요
 
 이 프로젝트는 FastAPI 기반의 확장 가능한 백엔드 애플리케이션 템플릿입니다.
@@ -49,7 +54,7 @@ Django 식 수동 앱 등록을 따릅니다: 설치 앱의 유일한 진실 공
 | Database | MySQL (aiomysql) |
 | Validation | Pydantic v2 |
 | Migration | Alembic |
-| Message Broker | Redis (Celery 브로커·결과 백엔드 전용 — 앱 캐시로는 쓰지 않음) |
+| Redis | startup 연결 검증 + Celery 브로커·결과 백엔드 |
 | Admin | SQLAdmin |
 | API Docs | Scalar |
 | Task Queue | Celery + Redis |
@@ -109,7 +114,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 ## 프로젝트 구조
 
-> 상세한 아키텍처 설명은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
+> 상세한 아키텍처 설명은 **[docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md)** 를 참고하세요.
 
 ```
 fastapi-project-structure-django-passive-style/
@@ -160,9 +165,10 @@ fastapi-project-structure-django-passive-style/
 ├── migrations/                  # Alembic (env.py 가 App Registry 로 메타데이터 수집)
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
 ├── docs/
-│   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-│   ├── QUICKSTART.md            # 최소 실행 경로
-│   └── project-guide/v1.1/      # 심화 가이드 9종(현행). v1.0 은 이전 기록
+│   ├── guides/                  # 현행 사용자·개발자 가이드
+│   │   ├── ARCHITECTURE.md      # 아키텍처 공식 문서 (SSOT)
+│   │   └── QUICKSTART.md        # 최소 실행 경로
+│   └── project-guide/v1.1/      # 심화 가이드 9종(현행)
 └── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
 ```
 
@@ -509,7 +515,7 @@ class UserRepository(BaseRepository[User]):
 
 ## 시작하기
 
-> **처음이라면 [docs/QUICKSTART.md](docs/QUICKSTART.md) 부터.** 인프라 없이 30초 만에
+> **처음이라면 [docs/guides/QUICKSTART.md](docs/guides/QUICKSTART.md) 부터.** Redis만 준비해 30초 만에
 > 기동을 확인하는 최소 경로와, 첫 실행에서 가장 자주 막히는 지점(`DEBUG=true` 기본값이
 > MySQL을 요구한다)을 다룬다. 아래는 전체 설치 절차다.
 
@@ -1020,7 +1026,7 @@ curl -X POST localhost:8000/api/v1/auth/refresh \
 
 ## 신규 기능 개발 가이드
 
-> 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
+> 상세 아키텍처 및 각 파일의 역할은 **[docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md)** 를 참고하세요.
 
 새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤 **`apps.py` 의 `AppConfig` 를 `config.INSTALLED_APPS` 에 등록**합니다.
 등록을 빠뜨리면 라우터·모델·Admin 어디에도 연결되지 않습니다. `main.py` 는 손대지 않습니다.

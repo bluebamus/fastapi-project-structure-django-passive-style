@@ -12,10 +12,25 @@ from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core import bootstrap, resources
 from app.core.apps import Apps
 from config import INSTALLED_APPS
+
+
+class _FakeRedis:
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FakeRedisFactory:
+    @staticmethod
+    def from_url(*args, **kwargs) -> _FakeRedis:
+        return _FakeRedis()
 
 
 @pytest.fixture
@@ -39,6 +54,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(resources, "create_db_tables", fake_create_tables)
     monkeypatch.setattr(resources, "dispose_engine", fake_dispose)
     monkeypatch.setattr(resources, "access_log_tasks", _Tasks())
+    monkeypatch.setattr(resources, "Redis", _FakeRedisFactory)
     return recorded
 
 
@@ -92,6 +108,32 @@ async def test_lifespan_propagates_table_creation_failure(calls: list[str], monk
 
     with pytest.raises(RuntimeError, match="모의"):
         await _run_lifespan(FastAPI())
+
+
+async def test_redis_connection_failure_stops_startup(calls: list[str], monkeypatch):
+    """필수 Redis의 PING 실패를 삼키지 않고 이미 등록된 자원은 정리한다."""
+
+    class _UnavailableRedis(_FakeRedis):
+        async def ping(self) -> bool:
+            raise RedisConnectionError("Redis unavailable")
+
+        async def aclose(self) -> None:
+            calls.append("redis_close")
+
+    class _UnavailableRedisFactory:
+        @staticmethod
+        def from_url(*args, **kwargs) -> _UnavailableRedis:
+            return _UnavailableRedis()
+
+    monkeypatch.setattr(resources, "Redis", _UnavailableRedisFactory)
+    app = FastAPI()
+
+    with pytest.raises(RedisConnectionError):
+        await _run_lifespan(app)
+
+    assert calls == ["redis_close", "dispose_engine"]
+    assert app.state.redis is None
+    assert app.state.resources is None
 
 
 async def test_startup_failure_runs_the_same_cleanup_path(calls: list[str], monkeypatch):

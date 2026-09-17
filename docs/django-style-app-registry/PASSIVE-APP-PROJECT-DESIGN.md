@@ -3,7 +3,7 @@
 ## 1. 이 문서의 역할
 
 **"왜"** 를 다룬다. 폴더 구조·조립 순서·API 목록 같은 **"무엇"** 은
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) 가, **"어떻게 쓰나"** 는
+[`docs/guides/ARCHITECTURE.md`](../guides/ARCHITECTURE.md) 가, **"어떻게 쓰나"** 는
 [`docs/project-guide/v1.1/`](../project-guide/v1.1/README.md) 가 다룬다.
 세 문서가 어긋나면 코드가 정답이고, ARCHITECTURE 가 아키텍처 SSOT 다.
 
