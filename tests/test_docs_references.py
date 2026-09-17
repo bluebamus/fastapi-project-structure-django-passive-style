@@ -23,38 +23,26 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: 사용자가 "따라 하는" 진입 문서 3종.
-ENTRY_DOCS = ("README.md", "docs/guides/ARCHITECTURE.md", "docs/guides/QUICKSTART.md")
+#: 사용자가 "따라 하는" 현행 문서 3종 — 진입(README)·아키텍처·개발 가이드.
+#:
+#: 2026-09-17 재구성 전에는 진입 문서 3종 + ``docs/project-guide/<최신>/`` 을 따로 모았다.
+#: 심화 가이드를 진입 문서에서 빼놓고 검사하지 않던 것이 L-007·L-008 이었다. 지금은
+#: 심화 내용이 이 세 문서 안에 있으므로, 학습자가 따라 하는 문서 **전체**가 곧 이 목록이다.
+ENTRY_DOCS = ("README.md", "docs/guides/ARCHITECTURE.md", "docs/guides/DEVELOPMENT.md")
 
+#: 학습자가 실제로 따라 하는 문서 전체.
+BASE_DOCS = ENTRY_DOCS
 
-def _current_guide_docs() -> tuple[str, ...]:
-    """``docs/project-guide/`` 의 **최신 버전 폴더만** 검사 대상으로 돌려준다.
-
-    옛 버전 폴더는 그 시점의 기록이라 현재 코드와 어긋나는 것이 정상이다 — 그것까지
-    실재를 요구하면 버전 폴더 규약 자체가 성립하지 않는다. 반면 최신 버전은 학습자가
-    **지금 따라 하는** 문서라, 코드에 없는 이름이 있으면 그대로 막힌다.
-
-    L-007 이 그렇게 생겼다. 가이드가 ``get_session()`` 을 가르쳤는데 코드에는 없었고,
-    이 검사가 진입 문서 3종만 보고 있어서 아무도 몰랐다(L-008).
-    """
-    latest = _latest_guide_dir()
-    return tuple(f"docs/project-guide/{latest.name}/{f.name}" for f in sorted(latest.glob("*.md")))
-
-
-def _latest_guide_dir() -> Path:
-    """``docs/project-guide/`` 의 최신 버전 폴더."""
-    root = REPO_ROOT / "docs" / "project-guide"
-    versions = sorted(
-        (d for d in root.iterdir() if d.is_dir() and re.fullmatch(r"v\d+(?:\.\d+)*", d.name)),
-        # 문자열 정렬이면 v1.10 이 v1.2 앞에 온다 — 숫자 튜플로 비교한다.
-        key=lambda d: tuple(int(part) for part in d.name[1:].split(".")),
-    )
-    assert versions, "docs/project-guide/ 에 버전 폴더가 없다 — 검사가 헛통과한다"
-    return versions[-1]
-
-
-#: 진입 문서 + 현행 가이드. 학습자가 실제로 따라 하는 문서 전체.
-BASE_DOCS = ENTRY_DOCS + _current_guide_docs()
+#: 재구성으로 사라진 문서 위치. 현행 문서가 이곳을 가리키면 학습자를 없는 문서로 보낸다.
+RETIRED_DOC_LOCATIONS = (
+    "docs/project-guide/",
+    "project-guide/v",
+    "docs/django-style-app-registry/",
+    "QUICKSTART.md",
+    "server-lifecycle-guide.html",
+    "feature-development-guide.html",
+    "09-orm-vs-raw-decision.md",
+)
 
 #: 변경 이력 섹션의 제목. 이 줄부터 문서 끝까지는 과거 기록이라 검사 대상이 아니다.
 #: 번호가 붙을 수 있다 — `## 8. 변경 이력`.
@@ -257,11 +245,16 @@ REQUIRED_IN_ENTRY_DOCS: tuple[tuple[str, str, int], ...] = (
     # 두 참조 예제로 가는 실제 경로.
     ("ORM 참조 예제", "app/features/catalog/repositories/product_repository.py", 2),
     ("Raw 참조 예제", "app/features/reports/repositories/sales_report_repository.py", 2),
-    # 심화 가이드로 나가는 문. 0 이던 것이 L-003 이다.
-    ("심화 가이드 링크", "project-guide/", 3),
-    # 선택 기준 문서. "언제 ORM, 언제 Raw" 가 어디에도 없던 것이 L-004 다.
-    ("ORM/Raw 결정 가이드", "09-orm-vs-raw-decision.md", 2),
+    # 심화 문서로 나가는 문. 0 이던 것이 L-003 이다. 심화 내용은 아키텍처·개발 가이드가
+    # 소유하므로, 각 문서가 나머지 둘 중 하나 이상에서 링크돼야 한다.
+    ("아키텍처 문서 링크", "ARCHITECTURE.md", 2),
+    ("개발 가이드 링크", "DEVELOPMENT.md", 2),
+    # 선택 기준 절. "언제 ORM, 언제 Raw" 가 어디에도 없던 것이 L-004 다.
+    ("ORM/Raw 결정 가이드", "DEVELOPMENT.md#orm-raw", 2),
 )
+
+#: ORM/Raw 결정 절의 앵커 — 위 링크가 가리키는 대상이 실제로 있어야 한다.
+ORM_RAW_ANCHOR = '<a id="orm-raw"></a>'
 
 
 @pytest.mark.parametrize(("label", "needle", "minimum"), REQUIRED_IN_ENTRY_DOCS)
@@ -274,20 +267,31 @@ def test_learning_path_is_reachable_from_entry_docs(label: str, needle: str, min
     ), f"{label}({needle}) 가 진입 문서 {minimum}곳 이상에 없다 — 있는 곳: {found or '없음'}"
 
 
-def test_entry_docs_point_at_the_current_guide_version():
-    """진입 문서가 **최신** 버전 가이드를 가리킨다.
+def test_orm_raw_anchor_exists():
+    """``DEVELOPMENT.md#orm-raw`` 링크가 가리키는 앵커가 실제로 있다.
 
-    v1.2 를 만들고 링크를 안 고치면 학습자는 옛 문서로 간다. 그건 링크가 깨진 것보다
-    나쁘다 — 깨진 링크는 눈에 띄지만 옛 문서는 그럴듯하게 읽힌다.
+    파일 링크 검사는 ``#`` 뒤를 보지 않는다. 앵커가 사라지면 링크는 초록인 채로
+    문서 첫머리에 떨어진다.
     """
-    latest = _latest_guide_dir().name
-    stale: dict[str, list[str]] = {}
-    for path in ENTRY_DOCS:
-        versions = set(re.findall(r"project-guide/(v\d+(?:\.\d+)*)/", _current_section(path)))
-        if versions - {latest}:
-            stale[path] = sorted(versions - {latest})
+    text = (REPO_ROOT / "docs" / "guides" / "DEVELOPMENT.md").read_text(encoding="utf-8")
 
-    assert not stale, f"진입 문서가 최신({latest}) 이 아닌 가이드 버전을 가리킨다: {stale}"
+    assert ORM_RAW_ANCHOR in text, f"DEVELOPMENT.md 에 {ORM_RAW_ANCHOR} 가 없다"
+
+
+def test_entry_docs_do_not_point_at_retired_docs():
+    """현행 문서가 재구성으로 사라진 문서 위치를 가리키지 않는다.
+
+    옛 버전 가이드를 가리키던 검사의 후속이다 — 학습자를 옛 문서로 보내는 것은
+    링크가 깨진 것보다 나쁘다. 깨진 링크는 눈에 띄지만 옛 경로 안내는 그럴듯하게 읽힌다.
+    과거 기록(변경 이력)은 제외한다.
+    """
+    stale = {
+        path: [loc for loc in RETIRED_DOC_LOCATIONS if loc in _current_section(path)]
+        for path in ENTRY_DOCS
+    }
+    stale = {path: locs for path, locs in stale.items() if locs}
+
+    assert not stale, f"현행 문서가 사라진 문서 위치를 가리킨다: {stale}"
 
 
 def test_readme_title_identifies_this_repository():
