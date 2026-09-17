@@ -62,8 +62,8 @@
 ## 관련 기존 문서
 
 - [루트 README](../../../README.md): 설치와 기본 사용법
-- [기존 아키텍처 문서](../../ARCHITECTURE.md): 앱 레지스트리 중심 상세 설계
-- [빠른 시작](../../QUICKSTART.md): 로컬 실행 절차
+- [기존 아키텍처 문서](../../guides/ARCHITECTURE.md): 앱 레지스트리 중심 상세 설계
+- [빠른 시작](../../guides/QUICKSTART.md): 로컬 실행 절차
 - [Django 스타일 앱 레지스트리 문서](../../django-style-app-registry/README.md): 저장소의 목적과 Django 호환 범위
 - 설계 결정의 근거(ADR): `docs/crp/groups/orm-raw-repository/design-baseline.md` ·
   `docs/crp/groups/learning-path/design-baseline.md` — *"왜 이렇게 정했나"* 를 다룬다.

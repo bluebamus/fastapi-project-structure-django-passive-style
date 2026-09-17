@@ -21,8 +21,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "QUICKSTART.md",
+    REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
+    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
     *sorted((REPO_ROOT / "docs" / "django-style-app-registry").glob("*.md")),
 ]
 
@@ -113,7 +113,7 @@ def test_installed_apps_examples_match_real_entries():
     """문서의 등록 예제가 실제 ``INSTALLED_APPS`` 형식과 같다."""
     from config import INSTALLED_APPS
 
-    architecture = (REPO_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    architecture = (REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     for entry in INSTALLED_APPS:
         assert entry in architecture, f"ARCHITECTURE.md 의 예제에 {entry} 가 없다"
 
@@ -124,7 +124,7 @@ def test_generator_output_matches_documented_line():
 
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert config_entry("orders").strip() in (
-        readme + (REPO_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+        readme + (REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     )
 
 
@@ -139,8 +139,8 @@ def test_generator_output_matches_documented_line():
 #: 기준 문서 3종. 사용자가 "따라 하는" 경로가 여기 있다.
 BASE_DOCS = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "ARCHITECTURE.md",
-    REPO_ROOT / "docs" / "QUICKSTART.md",
+    REPO_ROOT / "docs" / "guides" / "ARCHITECTURE.md",
+    REPO_ROOT / "docs" / "guides" / "QUICKSTART.md",
 ]
 
 #: 옛 결선 방식을 "현재 절차"로 안내하는 문장 패턴.

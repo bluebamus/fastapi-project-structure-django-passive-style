@@ -104,7 +104,7 @@ Celery 작업도 중앙 `app/celery/` 패키지에 모으며, `background_sessio
 
 - [앱 등록 및 기동 워크플로](05-app-registry-and-startup-workflow.md)
 - [데이터 접근 및 트랜잭션 워크플로](06-data-and-transaction-workflow.md)
-- [기존 상세 아키텍처](../../ARCHITECTURE.md)
+- [기존 상세 아키텍처](../../guides/ARCHITECTURE.md)
 
 ## 변경 이력
 

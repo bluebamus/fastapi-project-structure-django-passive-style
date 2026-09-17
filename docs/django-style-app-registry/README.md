@@ -13,12 +13,12 @@
 | [`DJANGO-APP-COMPATIBILITY.md`](DJANGO-APP-COMPATIBILITY.md) | Django 와 **동일·확장·비지원** 범위 구분, `ready()` 제약, 앱 제거 시 주의 |
 
 동작을 "어떻게 쓰는가"는 [`docs/project-guide/v1.1/`](../project-guide/v1.1/README.md),
-구조의 정본은 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) 다.
+구조의 정본은 [`docs/guides/ARCHITECTURE.md`](../guides/ARCHITECTURE.md) 다.
 
 ## 문서가 충돌하면
 
 1. 현재 코드와 통과하는 테스트
-2. [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) (아키텍처 SSOT)
+2. [`docs/guides/ARCHITECTURE.md`](../guides/ARCHITECTURE.md) (아키텍처 SSOT)
 3. 이 폴더의 두 문서
 
 코드가 문서보다 앞서 변경됐다면 코드를 되돌리지 말고, 변경 이유와 테스트를 확인한 뒤
