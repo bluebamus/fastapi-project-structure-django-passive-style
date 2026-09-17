@@ -1,21 +1,20 @@
 """
 기본 Repository 클래스
 
-모든 Repository의 기반이 되는 Generic 클래스입니다.
-CRUD 작업과 N+1 문제 해결을 위한 Eager Loading 메서드를 제공합니다.
+모든 ORM Repository 의 기반이 되는 Generic 클래스입니다.
+공개 메서드는 최소 CRUD **정확히 8개**다(ADR-016) — create · get_by_id · get_one ·
+get_all · count · exists · update · delete. 커밋하지 않는다(flush 까지).
+
+Eager loading·정렬 목록·집계 같은 도메인 쿼리는 Base 를 넓히지 않고 기능 Repository 에
+명시적 메서드로 둔다(예: ``ProductRepository.get_active``). ``get_all`` 은 정렬을 지정하지 않는다.
 
 사용법:
     class UserRepository(BaseRepository[User]):
         model = User
 
-    # 기본 CRUD
     user = await repo.create({"name": "John"})
     user = await repo.get_by_id("id")
-    users = await repo.get_all()
-
-    # N+1 해결 - Eager Loading
-    user = await repo.get_by_id_with("id", relations=["posts", "profile"])
-    users = await repo.get_all_with(relations=["posts"])
+    users = await repo.get_all(skip=0, limit=100)
 """
 
 from collections.abc import Sequence
@@ -37,8 +36,8 @@ class BaseRepository(CRUDBase[ModelType, PrimaryKeyT]):
     """
     기본 Repository 클래스
 
-    SQLAlchemy 모델에 대한 CRUD 작업과 N+1 문제 해결을 위한
-    Eager Loading 메서드를 제공합니다.
+    SQLAlchemy 모델에 대한 최소 CRUD 8개를 제공합니다.
+    Eager Loading 은 기능 Repository 가 직접 구현합니다.
 
     Attributes:
         model: SQLAlchemy 모델 클래스 (하위 클래스에서 정의)

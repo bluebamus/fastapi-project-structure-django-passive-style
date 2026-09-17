@@ -25,8 +25,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 # compose.test.yaml 과 같은 값. 3306(개발 머신의 상시 MySQL)·3307(IDE 포트 포워딩)·
-# 3308(sibling 저장소 fastapi-default-project-structure 의 테스트 컨테이너)을 모두 피해
-# 3309 다.
+# 3308(같은 머신의 다른 테스트 컨테이너가 점유한 적이 있다)을 모두 피해 3309 다.
+# MYSQL_TEST_PORT 로 바꾸면 compose.test.yaml 과 이 파일이 함께 따라간다.
 #
 # **DB·계정 이름도 이 저장소 전용이다.** 포트만 나누면 실수로 겹쳤을 때 남의 컨테이너에
 # 조용히 붙어 스키마를 지운다(실제로 겪었다). 계정이 다르면 그 경우 접속이 거부되어

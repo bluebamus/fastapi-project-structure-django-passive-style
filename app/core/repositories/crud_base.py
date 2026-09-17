@@ -10,11 +10,10 @@
         ...
 """
 
-from typing import Generic
+from typing import Generic, TypeVar
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing_extensions import TypeVar
 
 from app.core.models.models_base import Base
 
