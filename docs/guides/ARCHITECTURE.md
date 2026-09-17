@@ -5,6 +5,9 @@
 
 - 기준: 2026-09-17 작업 트리. 코드와 이 문서가 어긋나면 **코드가 정답**이고, 확인한 뒤 이 문서를 고친다.
 - 폴더 트리는 README 의 [프로젝트 구조](../../README.md#프로젝트-구조)에만 둔다. 여기서는 모듈의 책임을 설명한다.
+- 설정 → 기동 → 요청 → 종료를 코드 흐름대로 따라 읽는 요약은 [서버 수명주기 안내서](./server-lifecycle-guide.html)다.
+  표·수치(예산·기본값·순서)의 정본은 이 문서이고, 안내서는 이 문서와 어긋나지 않게 함께 고친다.
+- 문서 전체 색인은 README 의 [문서 안내](../../README.md#문서-안내) 한 곳에 있다.
 - 문서 정합성은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사한다.
 
 ## 목차
@@ -607,6 +610,8 @@ read-only 표시는 DB 권한을 대체하지 않는다. 운영에서는 replica
 ### 4.5 트랜잭션 경계
 
 - **커밋은 쓰기 핸들러 본문이 응답 생성 전에 한 번.** Repository·Service·Dependency 는 스스로 커밋하지 않는다.
+- 순서는 `response = XResponse.model_validate(obj)` → `await service.commit()` → `return response` 하나다. 응답 DTO 검증이
+  실패하면 커밋 없이 500 으로 끝나고 세션 Dependency 가 rollback 한다(`tests/test_validate_before_commit.py`).
 - 예외로 빠져나가면 세션 Dependency 가 rollback 한다. 이미 커밋한 뒤의 실패는 되돌리지 않는다.
 - 여러 Service 를 한 원자 단위로 묶으려면 같은 writer 세션을 주입하고 마지막에 한 번 커밋한다.
 - `BaseService.commit()` 은 커밋 시점의 `SQLAlchemyError`(지연 제약, 연결 유실 등)도 `convert_db_error()` 로 바꾼다.
@@ -684,8 +689,8 @@ SQLAlchemy 예외의 문자열에는 실행 SQL·바인딩 값·때로 DSN 이 �
 | catalog | `Product` → `catalog_products` | **ORM 예제** — 상품 CRUD | CRUD·내보내기 |
 | reports | `SalesOrder` → `sales_orders` | **Raw SQL 예제** — 일별 매출 집계(조회 전용) | 읽기 전용·내보내기 |
 
-CRUD 앱의 공통 흐름: Create(스키마 검증 → create/flush → 핸들러 commit → 201), List(pagination → count + 목록, commit 없음),
-Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → commit), Delete(삭제 → commit → 204).
+CRUD 앱의 공통 흐름: Create(스키마 검증 → create/flush → 응답 DTO 검증 → 핸들러 commit → 201), List(pagination → count + 목록, commit 없음),
+Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → 응답 DTO 검증 → commit), Delete(삭제 → commit → 204).
 조회는 `_readonly` Dependency, 쓰기는 writer Dependency 를 쓴다.
 
 ---
@@ -886,6 +891,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-09-17 | **HTML 안내서 복원 + 정합성 점검**: 재구성에서 지운 `server-lifecycle-guide.html`·`feature-development-guide.html` 을 되살려 현재 코드·Markdown 과 맞췄다(다른 저장소 비교 제거, 부록 설정표를 `config.py` 에서 재생성). README 「문서 안내」를 `문서 / 역할 / 언제 보나` 표로 바꾸고 두 안내서를 넣었다. 코드 설명 정정: `API_DESCRIPTION`(다른 프로젝트 제목·UnitOfWork 제거), `pyproject.toml` 이름·설명, `/api/v1/catalog/products` 설명(`active_only=false` 는 정렬 없음), 미사용 설정(`ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings`·`LOG_CONSOLE_ENABLED`·로그 포맷 3종) 표기, `ENV` 가 `/health` 에 포함된다는 잘못된 주석. 문서 검사에 HTML(코드 경로·`data-source`·링크·앵커·꺾쇠 이스케이프)과 Markdown 앵커 검사를 추가했다. 같은 날 후속: 모든 쓰기 핸들러를 **응답 DTO 검증 → commit** 순서로 통일했다(이전에는 commit 후 검증이라 DTO 실패 시 데이터가 남았다, `tests/test_validate_before_commit.py`). Python 규칙을 `>=3.13`·ruff `py313`·mypy `3.13` 으로 올렸다. |
 | 2026-09-17 | **문서 재구성**: 진입·아키텍처·개발 세 문서로 통합했다. `docs/guides/QUICKSTART.md` 는 README 로, `docs/project-guide/v1.1/`(10편)·`docs/django-style-app-registry/`(3편)·HTML 안내서 2편(`server-lifecycle-guide.html`·`feature-development-guide.html`)은 이 문서와 `docs/guides/DEVELOPMENT.md` 로 흡수한 뒤 삭제했다. 삭제된 통합 계획서의 요구 ID 의미(§2.8)와 운영 준비 계획·배포 문서의 여전히 참인 항목(§11)을 코드와 대조해 되살렸다. 정정: 운영 Admin 차단은 존재한다(ACK 없으면 기동 거부), 공개 API 는 22 경로 / 37 오퍼레이션, 파일 로그는 staging/production 에서만, `exists()` 는 PK 인자. |
 | 2026-09-17 | **가이드 문서 위치 이동 + 현행화**: `docs/ARCHITECTURE.md`·`docs/QUICKSTART.md` 를 `docs/guides/` 로 옮기고 HTML 안내서 2종과 함께 현재 작업 트리 기준으로 대조했다. startup 필수 Redis `ping()` 과 종료 순서(background → Redis → DB), read-only 차단 범위, Alembic URL 결정 경로, 생성기의 태그 선언 단계, 테스트 마커·게이트 명령을 정정·보강했다. 같은 날 착수 명세 3종을 `docs/specs/orm-raw-repository/` 로 복원했다(코드 주석 인용 대상). |
 | 2026-08-25 | **골격 목적 기준 검수 + 문서 정리**: 완료된 착수 명세 5종과 폐기된 가이드 버전(`project-guide/v1.0/`)을 삭제했다. 문서가 없는 기능을 있다고 서술한 것들을 정정했다(`require_admin`·`AppRegistry.discover()` 부재, `/ready` 실재, Raw 계층 실재). 생성기 골격에 `operation_id` 를 넣어 만든 즉시 OpenAPI 계약 검사를 통과하게 했다. 기록: `docs/crp/groups/skeleton-purpose-audit/`. |

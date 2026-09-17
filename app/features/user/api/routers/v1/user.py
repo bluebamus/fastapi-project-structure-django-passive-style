@@ -2,7 +2,9 @@
 User v1 API 엔드포인트 — 사용자 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
-비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
+쓰기 핸들러는 응답 DTO 를 먼저 검증한 뒤 `await service.commit()` 으로 한 번 커밋한다(별도 UnitOfWork 없음).
+검증이 실패하면 커밋하지 않는다(tests/test_validate_before_commit.py).
 """
 
 from typing import Any
@@ -46,8 +48,9 @@ async def create_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.create_user(payload)
+    response = UserResponse.model_validate(user)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return UserResponse.model_validate(user)
+    return response
 
 
 @router.get(
@@ -101,8 +104,9 @@ async def update_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.update_user(user_id, payload)
+    response = UserResponse.model_validate(user)  # 검증 실패면 커밋하지 않는다
     await service.commit()
-    return UserResponse.model_validate(user)
+    return response
 
 
 @router.delete(

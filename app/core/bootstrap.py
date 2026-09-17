@@ -50,7 +50,7 @@ logger = get_logger("app.core.bootstrap")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """애플리케이션 수명 주기 — 자원 관리는 ``manage_application_resources`` 가 한다.
 
     여기에는 조립만 남긴다. startup 중간에 실패했을 때의 해제 경로와 종료 순서가

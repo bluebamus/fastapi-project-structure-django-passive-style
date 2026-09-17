@@ -1,7 +1,7 @@
 # 테스트 전용 MySQL — 로컬과 CI 가 **같은 파일**을 쓴다 (RAW-REP-006).
 #
 # 포트를 3309 로 둔 이유: 개발 머신의 3306 에는 보통 다른 MySQL 이 이미 떠 있고,
-# 3308 은 sibling 저장소(fastapi-default-project-structure)의 테스트 컨테이너가 쓴다.
+# 3308 은 같은 머신의 다른 테스트 컨테이너가 점유한 적이 있다.
 # 공유 인스턴스에 테스트 스키마를 만들면 남의 데이터와 섞이고, 테스트가 DROP 하면
 # 사고가 된다. 전용 컨테이너를 별도 포트로 띄워 완전히 격리한다.
 #
@@ -13,9 +13,12 @@
 # 데이터 디렉터리는 tmpfs 다 — 테스트 DB 는 매번 새로 만들어야 하고, 디스크에
 # 남길 이유가 없다. 재시작하면 깨끗한 상태로 돌아온다.
 #
-#   docker compose -f compose.test.yaml up -d      # 기동 (healthy 까지 대기)
-#   pytest -m mysql                                # 통합 테스트만
-#   docker compose -f compose.test.yaml down -v    # 정리
+#   docker compose -f compose.test.yaml up -d --wait   # 기동 (--wait: healthy 까지 대기)
+#   uv run python -m pytest -m mysql                    # 통합 테스트만
+#   docker compose -f compose.test.yaml down -v         # 정리
+#
+# Redis 서비스는 없다. `-m browser` 테스트는 실제 서버를 띄우므로 startup ping 이 통과할
+# Redis(기본 localhost:6379)를 따로 준비해야 한다.
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
 # WSL2 의 localhost forwarding 으로 127.0.0.1:3309 가 그대로 연결된다.
@@ -41,7 +44,7 @@ services:
       MYSQL_PASSWORD: fastapi_passive_test_password
       TZ: Asia/Seoul
     ports:
-      # 호스트 3309 -> 컨테이너 3306. 기존 MySQL 및 sibling 테스트 컨테이너와 겹치지 않는다.
+      # 호스트 3309(MYSQL_TEST_PORT) -> 컨테이너 3306. 기존 MySQL·다른 테스트 컨테이너와 겹치지 않는다.
       # 127.0.0.1 에만 바인딩한다 — 포트만 적으면 docker 는 0.0.0.0 에 열어
       # 같은 네트워크의 다른 기기에서 테스트 DB 에 접속할 수 있게 된다.
       - "127.0.0.1:${MYSQL_TEST_PORT:-3309}:3306"

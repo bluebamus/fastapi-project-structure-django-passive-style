@@ -100,37 +100,40 @@ class TimezoneSettings(BaseSettings):
 # API 설명 (Scalar 문서에 표시)
 # =============================================================================
 API_DESCRIPTION = """
-## FastAPI Default Project Structure
+## FastAPI Project Structure — Django Passive Style
 
-Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
+Django 식 **수동 앱 설치**를 따르는 FastAPI 프로젝트 골격입니다.
+설치 앱은 `config.INSTALLED_APPS` 한 곳에서 정하고, 설치된 앱의 Router·Models·Admin 결선은
+App Registry(`AppConfig`)가 컨벤션대로 처리합니다. URL 은 각 기능의 라우터 파일이 정합니다.
 
 ### 주요 기능
 
-- **접속 로그 수집**: 모든 API 요청에 대한 접속 로그 자동 수집
-- **사용자 정보 파싱**: User-Agent 기반 OS, 브라우저, 장치 정보 분석
-- **통계 API**: 장치 유형, OS, 브라우저별 접속 통계
+- **CRUD 예제**: blog · reply · sns · user
+- **인증**: OAuth2 password flow + JWT access/refresh (`/api/v1/auth/*`)
+- **데이터 접근 두 계열**: catalog(ORM, `BaseRepository`) · reports(Raw SQL, `RawRepositoryBase`)
+- **접속 로그**: 요청마다 수집해 별도 풀에서 저장, home 앱이 조회·통계 제공
 
 ### 아키텍처
 
 ```
-Router → Service → Repository → Database
-           ↑
-      UnitOfWork (트랜잭션 관리)
+Router → Dependency → Service → Repository → Database
+  ↑ 쓰기 핸들러가 응답 전에 await service.commit() (별도 UnitOfWork 계층 없음)
 ```
 
 ### 기술 스택
 
-- **FastAPI**: 고성능 비동기 웹 프레임워크
-- **SQLAlchemy 2.0**: 비동기 ORM (aiomysql)
+- **FastAPI**: 비동기 웹 프레임워크
+- **SQLAlchemy 2.0**: 비동기 ORM (aiomysql) + Alembic
 - **Pydantic v2**: 데이터 검증 및 설정 관리
+- **Redis**: 기동 시 연결 검증 + Celery broker/backend
 - **Scalar**: API 문서 UI
 
 ### 환경 설정
 
 | 설정 | 설명 |
 |------|------|
-| `DEBUG=true` | 개발 모드 (DEBUG 로그, 테이블 자동 생성) |
-| `DEBUG=false` | 운영 모드 (INFO 로그, Alembic 마이그레이션 사용) |
+| `DEBUG=true` | 개발 모드 (DEBUG 로그, 개발용 테이블 자동 생성, `/docs` 노출) |
+| `DEBUG=false` | 운영 모드 (INFO 로그, 스키마는 Alembic, `/docs` 비활성) |
 """
 
 
@@ -169,8 +172,9 @@ class AppSettings(BaseSettings):
     )
 
     # 디버그 모드
-    # True: DEBUG 로그, 테이블 자동 생성, uvicorn reload, /docs 활성화
-    # False: INFO 로그, Alembic 마이그레이션, /docs 비활성화
+    # True: DEBUG 로그, 개발용 테이블 자동 생성, /docs 활성화,
+    #       `python main.py` 직접 실행 시 reload (uvicorn CLI 는 CLI 옵션을 따른다)
+    # False: INFO 로그, 스키마는 Alembic, /docs 비활성화
     DEBUG: bool = Field(
         default=True,
         description="디버그 모드 활성화",
@@ -203,7 +207,8 @@ class AppSettings(BaseSettings):
         description="production/staging 에서 인증 없는 /admin 을 여는 것을 승인 (프록시 차단 전제)",
     )
 
-    # 실행 환경 (헬스체크 응답에 포함)
+    # 실행 환경 — 로그 핸들러·타임존 선택과 운영 안전 검증(/admin 승인, SQL echo 금지)에 쓰인다.
+    # /health 응답에는 포함되지 않는다(status·version 만).
     ENV: Literal["development", "staging", "production", "test"] = Field(
         default="development",
         description="실행 환경",
@@ -698,8 +703,12 @@ class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    콘솔 및 파일 로깅을 설정합니다.
-    DEBUG 모드에 따라 로그 레벨이 자동 결정됩니다.
+    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()`` 다. 콘솔 핸들러는 항상 붙고,
+    파일 핸들러는 ENV 가 staging/production 이고 ``LOG_FILE_ENABLED`` 일 때만 붙는다.
+    레벨을 명시하지 않으면 DEBUG 모드에 따라 자동 결정됩니다.
+
+    ``LOG_CONSOLE_ENABLED``·``LOG_CONSOLE_FORMAT``·``LOG_FILE_FORMAT``·``LOG_DATE_FORMAT`` 는
+    선언만 있고 현재 로깅 구성에서 읽지 않는다(포맷은 ``app/utils/logs/config.py`` 의 상수).
 
     로그 레벨:
         - DEBUG: 디버깅용 상세 정보
@@ -716,13 +725,13 @@ class LogSettings(BaseSettings):
     )
 
     # === 출력 대상 설정 ===
-    # 콘솔(stdout) 로그 출력 활성화
+    # 콘솔(stdout) 로그 출력 스위치 — 현재 build_dictconfig 가 읽지 않는다(콘솔 핸들러는 항상 붙는다).
     LOG_CONSOLE_ENABLED: bool = Field(
         default=True,
-        description="콘솔 로그 활성화",
+        description="콘솔 로그 활성화 (현재 미사용 — 콘솔 핸들러는 항상 붙는다)",
     )
 
-    # 파일 로그 출력 활성화
+    # 파일 로그 출력 활성화 (ENV 가 staging/production 일 때만 효과가 있다)
     LOG_FILE_ENABLED: bool = Field(
         default=True,
         description="파일 로그 활성화",
@@ -790,22 +799,21 @@ class LogSettings(BaseSettings):
     )
 
     # === 포맷 설정 ===
-    # 콘솔 로그 출력 형식
+    # 아래 세 필드는 선언만 있고 현재 로깅 구성에서 읽지 않는다. 실제 포맷은
+    # app/utils/logs/config.py 의 LOG_FORMAT 상수다.
     LOG_CONSOLE_FORMAT: str = Field(
         default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="콘솔 로그 포맷",
+        description="콘솔 로그 포맷 (현재 미사용)",
     )
 
-    # 파일 로그 출력 형식
     LOG_FILE_FORMAT: str = Field(
         default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="파일 로그 포맷",
+        description="파일 로그 포맷 (현재 미사용)",
     )
 
-    # 날짜 출력 형식
     LOG_DATE_FORMAT: str = Field(
         default="%Y-%m-%d %H:%M:%S",
-        description="날짜 포맷",
+        description="날짜 포맷 (현재 미사용)",
     )
 
     def get_log_dir(self) -> Path:
@@ -879,7 +887,8 @@ class RedisSettings(BaseSettings):
     """
     Redis 연결 설정
 
-    캐시, 세션, 메시지 큐 등에 사용됩니다.
+    소비처는 두 곳이다 — 기동 시 연결 검증(``app/core/resources.py`` 의 ``ping()``)과
+    Celery broker/result backend(``app/celery/app.py``). 캐시·세션 구현은 없다.
     """
 
     model_config = SettingsConfigDict(
@@ -967,7 +976,12 @@ class JWTSettings(BaseSettings):
 # API 설정
 # =============================================================================
 class ApiSettings(BaseSettings):
-    """REST API 관련 설정."""
+    """REST API 관련 설정.
+
+    Note:
+        선언만 있고 소비처가 없다. 버전 prefix(``/v1``)는 각 기능의
+        ``api/routers/router.py`` 가 직접 정한다 — 이 값을 바꿔도 URL 은 바뀌지 않는다.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -975,10 +989,10 @@ class ApiSettings(BaseSettings):
         extra="ignore",
     )
 
-    # REST API 버전 (URL prefix 에 사용: /api/v1/...)
+    # REST API 버전 (현재 미사용 — URL prefix 는 라우터 파일이 정한다)
     API_VERSION: str = Field(
         default="v1",
-        description="REST API 버전",
+        description="REST API 버전 (현재 미사용)",
     )
 
 
@@ -989,7 +1003,7 @@ class SessionSettings(BaseSettings):
     """세션 쿠키 설정.
 
     Note:
-        현재 인증은 JWT(Bearer) 기반이라 세션 쿠키를 사용하는 코드는 없다.
+        선언만 있고 소비처가 없다. 현재 인증은 JWT(Bearer) 기반이라 세션 쿠키를 사용하는 코드는 없다.
         쿠키 세션을 도입할 때 이 설정을 주입하면 된다. 설정 자체는 `.env` 에
         있으므로 config 가 로드해 둔다(설정의 단일 출처 유지).
     """
@@ -1026,7 +1040,7 @@ class SMTPSettings(BaseSettings):
     """이메일 발송(SMTP) 설정.
 
     Note:
-        이메일 발송 모듈은 아직 없다. 설정만 config 에 로드해 두고, 발송 기능을
+        선언만 있고 소비처가 없다(검증은 TLS·SSL 동시 활성 거부뿐). 이메일 발송 모듈은 아직 없다. 설정만 config 에 로드해 두고, 발송 기능을
         구현할 때 `from config import smtp_settings` 로 가져다 쓴다.
     """
 
@@ -1060,13 +1074,13 @@ class SMTPSettings(BaseSettings):
         description="SMTP 비밀번호",
     )
 
-    # 발신자 이메일 주소 (미설정 시 SMTP_USERNAME 사용)
+    # 발신자 이메일 주소 (발송 모듈 구현 시 의도: 미설정이면 SMTP_USERNAME)
     SMTP_FROM_EMAIL: str | None = Field(
         default=None,
         description="발신자 이메일 주소",
     )
 
-    # 발신자 이름 (미설정 시 PROJECT_NAME 사용)
+    # 발신자 이름 (발송 모듈 구현 시 의도: 미설정이면 PROJECT_NAME)
     SMTP_FROM_NAME: str | None = Field(
         default=None,
         description="발신자 이름",
@@ -1102,7 +1116,7 @@ class UploadSettings(BaseSettings):
     """파일·이미지 업로드 설정.
 
     Note:
-        업로드 핸들러는 아직 없다. 설정만 config 에 로드해 둔다.
+        선언만 있고 소비처가 없다. 업로드 핸들러는 아직 없다. 설정만 config 에 로드해 둔다.
     """
 
     model_config = SettingsConfigDict(
