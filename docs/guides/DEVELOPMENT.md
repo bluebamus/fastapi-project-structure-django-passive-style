@@ -4,6 +4,7 @@
 [아키텍처 레퍼런스](./ARCHITECTURE.md), 설치·실행은 [README](../../README.md)에 있다.
 
 실물 참조는 두 예제 기능이다 — ORM 은 `app/features/catalog/`, Raw SQL 은 `app/features/reports/`.
+같은 흐름을 요청 한 건 단위로 따라 읽는 요약은 [신규 뷰·테이블 개발 안내서](./feature-development-guide.html)다(절차·규칙의 정본은 이 문서).
 두 기능은 등록·Dependency·Service·트랜잭션·DTO 검증·예외 처리가 같고 **Repository 만 다르다**(`tests/test_orm_raw_parity.py`).
 
 ## 목차
@@ -289,7 +290,7 @@ POST /api/v1/catalog/products
 ```
 
 - `Product` 는 `catalog_products`, `sku` unique, 금액은 `Numeric(12, 2)` ↔ `Decimal`. API 는 price·stock 에 `ge=0` 을 두지만 DB 선언이 같은 규칙을 강제하지는 않는다 — 입력은 스키마, 동시성 상황의 최종 무결성은 DB 제약이 지킨다.
-- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 정렬 없는 `get_all()` 을 쓰고, `total` 은 필터와 무관한 전체 `count()` 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
+- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 정렬 없는 `get_all()` 을 쓰고(OpenAPI 설명도 그렇게 적는다), `total` 은 필터와 무관한 전체 `count()` 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
 - 수정은 대상 조회로 존재를 보장한 뒤 `model_dump(exclude_unset=True)` 로 보낸 필드만 반영한다. 보낸 필드가 없으면 기존 값을 그대로 돌려준다(`tests/test_update_noop.py`).
 
 ### 3.5 Raw 예제 — reports 일별 매출
@@ -518,11 +519,15 @@ SQLite 통과는 MySQL 정확성의 근거가 아니다(ADR-004). 인프라가 �
 | `README.md` | 개요·빠른 시작·프로젝트 구조·API 목록·문서 색인 | route·실행 절차·트리 변경 |
 | `docs/guides/ARCHITECTURE.md` | 동작 레퍼런스·운영·변경 이력 | 코드 동작·설정·보안 경계 변경 |
 | `docs/guides/DEVELOPMENT.md` | 작성 절차·규칙·테스트 | 생성기·규칙·게이트 변경 |
+| `docs/guides/server-lifecycle-guide.html` | 설정 → 기동 → 요청 → 종료 흐름 요약(HTML) | 수명주기·설정·로깅·종료 순서 변경 — ARCHITECTURE 와 함께 |
+| `docs/guides/feature-development-guide.html` | 신규 뷰·테이블 흐름 요약(HTML) | Repository·세션·트랜잭션·생성기 절차 변경 — DEVELOPMENT 와 함께 |
 | `docs/specs/orm-raw-repository/` | 착수 기준선(고정) | 고치지 않는다 — 코드 주석의 `development-plan §N`·`RAW-REP-*` 인용 대상 |
 | `docs/crp/groups/` | 검수 기록(append-only) | 새 결정은 행을 추가한다 |
 
-- 같은 내용을 두 문서에 쓰지 않는다. 필요하면 링크한다.
+- 같은 내용을 두 문서에 쓰지 않는다. 필요하면 링크한다. HTML 안내서는 흐름 요약이며 표·수치는 Markdown 을 링크하거나 같은 값을 쓴다.
+- 문서 색인은 README 「문서 안내」 한 곳뿐이다. 문서를 추가·삭제하면 그 표와 `tests/test_docs_references.py` 의 DOC_INDEX_ORDER 를 함께 고친다.
+- HTML 본문의 `<`·`>` 는 `&lt;`·`&gt;` 로 쓴다. 다른 저장소와의 비교는 쓰지 않는다(이력은 `docs/crp/` 에만).
 - 코드와 문서가 다르면 코드를 확인한 뒤 문서를 고친다. 과거 서술은 ARCHITECTURE 의 변경 이력에만 둔다.
-- 문서 검사는 세 문서의 import 경로·심볼·환경변수·저장소 경로·링크 실재, 제거된 결선 방식·옛 등록 절차의 부재,
+- 문서 검사는 세 Markdown 문서의 import 경로·심볼·환경변수·저장소 경로·링크·앵커 실재, HTML 안내서의 `<code>` 경로·`data-source`·상대 링크·앵커·꺾쇠 이스케이프·부록 설정 목록, 제거된 결선 방식·옛 등록 절차의 부재,
   `INSTALLED_APPS` 예제와 생성기 출력의 일치, 학습 경로(Raw Base·두 예제·이 문서의 [ORM/Raw 절](#orm-raw))의 도달 가능성을 본다.
   백틱 안의 대문자 토큰은 `.env.example` 에 있는 키로 해석되므로, 환경변수가 아닌 대문자 단어(HTTP 메서드·SQL 키워드 등)는 백틱 없이 쓴다.

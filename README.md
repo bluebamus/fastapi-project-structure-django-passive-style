@@ -269,17 +269,24 @@ curl -X POST localhost:8000/api/v1/auth/refresh -H 'Content-Type: application/js
 
 ## 문서 안내
 
-이 표가 저장소의 유일한 문서 색인입니다. 같은 내용을 두 곳에 쓰지 않습니다.
+**문서 색인은 이 표 한 곳에만 둡니다.** 같은 내용을 두 곳에 쓰지 않습니다 — HTML 안내서 두 편은 흐름을 따라 읽는
+요약이고, 표·수치의 정본은 Markdown 가이드입니다(HTML 은 브라우저로 엽니다).
 
-| 문서 | 다루는 것 |
-|---|---|
-| `README.md` (이 문서) | 개요 · 빠른 시작 · 프로젝트 구조 · API 목록 |
-| [docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md) | 동작 레퍼런스 — 설계 원칙, App Registry 와 Django 호환 범위, 수명주기·설정, 세션·라우팅·트랜잭션, Repository API, 로깅·접속 로그·인증·Admin·Celery·Alembic, 운영 체크리스트와 알려진 제한, 변경 이력 |
-| [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) | 개발 방법 — 계층 규칙, 새 기능 절차, ORM/Raw 선택과 Raw 규칙, 트랜잭션·비동기 작성 규칙, 스키마 변경, 테스트·CI·품질 게이트 |
-| [docs/specs/orm-raw-repository/](docs/specs/orm-raw-repository/requirements.md) | ORM/Raw 착수 명세 3종(`requirements.md`·`development-plan.md`·`workflow-guide.md`) — **2026-08 착수 시점의 고정 기준선**. 코드 주석의 `development-plan §N`·`Phase N`·`RAW-REP-*` 가 인용하는 원본이며, 현재 사용법은 위 두 문서가 기준 |
-| `docs/crp/groups/` | 검수 기록(append-only) — 설계 결정(ADR)·결함 원장·잔여 위험의 이력. 코드 주석의 `ADR-*`·`C-*`·`F-*` 인용 대상 |
+| 문서 | 역할 | 언제 보나 |
+|---|---|---|
+| `README.md` (이 문서) | 개요 · 빠른 시작 · 문서 안내 | 처음 받았을 때, 실행 방법·API 목록을 볼 때 |
+| [docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 | App Registry·수명주기·설정·세션/트랜잭션·Repository API·운영 체크리스트·변경 이력을 확인할 때 |
+| [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 | 새 기능·API·테이블을 만들 때, ORM/Raw 를 고를 때, 테스트·CI 게이트를 돌릴 때 |
+| [docs/guides/server-lifecycle-guide.html](docs/guides/server-lifecycle-guide.html) | 서버 수명주기 안내서 (설정 → 기동 → 요청 → 종료 추적) | 기동 실패·로그 레벨·요청별 세션·종료 순서를 코드 흐름대로 따라갈 때 |
+| [docs/guides/feature-development-guide.html](docs/guides/feature-development-guide.html) | 신규 뷰·테이블 개발 안내서 | catalog(ORM)·reports(Raw) 예제를 따라 새 뷰·테이블을 연결할 때 |
+| [docs/specs/orm-raw-repository/requirements.md](docs/specs/orm-raw-repository/requirements.md) | 고정 기준선 — ORM/Raw 착수 요구명세 | 코드 주석의 `RAW-REP-*`·`NFR-0xx`·`DOC-*` 원문을 찾을 때 |
+| [docs/specs/orm-raw-repository/development-plan.md](docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 개발계획 | 코드 주석의 `development-plan §N`·`Phase N` 인용을 따라갈 때 |
+| [docs/specs/orm-raw-repository/workflow-guide.md](docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 워크플로 지침 | 착수 당시의 작업·검수 절차를 확인할 때 |
+| `docs/crp/groups/` | 검수 이력 (append-only) | 코드 주석의 `ADR-*`·`C-*`·`F-*`·`L-*` 인용과 설계 결정의 근거를 찾을 때 |
 
-코드와 문서가 어긋나면 코드가 정답이며, 확인한 뒤 문서를 고칩니다. 문서 정합성은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사합니다.
+명세 3종은 **2026-08 착수 시점의 고정 기준선**이라 내용을 고치지 않습니다. 현재 사용법은 위 가이드가 기준입니다.
+코드와 문서가 어긋나면 코드가 정답이며, 확인한 뒤 문서를 고칩니다. 문서 정합성(경로·심볼·환경변수·링크·앵커, HTML 의
+`data-source`·코드 경로 포함)은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사합니다.
 
 ## 참고 자료
 
