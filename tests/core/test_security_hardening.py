@@ -288,18 +288,56 @@ def test_log_messages_do_not_interpolate_exception_values():
     (`app.core.*`)가 ``logger.error(f"...: {e}")`` 로 DB 예외를 찍으면 그 줄은
     이름이 `app.*` 이라 필터를 그대로 통과한다 — 필터로 막아둔 값이 옆문으로 나간다.
     그래서 예외는 **타입만** 남긴다.
+
+    ``logger.`` 가 같은 줄에 있는지는 보지 않는다. 여러 줄로 나뉜 f-string 로그는
+    ``logger.`` 가 첫 줄에만 있어 그 조건으로는 걸리지 않았고, 실제로 그렇게 새고
+    있었다(`get_background_session`). 어차피 예외 메시지 보간은 어디서든 금지다.
     """
     offenders: list[str] = []
     for path in (REPO_ROOT / "app").rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "logger." not in line:
-                continue
             if "{e}" in line or "{exc}" in line or line.rstrip().endswith(", e)"):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}")
 
     assert not offenders, f"로그가 예외 메시지를 그대로 찍는다: {offenders}"
+
+
+async def test_rollback_log_keeps_values_out_of_error_and_puts_them_in_debug(caplog):
+    """ERROR 는 예외 **타입**만, DEBUG 는 추적 전문(traceback)을 남긴다.
+
+    운영 기본 레벨(INFO)에서는 SQL·바인딩 값이 한 줄도 새지 않아야 하고,
+    추적이 필요한 debug 모드에서는 원인을 볼 수 있어야 한다 — 둘 다 성립해야
+    "값은 막고 추적은 살린다"가 참이 된다.
+    """
+    # import 시점에 configure_logging() 의 dictConfig 가 돌면서 root 핸들러를 갈아끼운다
+    # — 그때 caplog 의 캡처 핸들러가 함께 떨어져 나간다. 먼저 import 하고 다시 붙인다.
+    from app.core.db.session import get_routed_db_session
+
+    boom = RuntimeError(f"INSERT INTO users (token) VALUES ('{SECRET_CANARY}')")
+
+    logging.getLogger().addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="database"):
+            generator = get_routed_db_session()
+            await anext(generator)
+            with pytest.raises(RuntimeError):
+                await generator.athrow(boom)
+    finally:
+        logging.getLogger().removeHandler(caplog.handler)
+
+    records = [record for record in caplog.records if record.name == "database"]
+    errors = [record for record in records if record.levelno == logging.ERROR]
+    debugs = [record for record in records if record.levelno == logging.DEBUG]
+
+    assert errors, "ROLLBACK ERROR 레코드가 없다"
+    assert SECRET_CANARY not in errors[0].getMessage(), "ERROR 레코드에 바인딩 값이 실렸다"
+    assert errors[0].exc_info is None, "ERROR 레코드에 traceback 이 붙어 값이 샌다"
+
+    assert debugs, "debug 모드인데 추적용 상세 레코드가 없다"
+    assert debugs[0].exc_info is not None, "상세 레코드에 traceback 이 없다"
+    assert debugs[0].exc_info[1] is boom
 
 
 def test_repository_exceptions_do_not_carry_db_message():

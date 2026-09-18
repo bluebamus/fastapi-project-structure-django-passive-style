@@ -1297,13 +1297,21 @@ def is_placeholder_secret(value: str) -> bool:
 
 
 def validate_deployment_safety() -> None:
-    """ENV=staging|production 에서 서명/세션 비밀키를 fail-fast 로 검증한다.
+    """ENV=staging|production 에서 비밀키와 debug 모드를 fail-fast 로 검증한다.
 
     코드 기본값과 `.env.example` 의 키는 누구나 아는 값이라, 그대로 배포하면
     JWT 를 위조할 수 있다. access 와 refresh 키가 같으면 refresh 토큰을 access
-    토큰으로 바꿔 쓰는 공격면이 생긴다. 위반은 한 번에 모두 모아 알리고,
-    메시지에는 설정 **이름만** 담는다 — 값은 로그로 흘러가면 안 된다.
-    development/test 는 검사하지 않는다(받자마자 뜨는 개발 경험 유지).
+    토큰으로 바꿔 쓰는 공격면이 생긴다.
+
+    debug 모드도 같은 자리에서 막는다 — 유효 로그 레벨이 DEBUG 가 되면 세션
+    롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(``app/core/db/session.py``).
+    개발에서 원하던 그 동작이 운영에서는 그대로 유출 경로다. ``DEBUG`` 는
+    ``AppSettings``, ``LOG_LEVEL`` 은 ``LogSettings`` 에 있어 한쪽 validator 로는
+    볼 수 없다.
+
+    위반은 한 번에 모두 모아 알리고, 메시지에는 설정 **이름만** 담는다 — 값은
+    로그로 흘러가면 안 된다. development/test 는 검사하지 않는다(받자마자 뜨는
+    개발 경험 유지).
     """
     if app_settings.ENV not in ("production", "staging"):
         return
@@ -1319,11 +1327,15 @@ def validate_deployment_safety() -> None:
     ]
     if jwt_settings.ACCESS_TOKEN_SECRET_KEY == jwt_settings.REFRESH_TOKEN_SECRET_KEY:
         problems.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
+    if app_settings.DEBUG:
+        problems.append("DEBUG 가 켜져 있습니다")
+    if (log_settings.LOG_LEVEL or "").strip().upper() == "DEBUG":
+        problems.append("LOG_LEVEL 이 DEBUG 레벨입니다")
     if problems:
         raise ValueError(
-            f"ENV={app_settings.ENV} 에서 비밀키 설정이 안전하지 않습니다: "
+            f"ENV={app_settings.ENV} 에서 배포 설정이 안전하지 않습니다: "
             + "; ".join(problems)
-            + ". 서로 다른 값으로 교체하세요 — "
+            + ". 비밀키는 서로 다른 값으로 교체하세요 — "
             'uv run python -c "import secrets; print(secrets.token_urlsafe(48))"'
         )
 
