@@ -172,7 +172,7 @@ cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -D
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()` 대상. 연결 실패 시 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
 | `ADMIN` | `true` | `/admin` 이 **인증 없이** 열린다(개발 편의 결정) |
-| `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다. 비밀키가 placeholder 이거나 access·refresh 키가 같아도 실패한다 |
+| `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다. 비밀키가 placeholder 이거나 access·refresh 키가 같아도, `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 여도 실패한다 |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | 로컬(development/test)은 그대로 써도 된다. staging/production 은 placeholder(빈 값·`your-` 시작·`change-this` 포함)면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
@@ -202,7 +202,7 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 | 기능 API 만 500, `/ready` 503 | DB 없음 | 2단계 진행 |
 | 새 기능 route 가 안 보임 | `INSTALLED_APPS` 미등록 또는 `<name>_router` 이름 불일치 | 아래 절 참고. module 은 있는데 공개 이름이 없거나 import 가 깨지면 **기동이 실패**한다 |
 | production 설정에서 기동 실패 | `ENV` 가 production/staging 인데 `ADMIN=true` | `ADMIN=false` 또는 프록시 차단 후 `ADMIN_UNAUTHENTICATED_ACK=true` |
-| production 설정에서 기동 실패 (`비밀키 설정이 안전하지 않습니다`) | 비밀키가 placeholder 이거나 access·refresh 키가 같다 | 메시지에 나온 키를 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체 |
+| production 설정에서 기동 실패 (`배포 설정이 안전하지 않습니다`) | 비밀키가 placeholder 이거나 access·refresh 키가 같다 / `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, debug 모드는 끈다 |
 
 ## 앱 설치 — 목록에 한 줄
 
