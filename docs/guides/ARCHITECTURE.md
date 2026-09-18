@@ -396,7 +396,7 @@ flowchart TD
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
 | `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
-| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
+| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. **또는** `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
 
 `_validate_cross_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
 
@@ -715,6 +715,8 @@ Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → �
 - 포맷(`app/utils/logs/config.py` 의 상수): `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}`.
   `app=` 은 로거 이름이 아니라 **소스 경로**에서 산출된다(`ContextFilter`) — 새 기능이 로깅 설정을 건드릴 필요가 없다.
 - `SqlNoiseFilter` 가 모든 핸들러에서 SQLAlchemy·드라이버 로거의 SQL 본문·바인딩 값을 막는다. `LOG_SQL_ECHO_ENABLED=true` 로만 열 수 있고, production/staging 에서는 설정 로드가 거부한다.
+- 세션 롤백 로그(`app/core/db/session.py`)는 ERROR 에 예외 **타입과 소요시간만** 남긴다 — DB 예외의 `str()` 에 실행된 SQL 과 바인딩 값이 들어 있고, 앱 로거 이름은 `SqlNoiseFilter` 를 통과하기 때문이다.
+  추적이 필요하면 DEBUG 레벨에서 같은 지점의 `exc_info=True` 상세 레코드가 트레이스백 전문을 남긴다. 그래서 production/staging 은 debug 모드 자체를 거부한다(§3.2).
 - Service 는 `LoggerMixin` 을 상속해 `self.log` 를 쓴다. Uvicorn 은 직접 실행 시 `setup_uvicorn_logging()` 의 같은 헤더 형식을 쓴다.
 
 **레벨 결정** — root 레벨은 `LOG_LEVEL`, 없으면 `DEBUG` 에 따라 DEBUG/INFO. console 레벨은 `LOG_CONSOLE_LEVEL`, 없으면 같은 규칙.
@@ -843,7 +845,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 
 | # | 확인 | 빠뜨리면 |
 |---|---|---|
-| 1 | `DEBUG=false` | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다 |
+| 1 | `DEBUG=false` (그리고 `LOG_LEVEL` 을 `DEBUG` 로 두지 않는다) | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2) |
 | 2 | `ENV=production`(또는 staging) + `ADMIN=false` | `ADMIN=true` 인데 승인이 없으면 기동이 거부된다. 승인(`ADMIN_UNAUTHENTICATED_ACK=true`)했다면 프록시에서 `/admin` 을 반드시 막는다 |
 | 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 인증 없는 `/admin` 과 곱해지면 관리 화면이 네트워크에 열린다 |
 | 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |

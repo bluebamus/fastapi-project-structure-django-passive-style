@@ -305,11 +305,14 @@ async def get_routed_db_session() -> AsyncGenerator[AsyncSession]:
             # 예외 **메시지**는 남기지 않는다 — DB 예외의 str() 에는 실행된 SQL 과
             # 바인딩된 값이 들어 있고, 이 로거 이름(app.core.*)은 sql_noise 필터를
             # 통과한다(C-5). 타입과 소요시간만으로 어디서 굴렀는지는 충분히 좁혀진다.
+            # 추적이 필요한 debug 모드에서는 바로 아래 debug 레코드가 전문을 남긴다.
             logger.error(
                 "[get_routed_db_session] ROLLBACK - error: %s, duration: %.1fms",
                 type(e).__name__,
                 (time.perf_counter() - start_time) * 1000,
             )
+            # DEBUG=true(유효 로그 레벨 DEBUG)에서만 SQL·바인딩 값·트레이스백 전문을 남긴다.
+            logger.debug("[get_routed_db_session] ROLLBACK 상세", exc_info=True)
             raise e
 
 
@@ -396,11 +399,14 @@ async def get_background_session() -> AsyncGenerator[AsyncSession]:
             yield session
         except Exception as e:
             await session.rollback()
+            # get_routed_db_session 과 같은 기준 — 예외 **메시지**에는 실행된 SQL 과
+            # 바인딩된 값이 들어 있으므로 타입만 남기고, 전문은 debug 레코드로 넘긴다.
             logger.error(
-                f"[get_background_session] ROLLBACK - "
-                f"error: {type(e).__name__}: {e}, "
-                f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
+                "[get_background_session] ROLLBACK - error: %s, duration: %.1fms",
+                type(e).__name__,
+                (time.perf_counter() - start_time) * 1000,
             )
+            logger.debug("[get_background_session] ROLLBACK 상세", exc_info=True)
             raise e
 
 
