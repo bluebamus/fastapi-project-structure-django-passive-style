@@ -54,9 +54,11 @@ def load_config(monkeypatch: pytest.MonkeyPatch) -> Iterator:
 
     def _load(env: str, values: dict[str, str]) -> object:
         monkeypatch.setenv("ENV", env)
-        # 다른 운영 가드(무인증 /admin, SQL echo)를 비켜 비밀키 검증에 도달시킨다.
+        # 다른 운영 가드(무인증 /admin, SQL echo, debug 모드)를 비켜 검증 대상에 도달시킨다.
+        # pytest 는 DEBUG=true 로 돌기 때문에(pyproject `env`) 명시적으로 꺼 준다.
         monkeypatch.setenv("ADMIN", "false")
         monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "false")
+        monkeypatch.setenv("DEBUG", "false")
         for key, value in values.items():
             monkeypatch.setenv(key, value)
         return importlib.reload(config_module)
@@ -142,6 +144,20 @@ def test_is_placeholder_secret(value: str, expected: bool):
     assert is_placeholder_secret(value) is expected
 
 
+@pytest.mark.parametrize("env", ["production", "staging"])
+def test_debug_mode_is_rejected_in_deployment(load_config, env: str):
+    """``DEBUG=true`` 는 유효 로그 레벨을 DEBUG 로 만든다 — 배포에서는 기동을 거부한다."""
+    with pytest.raises(ValueError, match="DEBUG"):
+        load_config(env, dict(STRONG, DEBUG="true"))
+
+
+@pytest.mark.parametrize("env", ["production", "staging"])
+def test_debug_log_level_is_rejected_in_deployment(load_config, env: str):
+    """``DEBUG=false`` 라도 ``LOG_LEVEL=debug`` 면 같은 결과가 된다 — 역시 거부한다."""
+    with pytest.raises(ValueError, match="LOG_LEVEL"):
+        load_config(env, dict(STRONG, LOG_LEVEL="debug"))
+
+
 @pytest.mark.parametrize("env", ["development", "test"])
 def test_development_and_test_are_not_checked(load_config, env: str):
     placeholders = dict.fromkeys(SECRET_KEYS, "change-this")
@@ -150,7 +166,14 @@ def test_development_and_test_are_not_checked(load_config, env: str):
 
 
 def _import_config_in_subprocess(values: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ, ENV="production", ADMIN="false", LOG_SQL_ECHO_ENABLED="false", **values)
+    env = dict(
+        os.environ,
+        ENV="production",
+        ADMIN="false",
+        LOG_SQL_ECHO_ENABLED="false",
+        DEBUG="false",
+        **values,
+    )
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(  # noqa: S603 - 인터프리터·코드가 이 파일에 고정돼 있다
         [sys.executable, "-X", "utf8", "-c", "import config"],
