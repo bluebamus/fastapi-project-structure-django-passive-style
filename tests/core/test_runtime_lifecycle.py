@@ -385,3 +385,43 @@ async def test_dispose_engine_reclaims_every_engine_even_if_one_fails(
     assert "writer" in text, "실패한 엔진 이름이 없으면 어느 풀이 남았는지 알 수 없다"
     assert "RuntimeError" in text
     assert "hunter2" not in text, "예외 원문에 실린 DSN 자격증명이 로그로 새어 나갔다"
+
+
+# =============================================================================
+# 세션 Dependency — 예외 경로에서 ROLLBACK 은 정확히 1회
+# =============================================================================
+@pytest.mark.parametrize("dependency", ["get_writer_db_session", "get_read_only_db_session"])
+async def test_session_dependency_rolls_back_exactly_once_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    dependency: str,
+):
+    """핸들러가 터져도 세션은 정리된다 — ROLLBACK 은 중복도 누락도 아닌 1회다.
+
+    `AsyncSession.__aexit__` 의 `close()` 가 활성 트랜잭션을 이미 롤백하므로,
+    Dependency 안의 명시적 `except` → `rollback()` 은 있으나 없으나 결과가 같다.
+    그 블록을 지워도 이 계약이 깨지지 않는지 여기서 본다.
+    """
+    from sqlalchemy import event, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    rollbacks: list[object] = []
+    event.listen(engine.sync_engine, "rollback", rollbacks.append)
+    monkeypatch.setattr(
+        db_session,
+        "AsyncSessionLocal",
+        async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False),
+    )
+
+    generator = getattr(db_session, dependency)()
+    session = await anext(generator)
+    try:
+        # 실제로 연결을 잡아야 롤백할 트랜잭션이 생긴다.
+        await session.execute(text("SELECT 1"))
+        with pytest.raises(RuntimeError):
+            await generator.athrow(RuntimeError("핸들러 실패(모의)"))
+    finally:
+        await engine.dispose()
+
+    assert len(rollbacks) == 1, f"ROLLBACK 이 {len(rollbacks)}회 — 중복 또는 누락"
+    assert not session.in_transaction(), "예외 경로에서 세션이 닫히지 않았다"
