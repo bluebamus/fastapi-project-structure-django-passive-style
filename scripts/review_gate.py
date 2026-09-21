@@ -99,6 +99,11 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
             why="보안 정적 검사 — reporter 실패도 게이트 실패로 본다",
         ),
         Step(
+            name="pip-audit (의존성 권고)",
+            argv=[python, "-m", "pip_audit", "--strict", "--progress-spinner", "off"],
+            why="코드가 그대로여도 권고는 새로 뜬다 — 그날 빨개져야 한다",
+        ),
+        Step(
             name="pytest (단위 + 계층 불변식 + 공개 API + OpenAPI 규칙)",
             argv=[
                 python,
