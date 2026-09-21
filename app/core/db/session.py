@@ -340,11 +340,8 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        # rollback 은 `__aexit__` 이 한다 — 근거는 get_writer_db_session() 주석 참고.
+        yield session
 
 
 async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
@@ -364,11 +361,11 @@ async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
     """
     async with AsyncSessionLocal() as session:
         using_writer(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        # 명시적 rollback 을 두지 않는다 — `AsyncSession.__aexit__` 의 `close()` 가
+        # 활성 트랜잭션을 이미 롤백한다(ROLLBACK 정확히 1회). 게다가 `except Exception`
+        # 은 클라이언트 연결이 끊길 때 오는 `asyncio.CancelledError`(BaseException)를
+        # 못 잡는데 `__aexit__` 의 shield 는 잡는다 — 없는 쪽이 예외 안전성이 더 넓다.
+        yield session
 
 
 async def get_background_session() -> AsyncGenerator[AsyncSession]:
