@@ -340,11 +340,8 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        # rollback 은 `__aexit__` 이 한다 — 근거는 get_writer_db_session() 주석 참고.
+        yield session
 
 
 async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
@@ -364,11 +361,11 @@ async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
     """
     async with AsyncSessionLocal() as session:
         using_writer(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        # 명시적 rollback 을 두지 않는다 — `AsyncSession.__aexit__` 의 `close()` 가
+        # 활성 트랜잭션을 이미 롤백한다(ROLLBACK 정확히 1회). 게다가 `except Exception`
+        # 은 클라이언트 연결이 끊길 때 오는 `asyncio.CancelledError`(BaseException)를
+        # 못 잡는데 `__aexit__` 의 shield 는 잡는다 — 없는 쪽이 예외 안전성이 더 넓다.
+        yield session
 
 
 async def get_background_session() -> AsyncGenerator[AsyncSession]:
@@ -441,15 +438,36 @@ async def dispose_engine() -> None:
     Note:
         이 함수가 호출되지 않으면 커넥션이 정리되지 않아
         데이터베이스에 좀비 연결이 남을 수 있습니다.
+
+        한 엔진의 dispose 가 실패해도 나머지는 끝까지 회수한다 — 앞에서 멈추면
+        뒤의 풀이 그대로 남아 좀비 커넥션이 되고, 증상은 한참 뒤 "커넥션 소진"
+        으로만 나타나 원인 추적이 어렵다. 실패는 **기록만** 하고 올리지 않는다:
+        여기서 올리면 원래의 종료 원인이 dispose 실패로 덮인다.
+
+        인자는 받지 않는다 — lifespan shutdown 과 Celery worker 종료가 인자
+        없이 부른다(``app/core/resources.py``, ``app/celery/lifecycle.py``).
     """
     logger.info("[dispose_engine] Disposing database engines...")
-    await engine.dispose()
-    logger.info("[dispose_engine] Main engine disposed")
 
-    # replica 엔진도 함께 정리한다 (복제 비활성이면 빈 목록이라 no-op).
-    for index, read_engine in enumerate(read_engines):
-        await read_engine.dispose()
-        logger.info("[dispose_engine] Read replica engine #%d disposed", index)
+    # 복제 비활성이면 read_engines 는 빈 목록이라 writer/background 만 남는다.
+    targets = [
+        ("writer", engine),
+        *((f"reader#{index}", read_engine) for index, read_engine in enumerate(read_engines)),
+        ("background", background_engine),
+    ]
+    results = await asyncio.gather(
+        *(target.dispose() for _, target in targets), return_exceptions=True
+    )
+    for (name, _), result in zip(targets, results, strict=True):
+        if isinstance(result, BaseException):
+            # 예외 **원문**은 남기지 않는다 — DSN 에 자격증명이 실려 온다(C-5와 같은 기준).
+            logger.error(
+                "[dispose_engine] %s engine dispose FAILED - error: %s",
+                name,
+                type(result).__name__,
+            )
+            logger.debug("[dispose_engine] %s dispose 상세", name, exc_info=result)
+        else:
+            logger.info("[dispose_engine] %s engine disposed", name)
 
-    await background_engine.dispose()
-    logger.info("[dispose_engine] Background engine disposed - ALL DONE")
+    logger.info("[dispose_engine] ALL DONE")
