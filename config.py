@@ -1297,7 +1297,7 @@ def is_placeholder_secret(value: str) -> bool:
 
 
 def validate_deployment_safety() -> None:
-    """ENV=staging|production 에서 비밀키와 debug 모드를 fail-fast 로 검증한다.
+    """ENV=staging|production 에서 비밀키·비밀번호와 debug 모드를 fail-fast 로 검증한다.
 
     코드 기본값과 `.env.example` 의 키는 누구나 아는 값이라, 그대로 배포하면
     JWT 를 위조할 수 있다. access 와 refresh 키가 같으면 refresh 토큰을 access
@@ -1309,6 +1309,10 @@ def validate_deployment_safety() -> None:
     ``AppSettings``, ``LOG_LEVEL`` 은 ``LogSettings`` 에 있어 한쪽 validator 로는
     볼 수 없다.
 
+    ``MYSQL_PASSWORD``·``REDIS_PASSWORD``·``SMTP_PASSWORD`` 도 같은 판정을 받는다.
+    다만 빈 값의 의미가 갈린다 — MySQL 은 빈 비밀번호 자체가 사고지만, 인증 없는
+    Redis 와 미사용 SMTP 는 정당한 배포라 값이 있을 때만 예시값인지 본다.
+
     위반은 한 번에 모두 모아 알리고, 메시지에는 설정 **이름만** 담는다 — 값은
     로그로 흘러가면 안 된다. development/test 는 검사하지 않는다(받자마자 뜨는
     개발 경험 유지).
@@ -1319,7 +1323,17 @@ def validate_deployment_safety() -> None:
         "ACCESS_TOKEN_SECRET_KEY": jwt_settings.ACCESS_TOKEN_SECRET_KEY,
         "REFRESH_TOKEN_SECRET_KEY": jwt_settings.REFRESH_TOKEN_SECRET_KEY,
         "SESSION_SECRET_KEY": session_settings.SESSION_SECRET_KEY,
+        # 빈 값도 위반이다 — 운영 DB 에 비밀번호 없이 붙는 것 자체가 사고다.
+        "MYSQL_PASSWORD": db_settings.MYSQL_PASSWORD,
     }
+    # Redis·SMTP 는 빈 값이 정당한 구성이다(인증 없는 Redis, SMTP 미사용). 여기서
+    # 빈 값을 막으면 멀쩡한 배포가 기동하지 못하므로, 값이 있을 때만 예시값인지 본다.
+    for name, optional in (
+        ("REDIS_PASSWORD", redis_settings.REDIS_PASSWORD or ""),
+        ("SMTP_PASSWORD", smtp_settings.SMTP_PASSWORD),
+    ):
+        if optional.strip():
+            secrets[name] = optional
     problems = [
         f"{name} 가 placeholder 입니다"
         for name, value in secrets.items()

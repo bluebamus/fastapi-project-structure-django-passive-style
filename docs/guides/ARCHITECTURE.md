@@ -533,7 +533,7 @@ sequenceDiagram
 2. registry 가 설치한 route 가 선택되고 FastAPI 가 path/query/body/form/header 와 Dependency 를 검증·해석한다.
 3. Dependency 그래프: 세션 generator → `get_<name>_service` → `Service(session)` → Repository.
 4. 쓰기 핸들러는 업무 후 `await service.commit()` 을 부르고 응답을 만든다. 조회는 커밋하지 않는다.
-5. 예외로 빠져나가면 세션 generator 가 `rollback()` 후 재전파하고, 전역 핸들러가 오류 응답을 만든다.
+5. 예외로 빠져나가면 세션 컨텍스트(`async with`)의 `close()` 가 활성 트랜잭션을 롤백하고 예외는 그대로 재전파되며, 전역 핸들러가 오류 응답을 만든다.
 6. 미들웨어가 응답 상태·소요 시간을 붙여 접속 로그 저장 태스크를 제출한다(§6).
 
 FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(`use_cache=True`)한다. writer getter 와 read-only getter 는

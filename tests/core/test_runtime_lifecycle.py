@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -342,3 +343,85 @@ def test_fastapi_lifespan_does_not_close_celery_resources():
 
     offenders = [name for name in imported if name.startswith("app.celery")]
     assert not offenders, f"resources.py 가 Celery 자원을 import 한다: {offenders}"
+
+
+# =============================================================================
+# dispose_engine — 한 엔진이 실패해도 나머지는 회수한다
+# =============================================================================
+class _FakeEngine:
+    """dispose 호출 여부만 기록하는 엔진 대역."""
+
+    def __init__(self, name: str, disposed: list[str], *, fail: bool = False) -> None:
+        self.name = name
+        self.disposed = disposed
+        self.fail = fail
+
+    async def dispose(self) -> None:
+        self.disposed.append(self.name)
+        if self.fail:
+            raise RuntimeError("dispose 실패(모의) dsn=mysql://u:hunter2@host/db")
+
+
+async def test_dispose_engine_reclaims_every_engine_even_if_one_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """writer dispose 가 터져도 replica·background 까지 회수한다.
+
+    앞의 dispose 에서 멈추면 뒤의 풀이 그대로 남아 DB 쪽에 좀비 커넥션이 된다.
+    증상은 한참 뒤 "커넥션 소진"으로만 나타나 원인 추적이 어렵다.
+    """
+    disposed: list[str] = []
+    monkeypatch.setattr(db_session, "engine", _FakeEngine("writer", disposed, fail=True))
+    monkeypatch.setattr(db_session, "read_engines", [_FakeEngine("reader#0", disposed)])
+    monkeypatch.setattr(db_session, "background_engine", _FakeEngine("background", disposed))
+
+    with caplog.at_level(logging.ERROR, logger="database"):
+        await db_session.dispose_engine()
+
+    assert sorted(disposed) == ["background", "reader#0", "writer"]
+
+    text = caplog.text
+    assert "writer" in text, "실패한 엔진 이름이 없으면 어느 풀이 남았는지 알 수 없다"
+    assert "RuntimeError" in text
+    assert "hunter2" not in text, "예외 원문에 실린 DSN 자격증명이 로그로 새어 나갔다"
+
+
+# =============================================================================
+# 세션 Dependency — 예외 경로에서 ROLLBACK 은 정확히 1회
+# =============================================================================
+@pytest.mark.parametrize("dependency", ["get_writer_db_session", "get_read_only_db_session"])
+async def test_session_dependency_rolls_back_exactly_once_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    dependency: str,
+):
+    """핸들러가 터져도 세션은 정리된다 — ROLLBACK 은 중복도 누락도 아닌 1회다.
+
+    `AsyncSession.__aexit__` 의 `close()` 가 활성 트랜잭션을 이미 롤백하므로,
+    Dependency 안의 명시적 `except` → `rollback()` 은 있으나 없으나 결과가 같다.
+    그 블록을 지워도 이 계약이 깨지지 않는지 여기서 본다.
+    """
+    from sqlalchemy import event, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    rollbacks: list[object] = []
+    event.listen(engine.sync_engine, "rollback", rollbacks.append)
+    monkeypatch.setattr(
+        db_session,
+        "AsyncSessionLocal",
+        async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False),
+    )
+
+    generator = getattr(db_session, dependency)()
+    session = await anext(generator)
+    try:
+        # 실제로 연결을 잡아야 롤백할 트랜잭션이 생긴다.
+        await session.execute(text("SELECT 1"))
+        with pytest.raises(RuntimeError):
+            await generator.athrow(RuntimeError("핸들러 실패(모의)"))
+    finally:
+        await engine.dispose()
+
+    assert len(rollbacks) == 1, f"ROLLBACK 이 {len(rollbacks)}회 — 중복 또는 누락"
+    assert not session.in_transaction(), "예외 경로에서 세션이 닫히지 않았다"
