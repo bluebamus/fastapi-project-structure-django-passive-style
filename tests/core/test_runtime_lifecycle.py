@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -342,3 +343,45 @@ def test_fastapi_lifespan_does_not_close_celery_resources():
 
     offenders = [name for name in imported if name.startswith("app.celery")]
     assert not offenders, f"resources.py 가 Celery 자원을 import 한다: {offenders}"
+
+
+# =============================================================================
+# dispose_engine — 한 엔진이 실패해도 나머지는 회수한다
+# =============================================================================
+class _FakeEngine:
+    """dispose 호출 여부만 기록하는 엔진 대역."""
+
+    def __init__(self, name: str, disposed: list[str], *, fail: bool = False) -> None:
+        self.name = name
+        self.disposed = disposed
+        self.fail = fail
+
+    async def dispose(self) -> None:
+        self.disposed.append(self.name)
+        if self.fail:
+            raise RuntimeError("dispose 실패(모의) dsn=mysql://u:hunter2@host/db")
+
+
+async def test_dispose_engine_reclaims_every_engine_even_if_one_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """writer dispose 가 터져도 replica·background 까지 회수한다.
+
+    앞의 dispose 에서 멈추면 뒤의 풀이 그대로 남아 DB 쪽에 좀비 커넥션이 된다.
+    증상은 한참 뒤 "커넥션 소진"으로만 나타나 원인 추적이 어렵다.
+    """
+    disposed: list[str] = []
+    monkeypatch.setattr(db_session, "engine", _FakeEngine("writer", disposed, fail=True))
+    monkeypatch.setattr(db_session, "read_engines", [_FakeEngine("reader#0", disposed)])
+    monkeypatch.setattr(db_session, "background_engine", _FakeEngine("background", disposed))
+
+    with caplog.at_level(logging.ERROR, logger="database"):
+        await db_session.dispose_engine()
+
+    assert sorted(disposed) == ["background", "reader#0", "writer"]
+
+    text = caplog.text
+    assert "writer" in text, "실패한 엔진 이름이 없으면 어느 풀이 남았는지 알 수 없다"
+    assert "RuntimeError" in text
+    assert "hunter2" not in text, "예외 원문에 실린 DSN 자격증명이 로그로 새어 나갔다"

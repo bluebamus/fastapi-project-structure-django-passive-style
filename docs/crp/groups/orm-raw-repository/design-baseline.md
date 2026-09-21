@@ -44,6 +44,7 @@ CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피�
 | REQ-013 | 2026-08-19 | 진행해줘 | Phase 6 — Scalar 문서 정비: 태그 정합, schema 이름 충돌 해소, 규칙 기반 OpenAPI 검증 24종 + 규칙별 fail-on-revert | Active | Round 9 · ADR-021~022 |
 | REQ-012 | 2026-08-19 | 다음 작업 진행 | Phase 5 — ORM(`catalog`)/Raw(`reports`) 예제 두 개, migration 2개, MySQL 방언·왕복 통합 테스트 | Active | Round 8 · ADR-019~020 |
 | REQ-011 | 2026-08-19 | 다음 작업 진행 | Phase 4 — Raw Base(`RawCRUDBase`/`RawRepositoryBase`), 명시적 read/write intent 라우팅, `query_name` 규칙, 정적 `text()` 보간 검사 | Active | Round 7 · ADR-017~018 |
+| REQ-016 | 2026-09-21 | "남은 작업, 고려해야 하는 사항 정리해줘" → "진행해줘" | `dispose_engine()` 이 첫 dispose 실패에서 멈추지 않고 writer·replica·background 를 끝까지 회수한다. 실패는 엔진 이름과 예외 **타입**만 기록하고 올리지 않는다 | Active | ADR-025 |
 
 ## 3. 설계 결정 기록 (ADR)
 
@@ -73,6 +74,7 @@ CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피�
 | ADR-023 | 2026-08-19 | 검수 게이트는 **하나의 스크립트**(`scripts/review_gate.py`)로 모으고, MySQL 통합은 **skip 을 실패로 본다**. 인프라가 없으면 `--fast` 로 명시적으로 제외해야 하며 그 사실이 출력에 남는다 | 검사를 손으로 나눠 돌리면 빠뜨리는 것과 순서에 따라 결과가 달라지는 것이 조용히 생긴다. skip 을 통과로 보면 “전체 green” 이 거짓말이 된다 — 인프라가 없어 안 돈 것과 돌아서 통과한 것은 다르다(NFR-012). 컨테이너를 내리고 실제로 종료 코드 1 이 나오는 것까지 확인했다 | Accepted | |
 | ADR-024 | 2026-08-19 | Scalar 렌더링은 **실제 브라우저**로 검증한다(Playwright + Chromium, `pytest -m browser`). Playwright 는 **async API** 만 쓴다 | 스키마가 3.1 규격에 맞는 것과 화면이 그려지는 것은 다르다 — 규격에 맞는 스키마를 렌더러가 못 그리면 사용자는 빈 화면을 본다. `sync_api` 는 자기 이벤트 루프를 돌려 `asyncio_mode=auto` 인 이 저장소에서 **브라우저와 무관한 테스트 수백 개를 함께 깨뜨린다**(38 failed / 124 errors 실측). 마커로 나눠 돌리면 가려지지만 전체 실행에서 드러난다 | Accepted | |
 | ADR-009 | 2026-08-18 | **DB session Dependency 명명**: `get_read_session`→`get_read_only_db_session`, `get_write_session`→`get_writer_db_session`, `get_session`→`get_routed_db_session`. Phase 1 에서 새 이름을 추가하고 옛 이름은 deprecated alias 로 남긴다. **alias 제거 시점 = Phase 7**(호출부 전환 완료 후, 사용처 0건을 기계로 확인한 뒤) | `session` 만으로는 HTTP 세션·사용자 세션과 구분되지 않는다(plan §9.8). 이름을 한 번에 바꾸면 `dependency_overrides` 를 쓰는 테스트가 조용히 어긋나므로, alias 기간을 두고 callable identity 를 보존한다 | Accepted | |
+| ADR-025 | 2026-09-21 | `dispose_engine()` 을 순차 `await` 에서 `asyncio.gather(..., return_exceptions=True)` 로 바꾸고, `("writer", engine)`·`(f"reader#{i}", replica)`·`("background", background_engine)` 을 **전부 동시에** 시도한다. 실패는 `logger.error` 에 엔진 이름과 `type(result).__name__` 만 남기고 전문은 `logger.debug(..., exc_info=result)` 로 보낸다(C-5·ADR-S10 과 같은 기준). 예외는 올리지 않고 인자도 받지 않는다 | 앞의 dispose 가 터지면 뒤의 풀이 회수되지 않아 DB 쪽에 좀비 커넥션이 남고, 증상은 한참 뒤 "커넥션 소진" 으로만 나타나 원인 추적이 어렵다. 여기서 예외를 올리면 원래의 종료 원인이 dispose 실패로 덮인다. DSN 에는 자격증명이 실려 오므로 예외 원문은 ERROR 레코드에 남기지 않는다. 호출부(`app/core/resources.py` lifespan shutdown, `app/celery/lifecycle.py` worker 종료)가 인자 없이 부르므로 필수 인자를 만들면 worker 종료가 조용히 깨진다 | Accepted | |
 
 ## 4. 불가침 제약 (추가 작업이 위반 금지)
 
@@ -123,3 +125,4 @@ CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피�
 - v0.10 (2026-08-19): Round 9(Phase 6) 반영. REQ-013, ADR-021~022, C-27~C-29 등재. **Phase 6 완료.**
 - v1.0 (2026-08-19): Round 10(Phase 7) 반영. REQ-014, ADR-023, C-30~C-31 등재. **전체 작업 완료** — 완료 보고서는 `completion-report.md`.
 - v1.1 (2026-08-19): Round 11 반영. REQ-015, ADR-024, C-32~C-33 등재. **R-011(줄바꿈)·잔여위험 4번(Scalar 렌더링) 해소.**
+- v1.2 (2026-09-21): REQ-016 · ADR-025 등재 — `dispose_engine()` 을 `asyncio.gather(return_exceptions=True)` 기반 전량 회수로 바꾸고 실패를 엔진 이름·예외 타입으로만 기록.
