@@ -32,8 +32,10 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
     await session.execute(select(Post))         # → writer
 
 Note:
-    라우터를 끄면(``DB_ROUTER_ENABLED=false``) 이 모듈은 쓰이지 않고
-    세션은 단일 엔진에 직접 바인딩된다(기존 동작 그대로).
+    라우터를 끄면(``DB_ROUTER_ENABLED=false``) **바인딩 선택**은 쓰이지 않고 세션은
+    단일 엔진에 직접 바인딩된다(기존 동작 그대로). 다만 읽기 전용 세션의 쓰기 차단은
+    ``Session`` 기반 클래스에 전역 등록된 이벤트 리스너가 하므로 라우터 설정과
+    무관하게 계속 동작한다(:func:`_block_read_only_flush` / :func:`_block_read_only_execute`).
 """
 
 from __future__ import annotations
@@ -42,9 +44,9 @@ import itertools
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Engine, TextClause, UpdateBase
+from sqlalchemy import Engine, Select, TextClause, UpdateBase, event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import ORMExecuteState, Session
 
 # 세션 단위 라우팅 상태를 담는 ``Session.info`` 키.
 # (세션 객체에 직접 속성을 붙이지 않고 SQLAlchemy 가 제공하는 info 딕셔너리를 쓴다.)
@@ -153,6 +155,62 @@ def statement_intent(clause: Any) -> str | None:
         return None
     value = getter().get(DB_INTENT)
     return value if value in (READ_INTENT, WRITE_INTENT) else None
+
+
+def assert_writable(session: Session | AsyncSession, detail: str = "") -> None:
+    """읽기 전용 세션이면 ``ReadOnlyRoutingError`` 를 낸다.
+
+    Raises:
+        ReadOnlyRoutingError: 세션이 read-only 로 표시돼 있을 때.
+    """
+    if is_read_only_session(session):
+        raise ReadOnlyRoutingError(
+            "읽기 전용 세션에서 쓰기를 시도했습니다"
+            f"{f' ({detail})' if detail else ''}. "
+            "쓰기에는 get_writer_db_session()/get_routed_db_session() 을 사용하세요."
+        )
+
+
+def _statement_is_readable(clause: Any) -> bool:
+    """이 구문을 읽기 전용 세션에서 실행해도 되는지 판별한다(default-deny).
+
+    ``TextClause`` 는 문자열이라 타입으로 알 수 없으므로 **명시 의도 태그**만 본다
+    (:func:`read_intent`). SQL 을 파싱하지 않는 이유는 :func:`_is_write` 주석과 같다.
+    """
+    if isinstance(clause, UpdateBase):
+        return False  # Insert / Update / Delete / DDL
+    if isinstance(clause, Select):
+        return True
+    if isinstance(clause, TextClause):
+        return statement_intent(clause) == READ_INTENT
+    return False  # 판별 불가 — 거부
+
+
+# 아래 두 리스너는 ``Session`` **기반 클래스**에 전역 등록된다. read-only 는 replica
+# 라우팅 옵션이 아니라 Dependency 계약이므로, 차단이 ``RoutingSession.get_bind()``
+# 안에만 있으면 ``DB_ROUTER_ENABLED=false``(기본값)와 background 세션 팩토리에서
+# 통째로 사라진다. 여기 두면 sessionmaker 종류·라우터 설정과 무관하게 걸린다.
+@event.listens_for(Session, "before_flush")
+def _block_read_only_flush(session: Session, flush_context: Any, instances: Any) -> None:
+    """ORM flush(=INSERT/UPDATE/DELETE)를 읽기 전용 세션에서 차단한다."""
+    assert_writable(session, "ORM flush")
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _block_read_only_execute(orm_execute_state: ORMExecuteState) -> None:
+    """``Session.execute()`` 로 나가는 모든 구문을 검사한다.
+
+    Core DML 과 ``text()`` Raw SQL 이 모두 이 경계를 지난다 — ``RawCRUDBase`` 를
+    거치지 않고 세션에 직접 던지는 코드도 여기서 걸린다.
+    """
+    if not is_read_only_session(orm_execute_state.session):
+        return
+    if not _statement_is_readable(orm_execute_state.statement):
+        raise ReadOnlyRoutingError(
+            "읽기 전용 세션에서 읽기로 판별되지 않는 구문을 실행하려 했습니다. "
+            "SELECT 와 read_intent() 가 붙은 text() 만 허용됩니다 — 태그 없는 Raw SQL 은 "
+            "기본 거부됩니다. 쓰기에는 get_writer_db_session() 을 사용하세요."
+        )
 
 
 def _is_write(clause: Any, flushing: bool) -> bool:
