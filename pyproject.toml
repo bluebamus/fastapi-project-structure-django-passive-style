@@ -121,9 +121,16 @@ env = [
 ]
 
 # 필터 경고
+#
+# 폐기 경고는 **실패**다. 블랭킷 ignore 는 앞으로 올 모든 폐기 예고를 게이트에서
+# 보이지 않게 만들고, 실제로 그 상태로 한동안 돌았다. 예외를 추가할 때는 왜 못
+# 고치는지를 줄마다 남긴다 — 이유 없는 ignore 는 금지다.
+#
+# UserWarning 은 켜지 않는다. StarletteDeprecationWarning 이 UserWarning 을 상속해서,
+# 켜면 서드파티가 자기 폐기 일정으로 이 저장소의 빌드를 인질로 잡는다.
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
 ]
 
 
