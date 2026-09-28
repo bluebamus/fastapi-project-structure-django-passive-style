@@ -543,7 +543,7 @@ FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(`use_cache=
 
 | API | 용도 | 특성 |
 |---|---|---|
-| `get_read_only_db_session()` | 조회 endpoint (기능 앱 표준) | 세션을 read-only 로 표시. 라우터 활성 시 replica 고정·ORM 쓰기 차단. 예외 시 rollback |
+| `get_read_only_db_session()` | 조회 endpoint (기능 앱 표준) | 세션을 read-only 로 표시 → 쓰기 차단(라우터 설정과 무관). 라우터 활성 시 replica 고정. 예외 시 rollback |
 | `get_writer_db_session()` | 쓰기 endpoint (기능 앱 표준) | 첫 구문부터 writer 고정. 예외 시 rollback |
 | `get_routed_db_session()` | 의도를 미리 정할 수 없는 예외 경로 | 구문 성격으로 자동 라우팅. 기능 앱은 쓰지 않는다 |
 | `background_session()` | 요청 밖(sink·Celery) async context | background 풀, 예외 시 rollback, **커밋은 호출자** |
@@ -572,8 +572,8 @@ FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(`use_cache=
 
 ### 4.4 읽기/쓰기 라우팅
 
-`DB_ROUTER_ENABLED=false`(기본)면 세션이 writer 엔진에 직접 바인딩되고 라우터는 쓰이지 않는다.
-켜면 `RoutingSession.get_bind()` 가 구문마다 엔진을 고른다.
+`DB_ROUTER_ENABLED=false`(기본)면 세션이 writer 엔진에 직접 바인딩되고 바인딩 선택은 쓰이지 않는다.
+켜면 `RoutingSession.get_bind()` 가 구문마다 엔진을 고른다. read-only 세션의 쓰기 차단은 이 설정과 무관하다(아래 "read-only 차단의 범위").
 
 ```mermaid
 flowchart TD
@@ -605,9 +605,11 @@ flowchart TD
 
 | 경로 | 차단 |
 |---|---|
-| ORM·Core 쓰기 | `RoutingSession` 에만 있다 → **라우터가 켜져 있을 때만** 동작. 기본 설정에서는 read-only 세션의 ORM 쓰기가 막히지 않는다 |
-| Raw 쓰기(`execute`, `for_update=True`) | `RawCRUDBase` 가 `is_read_only_session()` 으로 **실행 전에** 거부 — 라우터 설정과 무관 |
-| 임의 `session.execute()` | 완전한 sandbox 가 아니다. 조회 경로가 쓰지 않는다는 규칙은 `tests/test_read_path_no_commit.py` 가 구조로 고정 |
+| ORM flush | `Session` 에 전역 등록된 `before_flush` 리스너가 거부 — 라우터 설정·sessionmaker 종류와 무관 |
+| Core DML·임의 `session.execute()` | `do_orm_execute` 리스너가 **실행 전에** 판정 — `Select` 와 `read_intent()` 가 붙은 `text()` 만 통과하고 나머지는 거부(default-deny) |
+| Raw 쓰기(`execute`, `for_update=True`) | 위 리스너에 더해 `RawCRUDBase` 가 `is_read_only_session()` 으로 먼저 거부 — 어느 메서드가 원인인지 메시지에 남는다 |
+
+판정은 구문 타입과 의도 태그만 본다 — SQL 문자열을 해석하지 않으므로 완전한 sandbox 가 아니다. 조회 경로가 쓰지 않는다는 규칙은 `tests/test_read_path_no_commit.py` 가 구조로 함께 고정한다.
 
 read-only 표시는 DB 권한을 대체하지 않는다. 운영에서는 replica 전용 읽기 계정을 함께 쓴다.
 

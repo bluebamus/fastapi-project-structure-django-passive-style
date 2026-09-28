@@ -26,15 +26,15 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
     자세한 규칙은 app/core/db/router.py 를 참고하세요.
 
 사용 예시:
-    # FastAPI 엔드포인트에서 (읽기/쓰기 자동 라우팅)
+    # 조회 엔드포인트 (기능 앱 표준 — 쓰기를 코드 수준에서 차단)
     @app.get("/users")
-    async def get_users(session: AsyncSession = Depends(get_routed_db_session)):
+    async def get_users(session: AsyncSession = Depends(get_read_only_db_session)):
         result = await session.execute(select(User))
         return result.scalars().all()
 
-    # 읽기 전용임이 확실한 엔드포인트 (쓰기를 코드 수준에서 차단)
-    @app.get("/users/stats")
-    async def stats(session: AsyncSession = Depends(get_read_only_db_session)):
+    # 쓰기 엔드포인트 (기능 앱 표준 — 첫 구문부터 primary)
+    @app.post("/users")
+    async def create_user(session: AsyncSession = Depends(get_writer_db_session)):
         ...
 
     # 백그라운드 태스크에서
@@ -272,9 +272,11 @@ async def create_db_tables(*, populate: bool = True) -> int:
 
 async def get_routed_db_session() -> AsyncGenerator[AsyncSession]:
     """
-    FastAPI 의존성 주입용 세션 제너레이터
+    FastAPI 의존성 주입용 세션 제너레이터 (읽기/쓰기 자동 라우팅)
 
-    FastAPI 엔드포인트에서 Depends()로 사용합니다.
+    **의도를 미리 정할 수 없는 예외 경로용입니다.** 기능 앱은 조회에
+    get_read_only_db_session(), 쓰기에 get_writer_db_session() 을 씁니다.
+
     요청 종료 시 자동으로 세션이 닫힙니다.
     예외 발생 시 자동 롤백됩니다.
 
@@ -320,9 +322,9 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
     """
     읽기 전용 세션 제너레이터 (FastAPI DI)
 
-    조회만 하는 엔드포인트에서 사용합니다. 라우터가 켜져 있으면 세션이
-    replica 에 고정되고, 쓰기를 시도하면 ``ReadOnlyRoutingError`` 로 즉시 실패해
-    "읽기 전용 핸들러가 몰래 쓰는" 사고를 코드 수준에서 차단합니다.
+    조회만 하는 엔드포인트에서 사용합니다. 쓰기를 시도하면 ``ReadOnlyRoutingError``
+    로 즉시 실패해 "읽기 전용 핸들러가 몰래 쓰는" 사고를 코드 수준에서 차단합니다.
+    라우터가 켜져 있으면 세션이 replica 에도 고정됩니다.
 
     Yields:
         AsyncSession: 읽기 전용 데이터베이스 세션
@@ -334,9 +336,11 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
             return result.scalars().all()
 
     Note:
-        - DB_ROUTER_ENABLED=false 면 라우팅·쓰기 차단이 동작하지 않고
-          get_routed_db_session() 과 동일하게 단일 엔진 세션을 반환합니다.
-        - 복제 지연을 허용할 수 없는 읽기라면 get_routed_db_session() + using_writer() 를 쓰세요.
+        - 쓰기 차단은 DB_ROUTER_ENABLED 와 무관합니다. ORM flush·Core DML·의도 태그가
+          없는 Raw SQL 은 세션에 직접 던져도 거부됩니다(app/core/db/router.py 의
+          before_flush·do_orm_execute 리스너). DB_ROUTER_ENABLED=false 면 **바인딩만**
+          단일 엔진으로 갑니다.
+        - 복제 지연을 허용할 수 없는 읽기라면 get_writer_db_session() 을 쓰세요.
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)

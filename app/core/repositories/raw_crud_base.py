@@ -57,9 +57,9 @@ class RawCRUDBase:
     def _intent(self, statement: TextClause, *, write: bool) -> TextClause:
         """구문에 의도를 붙이고, 쓰기면 읽기 전용 세션에서 실행 전에 막는다.
 
-        라우터에도 같은 차단이 있지만 그쪽은 ``DB_ROUTER_ENABLED=false`` 면 통째로
-        꺼진다. 읽기 전용 표식은 라우터와 무관하게 붙으므로 여기서 한 번 더 본다 —
-        "설정을 끄면 보안도 꺼지는" 상태를 만들지 않는다.
+        세션 이벤트 리스너(``do_orm_execute``)도 같은 것을 막지만, 그쪽은 실행
+        직전이라 오류 메시지가 일반적이다. 여기서는 어떤 Raw 메서드가 원인인지
+        아는 채로 거부한다.
         """
         if not write:
             return read_intent(statement)
