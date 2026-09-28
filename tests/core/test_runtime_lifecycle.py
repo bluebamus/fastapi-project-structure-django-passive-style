@@ -404,6 +404,8 @@ async def test_session_dependency_rolls_back_exactly_once_on_exception(
     from sqlalchemy import event, text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+    from app.core.db.router import read_intent
+
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     rollbacks: list[object] = []
     event.listen(engine.sync_engine, "rollback", rollbacks.append)
@@ -417,7 +419,9 @@ async def test_session_dependency_rolls_back_exactly_once_on_exception(
     session = await anext(generator)
     try:
         # 실제로 연결을 잡아야 롤백할 트랜잭션이 생긴다.
-        await session.execute(text("SELECT 1"))
+        # read-only 세션에서도 도는 구문이어야 하므로 읽기 의도를 붙인다 — 태그 없는
+        # ``text()`` 는 읽기 전용 세션에서 기본 거부된다(fail-closed).
+        await session.execute(read_intent(text("SELECT 1")))
         with pytest.raises(RuntimeError):
             await generator.athrow(RuntimeError("핸들러 실패(모의)"))
     finally:
