@@ -34,7 +34,7 @@
 - INV-S1: 목적 3요소가 깨지지 않는다
 - INV-S2: 문서가 코드에 없는 공개 심볼·기능을 가르치지 않는다
 - INV-S3: 삭제한 문서를 가리키는 참조가 남지 않는다(문서·테스트·CI 주석 포함)
-- INV-S4: `scripts/review_gate.py` 8단계가 통과한다
+- INV-S4: `scripts/review_gate.py` 전 단계가 통과한다
 - INV-S5: 공개 API 경로·응답 스키마 불변
 
 ### 2-3. 비목표
