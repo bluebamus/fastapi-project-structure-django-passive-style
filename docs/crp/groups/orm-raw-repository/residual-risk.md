@@ -15,6 +15,7 @@
 | R-009 | Raw SQL 의 **MySQL 방언 정확성**은 아직 검증되지 않았다 | Phase 4 는 SQLite 로 Base 계약만 확인했다(ADR-004). 실제 SQL·집계는 Phase 5 의 `pytest -m mysql` 이 담당한다 | **해소** (Round 8 — 집계 타입·경계·DDL 실측) |
 | R-010 | `text()` 보간 금지를 **전면 금지**로 잠갔다 | requirements RAW-REP-004 는 정렬 컬럼 같은 식별자를 allowlist 상수로 f-string 구성하는 것을 허용한다. 지금은 그런 호출부가 없으므로 가장 좁은 규칙을 택했다. 필요해지면 ADR 로 예외를 열고 검사기에 allowlist 판정을 넣는다 | Accepted |
 | R-006 | 잡히지 않은 예외의 traceback 로그에 DB 예외 메시지(SQL·bind 값)가 남는다 | ADR-010 — traceback 을 끄면 운영 장애 추적 수단이 사라진다. 올바른 차단 지점은 출력이 아니라 예외 생성부이며 Phase 3 의 공통 안전 변환기가 담당한다. **Phase 3 까지 한시 수용**(ledger F-015 Open) | **해소** (Round 5, F-015 Fixed) |
+| R-011 | `starlette.testclient` 가 `httpx` 사용을 폐기 예고했다(`httpx2` 권장). 테스트 **7개** 파일이 `TestClient` 를 쓴다 | **동작 영향 없음.** `starlette/testclient.py` 는 `import httpx2` 실패 시 `httpx` 로 폴백하고 경고 한 줄만 낸다 — 없다고 깨지지 않는다. `StarletteDeprecationWarning` 은 `UserWarning` 상속이라 ADR-032 의 `error::DeprecationWarning` 정책에도 걸리지 않아 게이트를 막지 않는다. 영향은 **테스트 하네스뿐** — 앱 런타임에 `httpx` 직접 사용 0건이고 `httpx` 는 dev 의존이라 배포물에 없다. 전환 시점을 우리가 당길 수 없다: 경고 진입점이 `fastapi.testclient` 라 FastAPI 가 `httpx2` 를 받아야 움직인다. `ignore` 로 덮지 않고(덮으면 사라진 줄도 모른다) 쫓지도 않는다 — 보이는 채로 수용한다. **재평가 조건:** `fastapi.testclient` 가 `httpx2` 를 지원하거나, starlette 이 폴백을 제거하거나, `UserWarning` 을 `error` 로 올리면 ledger 승격 | Accepted |
 
 ## 검사하지 않은 것 (Round 10 기준 · 최종)
 
