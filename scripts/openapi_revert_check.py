@@ -240,11 +240,15 @@ CASES = [
 
 
 def read(path: str) -> str:
-    return open(path, encoding="utf-8", newline="").read()
+    # `newline=""` 를 유지한다 — 이 스크립트는 되돌림 여부를 바이트로 비교하므로
+    # 개행을 번역하면 CRLF 체크아웃에서 판정이 조용히 뒤집힌다.
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read()
 
 
 def write(path: str, text: str) -> None:
-    open(path, "w", encoding="utf-8", newline="").write(text)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 
 
 def run_case(label: str, test_name: str, edits) -> str:
