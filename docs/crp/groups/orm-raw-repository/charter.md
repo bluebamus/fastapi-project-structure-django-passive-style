@@ -113,7 +113,7 @@
 | INV-22 옛 세션 이름 부재 | `tests/core/test_runtime_lifecycle.py` · `tests/test_docs_references.py::test_session_dependency_names_in_docs_are_importable` |
 | INV-23 문서 심볼·경로·환경변수 실재 | `tests/test_docs_references.py` (2026-08-20 이후 `project-guide` 현행 버전까지 포함) |
 | INV-24 저장소 줄바꿈 LF | **실행 테스트 없음.** `.gitattributes` 의 `* text=auto eol=lf` 가 커밋 시점에 강제한다 |
-| INV-25 Scalar 실렌더링 | `tests/browser/test_scalar_rendering.py` (게이트 8단계) |
+| INV-25 Scalar 실렌더링 | `tests/browser/test_scalar_rendering.py` (게이트 `pytest -m browser` 단계) |
 
 **INV-24 에 테스트를 두지 않는 이유.** 줄바꿈은 git 이 커밋 시점에 정규화한다. 작업
 디렉터리 파일을 읽어 CRLF 를 금지하는 테스트를 쓰면 Windows 체크아웃에서 오히려 실패한다
