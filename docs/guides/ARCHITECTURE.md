@@ -396,7 +396,7 @@ flowchart TD
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
 | `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
-| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. **또는** `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
+| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis·미사용 SMTP 는 정당한 구성이라 빈 값을 막지 않는다). **또는** `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
 
 `_validate_cross_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
 
@@ -471,7 +471,7 @@ async with AsyncExitStack() as cleanup:
 |---|---|---|
 | background drain | 5초 | 그중 4초는 완료 대기, 남은 시간에 미완료 태스크를 cancel 후 gather 로 회수 |
 | Redis close | 5초 | client pool 정리일 뿐 서버·키에 영향 없음 |
-| DB dispose | 10초 | writer → replica → background 순차. 앞 엔진 오류가 뒤 엔진 dispose 를 건너뛰게 할 수 있다 |
+| DB dispose | 10초 | writer · replica · background 를 `asyncio.gather(..., return_exceptions=True)` 로 **병렬** 회수. 한 엔진이 실패해도 나머지는 끝까지 dispose 되고, 실패는 예외 **타입만** 로그로 남기고 올리지 않는다(원래의 종료 원인을 덮지 않도록) |
 
 각 단계는 `_run_cleanup()` 이 감싸 실패·timeout 을 로그로 남기고 다음 단계로 넘어간다(전체 deadline 은 없다).
 startup ping 실패도 client 종료와 이미 등록된 DB 정리 경로를 탄다(background drain 은 아직 등록 전). 끝나면
