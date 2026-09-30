@@ -432,22 +432,27 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy .
 uv run python -m scripts.bandit_gate                             # Bandit MEDIUM 이상
-uv run python -m scripts.review_gate                             # 아래 9단계 일괄 (--fast: ⑧⑨ 제외, --list: 목록만)
+uv run python -m scripts.review_gate                             # 아래 전 단계 일괄 (--fast: mysql·browser 제외, --list: 목록만)
 ```
 
 - `pytest` 콘솔 스크립트가 아니라 **`python -m pytest`** 를 쓴다(다른 인터프리터를 집어 import 가 어긋난 전례).
 - 단위 테스트는 in-memory SQLite 와 가짜 Redis 를 쓴다. `pyproject.toml` 이 `DEBUG=true`, `ENV=test` 를 주입하고 `tests/`·`app/` 의 `test_*.py` 를 수집한다(strict marker).
 - 임시 경로를 저장소 안에 두지 않으려면 `--basetemp <경로>`, `mypy --cache-dir <경로>` 를 준다. **게이트 판정용 mypy 는 콜드 캐시** 결과만 유효하다(CI 는 캐시를 복원하지 않는다).
 - 마커를 빼지 않으면 `mysql` 테스트는 MySQL 이 없을 때 skip 되지만 `browser` 테스트는 skip 없이 **실패**한다.
+- **폐기 경고는 실패다.** `pyproject.toml` 의 `filterwarnings` 가 `error::DeprecationWarning`·`error::PendingDeprecationWarning`
+  이고 **예외(ignore) 목록은 비어 있다**. 경고가 뜨면 억제하지 말고 원인을 없앤다(예: 루트 `conftest.py` 가 Python 3.12 가
+  폐기한 `sqlite3` 기본 `date`/`datetime` 어댑터를 명시 등록해 해결한다). 못 고칠 예외를 넣어야 하면 왜 못 고치는지를 줄마다 남긴다.
+  `UserWarning` 은 `error` 로 올리지 않는다 — `StarletteDeprecationWarning` 이 이를 상속해서, 켜면 서드파티의 폐기 일정이 이 저장소의 빌드를 잡는다.
 
 | 마커 | 준비 | 실행 |
 |---|---|---|
 | `mysql` | `docker compose -f compose.test.yaml up -d --wait` (MySQL 8.4, `127.0.0.1:3309` — 포트는 환경변수 MYSQL_TEST_PORT 로 변경, tmpfs) | `uv run python -m pytest -m mysql` → 끝나면 `docker compose -f compose.test.yaml down -v` |
 | `browser` | `uv run python -m playwright install chromium` + 위 MySQL + startup ping 이 통과할 Redis(기본 `localhost:6379`, compose 파일에는 Redis 가 없다) | `uv run python -m pytest -m browser` — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
 
-`review_gate` 단계: ① ruff format ② ruff check ③ mypy ④ bandit ⑤ pip-audit(`--strict`) ⑥ pytest(인프라 제외)
-⑦ OpenAPI 규칙 fail-on-revert(`scripts/openapi_revert_check.py`) ⑧ pytest `-m mysql`(skip 금지) ⑨ pytest `-m browser`(skip 금지).
-`--fast` 는 ⑧⑨ 을 빼고 실행하지 않았다는 경고를 남긴다. 의존성 감사는 외부 인프라가 필요 없고 몇 초면 끝나므로
+`review_gate` 단계(순서대로): `ruff format` → `ruff check` → `mypy` → `bandit` → `pip-audit`(`--strict`) → `pytest`(인프라 제외)
+→ OpenAPI 규칙 fail-on-revert(`scripts/openapi_revert_check.py`) → `pytest -m mysql`(skip 금지) → `pytest -m browser`(skip 금지).
+단계 수를 세지 말고 이름으로 가리킨다 — 정본은 `scripts/review_gate.py` 의 `build_steps()` 이고 `--list` 가 현재 목록을 출력한다.
+`--fast` 는 마지막 두 단계(`pytest -m mysql`·`pytest -m browser`)를 빼고 실행하지 않았다는 경고를 남긴다. 의존성 감사는 외부 인프라가 필요 없고 몇 초면 끝나므로
 `--fast` 에도 남긴다 — 코드가 그대로여도 권고는 새로 뜨고, 그걸 전체 게이트를 돌릴 때까지 몰라야 할 이유가 없다.
 도구 stdio 는 UTF-8 로 고정하고 실행별 임시 경로를 쓴다.
 
