@@ -21,7 +21,9 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **계층 분리**: Router → Dependency → Service → Repository → DB. 기능마다 `app/features/<name>/` 에 모은다.
 - **명시적 트랜잭션 경계**: 쓰기 핸들러 본문이 응답 전에 `await service.commit()`. 조회는 `get_read_only_db_session`, 쓰기는 `get_writer_db_session`.
 - **ORM·Raw SQL 두 Repository 계열**과 나란히 비교할 수 있는 예제 기능 2개.
-- **읽기/쓰기 라우팅**(선택): primary/replica 분리, Raw SQL 은 명시적 read/write 의도로 fail-closed.
+- **읽기 전용 세션은 쓰기를 거부한다**(항상): `get_read_only_db_session` 으로 받은 세션에서 ORM flush·Core DML·의도 태그가 없는 `text()` 는 실행 전에 `ReadOnlyRoutingError`. 차단은 `Session` 에 전역 등록된 리스너가 하므로 `DB_ROUTER_ENABLED` 설정과 무관하다.
+- **Raw SQL 은 명시적 의도 태그 계약**: 구문에 `read_intent()`·`write_intent()` 를 붙여 읽기/쓰기를 선언한다(판정은 `statement_intent()`). SQL 문자열을 파싱하지 않으므로 **태그가 없는 `text()` 는 쓰기로 보고 읽기 전용 세션에서 거부**된다(fail-closed).
+- **읽기/쓰기 라우팅**(선택): primary/replica 분리. 끄면 바인딩만 단일 엔진으로 가고 위 두 계약은 그대로다.
 - **JWT 인증**: OAuth2 password flow + access/refresh, bcrypt.
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500, SQL·비밀값 로그 차단, 종료 시 자원 정리 순서 보장.
 - **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면(`ADMIN=true`, 인증 없음).
@@ -164,7 +166,8 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
 ```
 
-복사하면 `MYSQL_PASSWORD=your_password`·`VERSION=1.0.0` 등 예시값이 들어가므로 환경에 맞게 고칩니다.
+복사하면 `MYSQL_PASSWORD=change-this-mysql-password`·`VERSION=1.0.0` 등 예시값이 들어가므로 환경에 맞게 고칩니다.
+비밀번호·비밀키 예시값은 배포 안전 검사가 **잡는** placeholder 입니다 — `ENV` 가 staging/production 이면 그대로 둔 채로는 기동하지 못합니다.
 
 | 변수 | 기본값 | 의미 |
 |---|---|---|
@@ -236,6 +239,7 @@ INSTALLED_APPS: list[str] = [
 
 Raw 는 집계·리포트, 필요한 컬럼만 읽는 대량 조회, DB 고유 기능처럼 ORM 이 못 하는 일에만 씁니다.
 SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name` 은 코드 상수여야 합니다.
+읽기/쓰기 의도는 `RawRepositoryBase` 가 메서드마다 붙입니다(`fetch_*` 는 읽기, `execute`·`for_update=True` 는 쓰기) — 세션에 `text()` 를 직접 던지면 태그가 없어 읽기 전용 세션에서 거부됩니다.
 판단 기준과 규칙 전문은 [개발 가이드 — ORM 과 Raw 선택](docs/guides/DEVELOPMENT.md#orm-raw)에 있습니다.
 
 ## API
