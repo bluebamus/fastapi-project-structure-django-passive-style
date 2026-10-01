@@ -651,6 +651,22 @@ GET View
 문자열 검사만 믿지 말고 주석·공백·대소문자·CTE 우회 테스트를 둔다. Raw Base는 private
 session info key를 복제하지 않고 router의 공개 `is_read_only_session()` helper를 사용한다.
 
+> **[검수 각주 · 2026-10-01]** 위 문단은 2026-08 착수 시점의 **관찰과 지시**이며, 그 지시는
+> 이후 전부 이행됐다. **지금은 위 "차단되지 않을 수 있다" 가 거짓이다** — 본문은 역사적
+> 기록이라 고치지 않고 현재 상태만 여기 적는다.
+>
+> - `_is_write()` 는 `TextClause` 를 **명시적 read 의도가 붙은 것만** 읽기로 보고, 의도가
+>   없으면 쓰기로 취급한다(fail-closed) — `app/core/db/router.py`.
+> - 그보다 앞서 전역 `do_orm_execute` 리스너가 실행 **전에** 거부한다. 따라서 태그 없는
+>   `text("UPDATE ...")` 는 읽기 전용 세션에서 **반드시** `ReadOnlyRoutingError` 다.
+> - 본문이 요구한 "첫 token 문자열 검사만 믿지 말라" 는, 문자열 검사를 **보강하는** 대신
+>   **명시 의도 태그**(`read_intent()`·`write_intent()`)로 바꿔 해결했다. 추측을 하지 않으므로
+>   주석·공백·대소문자·CTE 우회가 애초에 성립하지 않는다.
+> - `is_read_only_session()` 공개 helper 사용 지시는 그대로 이행됐다.
+>
+> 현재 계약의 정본은 `docs/guides/ARCHITECTURE.md` 다. 검사는
+> `tests/core/test_read_only_guard.py`(7건)·`tests/core/test_db_router.py`(25건).
+
 ### 쓰기
 
 ```text
