@@ -31,7 +31,7 @@
 
 ## 최종
 
-- [x] `scripts/review_gate.py` 8단계 통과
+- [x] `scripts/review_gate.py` 전 단계 통과
 - [ ] 학습자 시나리오 수동 검증: "README 만 읽고 Raw 기능을 하나 만들 수 있는가" — **사람 판정(RL-03)**, 사용자 확인 대기
 
 ## Round 1 중 추가된 항목 — 완료
