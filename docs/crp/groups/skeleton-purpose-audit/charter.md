@@ -10,8 +10,8 @@
 | 앱 registry | `app/core/apps/{config,registry,wiring,exceptions}.py` · `config.py` | 소스 | **검수 대상** — 목적의 심장부 |
 | 라우터 결선 | `app/features/*/api/routers/router.py` · `v1/*.py` | 소스 | **검수 대상** — URL 수동 관리 |
 | 골격 생성기 | `scripts/new_app.py` | 소스 | 검수 + 수정 (ADR-S01) |
-| 진입 문서 | `README.md` · `docs/guides/ARCHITECTURE.md` · `docs/guides/QUICKSTART.md` | 문서 | 유지 |
-| 심화 가이드 | `docs/project-guide/v1.1/` 10종 | 문서 | 유지 + 정정 |
+| 진입 문서 | `README.md` · `docs/guides/ARCHITECTURE.md` · `docs/guides/QUICKSTART.md` | 문서 | 유지 — 이후 ADR-S07(2026-09-17)이 `QUICKSTART.md` 를 README 로 흡수·삭제 |
+| 심화 가이드 | `docs/project-guide/v1.1/` 10종 | 문서 | 유지 + 정정 — 이후 ADR-S07(2026-09-17)이 ARCHITECTURE·DEVELOPMENT 로 흡수·삭제 |
 | 레지스트리 문서 | `docs/django-style-app-registry/` | 문서 | 2편 유지·재작성, 2편 삭제 |
 | 착수 명세 | `docs/orm-raw-repository/2026-08-13/` 3종 | 문서 | **삭제** |
 | 폐기 가이드 | `docs/project-guide/v1.0/` 9종 | 문서 | **삭제** |
@@ -51,7 +51,7 @@
 - [x] 삭제한 문서를 가리키는 참조 0건 — 문서·테스트·CI 전수 grep
 - [x] 문서가 없는 기능을 있다고 말하지 않는다 (INV-S2) — `require_admin`·
       `AppRegistry.discover()`·`/ready` 부재 서술 정정
-- [x] 게이트 8단계 통과
+- [x] 게이트 전 단계 통과 (정본은 `scripts/review_gate.py` 의 `build_steps()`·`--list`)
 - [x] 공개 API 불변 — `tests/test_route_inventory.py` 및 OpenAPI 규칙 통과
 
 ## 4. 변경 이력

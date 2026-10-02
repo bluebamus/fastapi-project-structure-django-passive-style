@@ -482,6 +482,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | OpenAPI 계약(operationId·태그·응답 모델·스키마 이름) | `tests/test_openapi_contract.py` · `tests/test_layering_and_openapi.py` |
 | 계층 의존 방향 | `tests/test_layering_and_openapi.py` |
 | 조회 경로는 커밋 0회 / 쓰기는 1회 | `tests/test_read_path_no_commit.py` · 기능별 `test_transaction_boundary.py` |
+| 읽기 전용 세션의 쓰기 거부가 `DB_ROUTER_ENABLED` 와 무관 (태그 없는 `text()` 포함) | `tests/core/test_read_only_guard.py` |
 | 쓰기 핸들러는 응답 DTO 검증 후 커밋 | `tests/test_validate_before_commit.py` |
 | ORM·Raw 예제는 Repository 만 다르다 | `tests/test_orm_raw_parity.py` |
 | migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migration_chain.py` |
@@ -490,7 +491,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 자원 수명(Redis·DDL·종료 순서) | `tests/core/test_bootstrap.py` · `tests/core/test_runtime_lifecycle.py` |
 | SQL·비밀값 비노출, 500 불투명 | `tests/core/test_security_hardening.py` · `tests/core/test_db_error_conversion.py` |
 | 생성기 동작·경계 | `tests/scripts/test_new_app.py` |
-| 문서가 코드와 어긋나지 않음 | `tests/test_docs_consistency.py` · `tests/test_docs_references.py` |
+| 문서가 코드와 어긋나지 않음 | `tests/test_docs_consistency.py` · `tests/test_docs_references.py` · `tests/test_docs_secret_examples.py` |
 
 ### 6.4 변경 유형별 최소 검증
 
@@ -499,11 +500,11 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 새 AppConfig·Router | registry·wiring·route inventory·OpenAPI 계약·기능 테스트 |
 | Model·Repository | 기능 DB 테스트, `tests/core/test_repository_base.py`, migration chain, `alembic check` |
 | Raw SQL | `tests/core/test_raw_repository_base.py`·`tests/core/test_raw_routing.py`, MySQL 통합(방언·Decimal·날짜·rowcount) |
-| 세션·DB Router | transaction boundary, `tests/test_read_path_no_commit.py`, `tests/core/test_db_router.py`·`tests/core/test_db_router_env.py` |
+| 세션·DB Router | transaction boundary, `tests/test_read_path_no_commit.py`, `tests/core/test_read_only_guard.py`, `tests/core/test_db_router.py`·`tests/core/test_db_router_env.py` |
 | 인증 | auth endpoint, `tests/utils/test_auth.py`, `tests/test_email_validation.py` |
 | Middleware | `tests/core/test_access_log_decoupling.py`, `tests/core/test_background_tasks.py`, `tests/core/test_cors_settings.py` |
 | 설정 | `tests/core/test_settings_contract.py`·`tests/core/test_deployment_safety.py`, `.env.example` 동시 갱신 |
-| 문서 | 문서 검사 두 파일 |
+| 문서 | 문서 검사 세 파일(§6.3) |
 
 ### 6.5 새 기능의 테스트 범위
 
@@ -541,3 +542,5 @@ SQLite 통과는 MySQL 정확성의 근거가 아니다(ADR-004). 인프라가 �
 - 문서 검사는 세 Markdown 문서의 import 경로·심볼·환경변수·저장소 경로·링크·앵커 실재, HTML 안내서의 `<code>` 경로·`data-source`·상대 링크·앵커·꺾쇠 이스케이프·부록 설정 목록, 제거된 결선 방식·옛 등록 절차의 부재,
   `INSTALLED_APPS` 예제와 생성기 출력의 일치, 학습 경로(Raw Base·두 예제·이 문서의 [ORM/Raw 절](#orm-raw))의 도달 가능성을 본다.
   백틱 안의 대문자 토큰은 `.env.example` 에 있는 키로 해석되므로, 환경변수가 아닌 대문자 단어(HTTP 메서드·SQL 키워드 등)는 백틱 없이 쓴다.
+- 문서가 비밀값을 예시로 적을 때는 배포 안전 검사(`is_placeholder_secret`)에 **걸리는** 값만 쓴다. 검증기를 통과하는 예시값을 가르치면
+  그대로 운영에 올라가므로 `tests/test_docs_secret_examples.py` 가 세 Markdown 문서의 모든 비밀값 예시를 실제 판정 함수로 검사한다.

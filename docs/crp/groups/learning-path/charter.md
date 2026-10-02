@@ -3,7 +3,7 @@
 | 항목 | 값 |
 |---|---|
 | 그룹 | `learning-path` |
-| 상태 | **검수 완료 · 착수 대기** |
+| 상태 | **작업 완료 (Round 1.3, CONVERGED)** · 사람 판정 1건 대기(RL-03) |
 | 착수 근거 | `audit-report.md` (2026-08-20 검수) |
 | 선행 그룹 | `orm-raw-repository` (Phase 0~7 완료, `aec451d`) |
 
@@ -81,8 +81,8 @@ Phase 4~7 의 산출물이 CRP·설계 문서에만 기록됐고, 학습자가 �
 1. `audit-report.md` 를 읽는다 — 무엇이 왜 문제인지, 무엇을 해야 하는지가 다 있다
 2. §6 의 순서(**T-4a → T-1 → T-2 → T-3**)를 따른다 — 2026-08-20 재검수에서 검사 확대가 맨 앞으로 왔다
 3. 이 그룹의 `design-baseline.md`·`ledger.md`·`run-log.md`·`checklist.md`·
-   `residual-risk.md` 는 아직 없다. 착수 시 `orm-raw-repository` 그룹의 것을
-   참고해 만든다(같은 CRP 템플릿)
+   `residual-risk.md` 는 Round 1 에서 모두 작성됐다(`orm-raw-repository` 와 같은
+   CRP 템플릿)
 
 **T-1 을 먼저 하는 이유**: T-2 는 "어디를 가리킬지", T-3 은 "무엇을 잠글지" 가
 정해져야 쓸 수 있다. 반대로 하면 두 번 고친다.
