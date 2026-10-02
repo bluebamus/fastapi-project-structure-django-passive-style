@@ -62,7 +62,17 @@ def _wait_until_serving(port: int, process: subprocess.Popen[bytes]) -> None:
                 return
         except OSError:
             time.sleep(0.2)
-    raise TimeoutError(f"{STARTUP_TIMEOUT_SECONDS:.0f}s 안에 uvicorn 이 뜨지 않았다")
+    # 시간 초과 쪽에도 출력을 붙인다. 위 종료 경로에만 붙어 있어서, 프로세스가 **살아 있는 채로**
+    # 못 뜨면(예: Redis 가 없어 startup 이 재시도를 돈다) "40s 안에 안 떴다" 한 줄만 남고 원인이
+    # 통째로 사라졌다. 읽기 전에 먼저 죽인다 — 살아 있으면 `read()` 가 막힌다.
+    process.terminate()
+    try:
+        output = process.communicate(timeout=10)[0] or b""
+    except subprocess.TimeoutExpired:
+        process.kill()
+        output = process.communicate()[0] or b""
+    tail = "\n".join(output.decode("utf-8", "replace").strip().splitlines()[-15:])
+    raise TimeoutError(f"{STARTUP_TIMEOUT_SECONDS:.0f}s 안에 uvicorn 이 뜨지 않았다\n{tail}")
 
 
 @pytest.fixture(scope="session")
@@ -71,10 +81,12 @@ def live_server() -> Iterator[str]:
 
     `DEBUG=true` 여야 `/docs` 가 열린다 — 운영 모드에서는 의도적으로 차단된다.
 
-    **DB 가 필요하다.** Scalar 자체는 `/openapi.json` 만 읽지만, 개발 모드 startup 이
-    `create_db_tables()` 로 DB 에 붙는다. 붙지 못하면 앱이 아예 뜨지 않는다 — 그래서
-    `compose.test.yaml` 의 테스트 인스턴스를 가리킨다. 자격증명은 통합 테스트
-    하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이 갈린다).
+    **DB 와 Redis 가 둘 다 필요하다.** Scalar 자체는 `/openapi.json` 만 읽지만, 개발 모드
+    startup 이 `create_db_tables()` 로 DB 에 붙고 Redis 에 `ping()` 을 보낸다. 둘 중 하나라도
+    없으면 앱이 아예 뜨지 않는다 — 그래서 `compose.test.yaml` 의 테스트 인스턴스를 가리킨다.
+    MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
+    갈린다). Redis 는 기본값(`REDIS_HOST`·`REDIS_PORT`)을 그대로 쓰므로 **환경에 떠 있어야
+    한다** — `compose.test.yaml` 의 redis 서비스가 그 자리다.
 
     stdout/stderr 는 버리지 않고 파이프로 받는다 — 시작이 실패했을 때 그 이유가
     보여야 한다(처음에 DEVNULL 로 버려서 "연결 거부" 만 보고 원인을 몰랐다).

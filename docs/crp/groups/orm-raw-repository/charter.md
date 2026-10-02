@@ -15,7 +15,7 @@
 | 예제 기능 | `app/features/<catalog>`, `app/features/<reports>` | 소스+테스트 | **신규** 시나리오 2종 (plan §7) |
 | 문서 계약 | `app/core/tags_metadata.py`, OpenAPI/Scalar | 소스 | plan §8 |
 | 통합 테스트 환경 | `compose.test.yaml`, `pyproject.toml` (`mysql` marker) | 설정 | **신규** (ADR-004) |
-| 기준 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/QUICKSTART.md` | 문서 | passive 정합성 복구 (plan §10.1 D) |
+| 기준 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/QUICKSTART.md` | 문서 | passive 정합성 복구 (plan §10.1 D). `QUICKSTART.md` 는 ADR-S07(2026-09-17)로 README 에 흡수·삭제 |
 | 명세 3종 | `docs/specs/orm-raw-repository/{requirements,development-plan,workflow-guide}.md` | 문서 | 요구·계획·지침 원본 |
 
 - 착수 기준선 커밋: `9c93803` · 소스 `.py` **158** · 테스트 파일 **62** · 수집 테스트 **307**
@@ -34,7 +34,7 @@
 ## 2. 계약 (Contract)
 
 ### 2-1. 지원 구성
-- Python 3.12 · SQLAlchemy async · SQLite(단위) / MySQL 8.4(통합, compose 전용 포트 3308)
+- Python >=3.13 · SQLAlchemy async · SQLite(단위) / MySQL 8.4(통합, compose 전용 포트 3309 — ADR-006)
 - 앱 합류는 `config.INSTALLED_APPS` + `apps.py` AppConfig 경로만 지원
 
 ### 2-2. 위협 모델
@@ -75,13 +75,13 @@
 
 ## 3. 인수 기준 (GATE 3 체크리스트)
 - [x] 전 테스트 실제 실행·통과 — 완료 시점 **594 passed / 0 skipped**(run-log Round 10), 2026-08-20 재측정 **632 passed / skip·xfail·deselect 0**
-- [x] `pytest -m mysql` 이 compose 인스턴스에서 실제 실행 — 2026-08-20 재측정 **22 passed / skip 0**. 게이트 7단계가 skip 을 실패로 처리한다
+- [x] `pytest -m mysql` 이 compose 인스턴스에서 실제 실행 — 2026-08-20 재측정 **22 passed / skip 0**. 게이트의 `pytest -m mysql` 단계가 skip 을 실패로 처리한다
 - [x] alembic upgrade head → downgrade → 재-upgrade → drift 0 — `tests/integration/test_mysql_migration_roundtrip.py` 5건 (`head_to_base_to_head_round_trip` · `new_revisions_have_a_working_downgrade` · `migrated_schema_matches_the_registry_models` 등), MySQL 에서 실제 실행
 - [x] mypy·정적분석 클린, stdio UTF-8 고정 — 게이트 1~4단계(ruff format·ruff check·mypy·bandit) + `tests/test_layering_and_openapi.py::test_ci_pins_utf8_stdio` · `::test_python_subprocesses_in_tests_force_utf8`
 - [x] 불변식 구조 증거: **INV-1~25** 각각에 검사가 연결됨
       (이 줄의 문구는 v0.1 당시 **INV 6개** 기준이었고 이후 §2-3 이 25개로 늘었다.
       2026-08-20 재검수에서 전수 대조했다 — 아래 매핑 참조)
-- [x] OpenAPI 문서 규칙 비공허성 검증 — 게이트 6단계 `scripts/openapi_revert_check.py` ("규칙이 실제로 결함을 잡는지 — 통과만으로는 알 수 없다")
+- [x] OpenAPI 문서 규칙 비공허성 검증 — 게이트의 `OpenAPI 규칙 fail-on-revert` 단계(`scripts/openapi_revert_check.py`) ("규칙이 실제로 결함을 잡는지 — 통과만으로는 알 수 없다")
 - [x] 질의 수준(design-baseline §0 = 적극) 준수 — Round 0~11 각 라운드 로그에 P/D 질의와 결정 근거가 남아 있다
 
 

@@ -41,7 +41,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | Task Queue | Celery 5 |
 | Auth | OAuth2 Password + PyJWT + bcrypt |
 | Admin / Docs | SQLAdmin / Scalar |
-| Quality | pytest, Ruff, mypy, Bandit, Playwright |
+| Quality | pytest, Ruff, mypy, Bandit, pip-audit, Playwright |
 
 정확한 버전 범위는 `pyproject.toml` 과 `uv.lock` 이 기준입니다.
 
@@ -290,8 +290,8 @@ curl -X POST localhost:8000/api/v1/auth/refresh -H 'Content-Type: application/js
 | `docs/crp/groups/` | 검수 이력 (append-only) | 코드 주석의 `ADR-*`·`C-*`·`F-*`·`L-*` 인용과 설계 결정의 근거를 찾을 때 |
 
 명세 3종은 **2026-08 착수 시점의 고정 기준선**이라 내용을 고치지 않습니다. 현재 사용법은 위 가이드가 기준입니다.
-코드와 문서가 어긋나면 코드가 정답이며, 확인한 뒤 문서를 고칩니다. 문서 정합성(경로·심볼·환경변수·링크·앵커, HTML 의
-`data-source`·코드 경로 포함)은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사합니다.
+코드와 문서가 어긋나면 코드가 정답이며, 확인한 뒤 문서를 고칩니다. 문서 정합성(경로·심볼·환경변수·링크·앵커, 문서가 인용한
+비밀값, HTML 의 `data-source`·코드 경로 포함)은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py`·`tests/test_docs_secret_examples.py` 가 검사합니다.
 
 ## 참고 자료
 
