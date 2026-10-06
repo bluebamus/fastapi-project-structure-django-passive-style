@@ -12,6 +12,18 @@
 
 ``response_model`` 은 데코레이터 시점에 이미 원래 클래스로 고정되므로 OpenAPI 는
 바뀌지 않는다 — 바꿔 끼우는 것은 핸들러 본문이 참조하는 모듈 전역 이름뿐이다.
+
+**2026-10-06: 트랜잭션 경계 두 성질을 여기로 모았다.** 같은 `counting_client` 와 같은
+``CASES`` 로 "쓰기 성공은 **정확히 1회** 커밋한다" 와 "없는 리소스 수정(404)은 커밋하지
+않는다" 를 쓰기 라우트를 가진 **여섯 앱 전부**에 돌린다. 전에는 `blog`·`catalog` 두
+기능의 `tests/test_transaction_boundary.py` 에만 있어서 `reply`·`sns`·`user` 가 비어
+있었다. 기능마다 파일을 만들지 않은 이유는 `tests/test_read_path_no_commit.py` 가 적어 둔
+그대로다 — **도메인마다 픽스처를 복제하면 도메인 수만큼 복제본이 생긴다.**
+
+왜 정적 가드로는 부족한가: `test_read_path_no_commit.py` 는 "핸들러 본문에 커밋이 있다"
+까지만 본다. 서비스나 Repository 가 **또** 커밋해도, 404 경로가 커밋해도 구조 검사는
+통과한다 — 실행해 봐야 보인다. 반대로 "커밋 실패가 2xx 로 둔갑하지 않는다" 는 여기 없다:
+그것은 앱 성질이 아니라 FastAPI 거동이라 `blog` 의 같은 이름 파일 **한 곳**이 정본이다.
 """
 
 from __future__ import annotations
@@ -230,3 +242,43 @@ async def test_dto_failure_leaves_nothing_committed(counting_client, monkeypatch
             assert row is not None
             for key in case.update or {}:
                 assert getattr(row, key) == created[key], f"{key} 가 실패한 요청으로 바뀌었다"
+
+
+#: 어떤 앱에도 없는 PK. 모든 모델이 `UUIDPrimaryKeyMixin` 을 쓰므로 모양은 유효하고
+#: 조회만 실패한다 — 422(형식 오류)가 아니라 404 가 나와야 한다.
+_MISSING_ID = "00000000-0000-0000-0000-000000000000"
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.name)
+async def test_write_commits_exactly_once(counting_client, case: WriteCase):
+    """쓰기 성공은 **정확히 1회** 커밋한다 — 2회 이상이면 커밋 주체가 둘이다.
+
+    정적 가드(`test_read_path_no_commit.py`)는 "핸들러 본문에 커밋이 있다" 까지만 본다.
+    서비스나 Repository 가 **또** 커밋해도 구조 검사는 통과한다 — 그건 실행해 봐야 보인다.
+    """
+    client, calls, _ = counting_client
+
+    resp = await client.post(case.collection, json=case.create)
+    assert resp.status_code == 201, resp.text
+    assert calls["commit"] == 1, f"생성 성공이 {calls['commit']}회 커밋했다"
+
+    if case.update is None:
+        return
+
+    calls["commit"] = 0
+    item_id = resp.json()["id"]
+    resp = await client.patch(f"{case.collection}/{item_id}", json=case.update)
+    assert resp.status_code == 200, resp.text
+    assert calls["commit"] == 1, f"수정 성공이 {calls['commit']}회 커밋했다"
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.update is not None], ids=lambda c: c.name)
+async def test_not_found_path_does_not_commit(counting_client, case: WriteCase):
+    """없는 리소스 수정(404)은 커밋 없이 끝나야 한다 — 커밋하면 부분 저장 위험이다."""
+    client, calls, _ = counting_client
+    calls["commit"] = 0
+
+    resp = await client.patch(f"{case.collection}/{_MISSING_ID}", json=case.update)
+
+    assert resp.status_code == 404, resp.text
+    assert calls["commit"] == 0, f"404 경로가 {calls['commit']}회 커밋했다"

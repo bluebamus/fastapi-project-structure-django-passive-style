@@ -19,6 +19,12 @@
 | 명세 3종 | `docs/specs/orm-raw-repository/{requirements,development-plan,workflow-guide}.md` | 문서 | 요구·계획·지침 원본 |
 
 - 착수 기준선 커밋: `9c93803` · 소스 `.py` **158** · 테스트 파일 **62** · 수집 테스트 **307**
+  > **세는 기준이 기록되지 않았다(2026-10-06 확인).** 같은 커밋에서 일곱 가지 기준으로
+  > 다시 세어도 158·62 가 재현되지 않는다 — 가장 가까운 것이 `.py` 중 `__init__.py` 제외
+  > **159**, 테스트 제외 소스 **160**, 테스트 파일 `__init__` 제외 **66** 이다.
+  > **숫자는 고치지 않는다.** 이것은 착수 시점의 실측 기록이고, 오늘 다른 기준으로 센
+  > 값을 그 자리에 넣으면 없던 측정을 만들어 내는 것이다. 현재 실측은 run-log·checklist 가
+  > 갖는다.
 - 기준선 상태(Round 0): 306 passed / 1 failed
 - Round 1 종료: 353 passed / 0 skipped · coverage 89.75% — 착수 게이트 A~E 완료
 - Round 2 종료: 361 passed / 0 skipped · coverage 89.75% — Phase 0 완료.

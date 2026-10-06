@@ -6,7 +6,11 @@
 1. 읽기 경로는 커밋하지 않는다
 2. 쓰기 성공은 정확히 1회 커밋한다
 3. 예외 경로는 커밋 없이 끝난다
-4. 커밋 실패는 2xx 로 둔갑하지 않는다
+
+**"커밋 실패가 2xx 로 둔갑하지 않는다" 는 여기 없다.** 그것은 앱 성질이 아니라
+**FastAPI 거동**(yield 의존성의 종료 코드가 응답 전송 앞에 도는가)이고, 앱마다 재면
+프레임워크를 앱 수만큼 시험하는 것이다. 정본은 `blog` 의 같은 이름 파일 하나다 —
+FastAPI 상향 때 거기가 먼저 빨개진다.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ async def tx_client():
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    calls = {"commit": 0, "rollback": 0, "fail_commit": False}
+    calls = {"commit": 0, "rollback": 0}
 
     async def _override_get_session():
         async with maker() as session:
@@ -45,8 +49,6 @@ async def tx_client():
 
             async def _counting_commit(*args, **kwargs):
                 calls["commit"] += 1
-                if calls["fail_commit"]:
-                    raise RuntimeError("injected commit failure")
                 return await original_commit(*args, **kwargs)
 
             async def _counting_rollback(*args, **kwargs):
@@ -91,14 +93,3 @@ async def test_exception_path_rolls_back_without_commit(tx_client):
 
     assert resp.status_code == 404
     assert calls["commit"] == 0, "예외 경로가 커밋함 — 부분 저장 위험"
-
-
-async def test_commit_failure_is_not_reported_as_success(tx_client):
-    """커밋이 실패했는데 클라이언트가 2xx 를 받으면 데이터 불일치다."""
-    client, calls = tx_client
-    calls["fail_commit"] = True
-
-    resp = await client.post("/api/v1/catalog/products", json=_NEW)
-
-    assert calls["commit"] == 1, "커밋이 시도되지 않아 이 테스트가 무의미해졌다"
-    assert resp.status_code >= 500, f"커밋이 실패했는데 클라이언트는 {resp.status_code} 를 받았다"
