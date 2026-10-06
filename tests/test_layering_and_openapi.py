@@ -171,3 +171,41 @@ def test_python_subprocesses_in_tests_force_utf8():
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {line.strip()}")
 
     assert not offenders, f"-X utf8 없이 파이썬 자식 프로세스를 띄운다: {offenders}"
+
+
+def test_playwright_is_used_through_the_async_api_only():
+    """Playwright 는 async API 로만 쓴다 (C-33 / ADR-024).
+
+    sync API 는 자기 이벤트 루프를 돌린다. 이 저장소는 ``asyncio_mode=auto`` 라
+    pytest-asyncio 가 같은 스레드에서 루프를 돌리고, 둘이 겹치면
+    ``RuntimeError: This event loop is already running`` 으로 **브라우저와 무관한 테스트
+    수백 개가 함께 죽는다**(기록: 38 failed / 124 errors). 증상이 원인을 전혀 가리키지
+    않는 종류라 기계가 이름을 불러 주는 값이 크다. 마커로 나눠 돌리면 가려지므로 마커와
+    무관하게 소스에서 본다.
+
+    판정은 **AST 의 import 문**으로 한다. 문자열 검색으로 했더니 이 파일과
+    ``tests/browser/conftest.py`` 의 **독스트링이 금지 이름을 설명으로 적고 있어서** 둘 다
+    위반으로 잡혔다 — 금지 대상은 "그 이름을 언급하는 것" 이 아니라 "그 모듈을 import
+    하는 것" 이다.
+    """
+    banned = "playwright.sync_api"
+    offenders: list[str] = []
+    for path in (REPO_ROOT / "tests").rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                names = [module, *(f"{module}.{a.name}" for a in node.names)]
+            else:
+                continue
+            if any(name == banned or name.startswith(banned + ".") for name in names):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+
+    assert not offenders, (
+        f"Playwright sync API 를 import 한다: {offenders} — `async_playwright` 로 바꿀 것. "
+        "sync API 는 자기 루프를 돌려 asyncio 테스트 전체를 깨뜨린다(C-33)."
+    )
