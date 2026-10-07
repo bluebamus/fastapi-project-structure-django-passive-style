@@ -116,8 +116,14 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                 "addopts=",
                 "-m",
                 "not mysql and not browser",
+                # skip 사유를 찍는다 — 사유 없이 "안 돌았다" 만 알면 고칠 수가 없다.
+                "-rsxX",
             ],
             why="계층 불변식·공개 API baseline·OpenAPI 규칙이 모두 여기 들어 있다",
+            # 단위 단계에도 skip 을 실패로 본다(2026-10-07). 전에는 mysql·browser 단계에만 있어서
+            # `tests/test_docs_secret_examples.py` 처럼 조건부로 skip 하는 테스트가 **조용히
+            # 빠진 채** 게이트가 초록일 수 있었다 — 문서가 사라지면 비밀값 검사가 통째로 안 돈다.
+            forbidden=SKIP_MARKERS,
         ),
         Step(
             name="OpenAPI 규칙 fail-on-revert",
@@ -192,8 +198,9 @@ def run_step(step: Step, *, env: dict[str, str]) -> tuple[bool, str]:
     if hit is not None:
         tail = "\n".join(output.strip().splitlines()[-10:])
         return False, (
-            f"통과했지만 '{hit}' 가 출력에 있다 — 인프라가 없어 실행되지 않았다는 뜻이다.\n"
-            f"컨테이너를 띄우거나 --fast 로 명시적으로 제외할 것.\n{tail}"
+            f"통과했지만 '{hit}' 가 출력에 있다 — 실행되지 않은 테스트가 있다. 안 돈 것은 통과가 아니다.\n"
+            f"사유는 아래 SKIPPED 줄에 있다 — 인프라 부재면 컨테이너를 띄우거나 --fast 로 명시적으로 "
+            f"제외하고, 조건부 skip 이면 그 조건을 고칠 것.\n{tail}"
         )
     return True, ""
 
