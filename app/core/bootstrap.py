@@ -360,7 +360,15 @@ def create_app(
         app.state.admin = create_admin(
             app, engine, app_registry, title=f"{app_settings.PROJECT_NAME} Admin"
         )
-        logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
+        if app_settings.ENV in ("production", "staging"):
+            # 여기 왔다면 ADMIN_UNAUTHENTICATED_ACK=true 다(없으면 AppSettings 가 기동을 멈춘다).
+            # 운영 로그를 보는 사람이 이 상태를 놓치지 않도록 매 기동 경고한다.
+            logger.warning(
+                "SQLAdmin 이 인증 없이 열려 있습니다 (ENV=%s, ADMIN_UNAUTHENTICATED_ACK=true): /admin",
+                app_settings.ENV,
+            )
+        else:
+            logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
     else:
         logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
 
