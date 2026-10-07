@@ -22,7 +22,7 @@ Dependency → Service → Repository 흐름, read-only/writer 세션 선택, �
 검증, App Registry 기반 라우터 취합, OpenAPI/Scalar 문서 품질, 예외·테스트·정적검사 기준은
 두 방식이 같아야 한다. 요구·계획·지침 3종 명세는 `docs/specs/orm-raw-repository/` 에 있다.
 
-sibling 저장소 `fastapi-default-project-structure` 는 같은 작업을 이미 완주했고(`db49e9c`,
+sibling 저장소 `fastapi-default-project-structure` 는 같은 작업을 이미 완주했고(`511fa86`,
 CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피드백**으로 이관받는다.
 
 ## 2. 요구사항 레지스터 (append-only)

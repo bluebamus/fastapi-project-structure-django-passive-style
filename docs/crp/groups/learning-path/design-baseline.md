@@ -13,7 +13,7 @@
 
 ## 1. 목적 / 배경
 
-`orm-raw-repository` 그룹(Phase 0~7, `aec451d`)이 Raw Base·예제 2종·게이트·검사를 모두
+`orm-raw-repository` 그룹(Phase 0~7, `e1b0991`)이 Raw Base·예제 2종·게이트·검사를 모두
 만들었다. 그런데 그 결과가 **CRP 문서와 설계 문서에만 기록**됐고, 학습자가 읽는 문서
 (README·QUICKSTART·ARCHITECTURE·project-guide)는 Phase 3 시점에 멈춰 있다.
 
@@ -31,8 +31,8 @@
 | Req-ID | 날짜 | 요청(원문 요약) | 도출된 요구사항 | 상태 | 연결 |
 |---|---|---|---|---|---|
 | REQ-L01 | 2026-08-20 | 개발자가 Django 스타일 app 수동 인지 구조와 ORM/Raw 각 워크플로·개발 룰을 이해·학습할 수 있도록 설계·구조·코드를 검수 | 진입 문서 3종 + `project-guide` 가 Phase 7 현재 코드를 반영하고, 그 상태가 기계 검사로 잠긴다 | Active | audit-report §2~§5 |
-| REQ-L02 | 2026-08-20 | 검수 결과 문서를 기반으로 후속 작업이 진행되도록 | `audit-report.md` + `charter.md` 를 착수 명세로 확정 | Active | 3cbb354 |
-| REQ-L03 | 2026-08-20 | compact 후 작업 재검토 | 실측 재확인 중 L-007·L-008 발견, 착수 순서 T-4a 선행으로 재배열 | Active | b88f654 |
+| REQ-L02 | 2026-08-20 | 검수 결과 문서를 기반으로 후속 작업이 진행되도록 | `audit-report.md` + `charter.md` 를 착수 명세로 확정 | Active | f38f4e9 |
+| REQ-L03 | 2026-08-20 | compact 후 작업 재검토 | 실측 재확인 중 L-007·L-008 발견, 착수 순서 T-4a 선행으로 재배열 | Active | 75720c7 |
 | REQ-L04 | 2026-08-20 | 진행 | T-4a → T-1 → T-2 → T-3 실행 | Active | Round 1~ |
 
 ## 3. 설계 결정 기록 (ADR)

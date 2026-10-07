@@ -5,7 +5,7 @@
 | 그룹 | `learning-path` |
 | 상태 | **작업 완료 (Round 1.3, CONVERGED)** · 사람 판정 1건 대기(RL-03) |
 | 착수 근거 | `audit-report.md` (2026-08-20 검수) |
-| 선행 그룹 | `orm-raw-repository` (Phase 0~7 완료, `aec451d`) |
+| 선행 그룹 | `orm-raw-repository` (Phase 0~7 완료, `e1b0991`) |
 
 ---
 

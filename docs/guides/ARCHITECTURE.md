@@ -291,7 +291,7 @@ DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성
 ### 2.8 코드 주석의 요구 ID 색인
 
 코드·테스트 주석의 `FR-*`·`CR-*`·`NFR-*`·`SEC-*`·`AC-*` 와 `§6.x` 는 registry 이식(2026-08-12) 때의 통합 계획서
-번호다. 계획서는 구축 완료 후 커밋 `602afb7` 에서 삭제했고(원문은 그 부모 커밋에 있다), 의미는 아래가 유지한다. `RAW-REP-*`·`NFR-0xx`·`DOC-*`·`development-plan §N`·`Phase N` 은
+번호다. 계획서는 구축 완료 후 커밋 `7dc527b` 에서 삭제했고(원문은 그 부모 커밋에 있다), 의미는 아래가 유지한다. `RAW-REP-*`·`NFR-0xx`·`DOC-*`·`development-plan §N`·`Phase N` 은
 `docs/specs/orm-raw-repository/` 를, `ADR-*`·`C-*`·`F-*`·`L-*` 는 `docs/crp/groups/` 를 가리킨다.
 
 | ID | 의미 |
