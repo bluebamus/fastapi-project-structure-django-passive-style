@@ -110,6 +110,26 @@ cd fastapi-project-structure-django-passive-style
 
 이후 모든 명령은 저장소 루트에서 실행합니다.
 
+### 0단계 — `.env` 준비
+
+```bash
+uv sync
+cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마다 한 번씩, 세 번 실행
+```
+
+`.env` 에서 아래를 바꿉니다. 바꾸지 않으면 **개발 환경에서도 기동하지 않습니다**(설정 검증). 오류 메시지에
+고칠 설정 이름이 나오므로 그대로 따라 고치면 됩니다.
+
+| 설정 | 할 일 |
+|---|---|
+| `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` | 위 명령으로 만든 값을 **서로 다르게** 넣는다(32자 이상) |
+| `MYSQL_PASSWORD` | 2단계에서 띄울 MySQL 의 비밀번호와 같은 값. 비워 두거나 예시 값이면 거부 |
+| `SMTP_PASSWORD` | 메일을 안 쓰면 **비운다**. 예시 값을 남겨 두면 거부 |
+
+`.env` 가 없으면 기동하지 않습니다. 파일 없이 환경 변수로 주입하는 경우(컨테이너)는 `ENV`·비밀 키 3종·
+`MYSQL_HOST/USER/PASSWORD/DATABASE` 가 모두 있어야 합니다. 테스트(`ENV=test`, pytest 가 지정)는 이 검증을 하지 않습니다.
+
 ### 1단계 — Redis 만으로 HTTP 배선 확인
 
 앱은 기동할 때 `REDIS_HOST`/`REDIS_PORT` 로 `ping()` 하고, 실패하면 시작하지 않습니다(`DEBUG` 와 무관).
@@ -117,10 +137,9 @@ MySQL 없이 배선을 보려면 `DEBUG=false` 로 개발용 테이블 생성을
 
 ```bash
 docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine
-uv sync
 DEBUG=false uv run uvicorn main:app --port 8000
 curl http://127.0.0.1:8000/health
-# {"status":"healthy","version":"0.1.0"}   ← .env 가 없을 때의 VERSION 기본값
+# {"status":"healthy","version":"1.0.0"}   ← .env.example 의 VERSION
 ```
 
 PowerShell:
@@ -147,11 +166,12 @@ API 문서를 보려면 `DEBUG=true` 여야 하고, `DEBUG=true` 는 MySQL 을 �
 
 ```bash
 docker run -d --name fastapi-mysql -p 3306:3306 \
-  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=fastapi_db mysql:8.4
+  -e MYSQL_ROOT_PASSWORD='<.env 의 MYSQL_PASSWORD 와 같은 값>' -e MYSQL_DATABASE=fastapi_db mysql:8.4
 uv run uvicorn main:app --reload --port 8000
 ```
 
-기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, 빈 `MYSQL_PASSWORD`, `MYSQL_DATABASE=fastapi_db`)에 맞춘 로컬 전용 예시입니다.
+기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, `MYSQL_DATABASE=fastapi_db`)에 맞춘 로컬 전용 예시입니다.
+빈 비밀번호는 개발 환경에서도 설정 검증이 거부하므로 비밀번호를 지정합니다.
 MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
 `CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;` 를 씁니다.
 
@@ -162,12 +182,8 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 
 설정은 프로세스 환경변수 → 작업 디렉터리의 `.env` → 코드 기본값 순으로 읽습니다. `.env.example` 은 복사용 전체 목록이며 자동으로 읽히지 않습니다.
 
-```bash
-cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
-```
-
-복사하면 `MYSQL_PASSWORD=change-this-mysql-password`·`VERSION=1.0.0` 등 예시값이 들어가므로 환경에 맞게 고칩니다.
-비밀번호·비밀키 예시값은 배포 안전 검사가 **잡는** placeholder 입니다 — `ENV` 가 staging/production 이면 그대로 둔 채로는 기동하지 못합니다.
+복사하는 방법은 0단계에 있습니다. 비밀번호·비밀키 예시값은 설정 검증이 **잡는** placeholder 입니다 — `ENV=test` 가 아니면
+(개발 환경 포함) 그대로 둔 채로는 기동하지 못합니다.
 
 | 변수 | 기본값 | 의미 |
 |---|---|---|
@@ -175,9 +191,9 @@ cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -D
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()` 대상. 연결 실패 시 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
 | `ADMIN` | `true` | `/admin` 이 **인증 없이** 열린다(개발 편의 결정) |
-| `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다. 비밀키가 placeholder 이거나 access·refresh 키가 같아도, `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 여도 실패한다 |
+| `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다(승인하면 매 기동 WARNING). `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 여도 실패한다. 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | 로컬(development/test)은 그대로 써도 된다. staging/production 은 placeholder(빈 값·`your-` 시작·`change-this` 포함)면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
 > **`/admin` 에는 인증이 없습니다.** `ADMIN=true` 면 앱에 도달할 수 있는 누구나 사용자·게시글·접속 로그 등을 조회·수정·삭제하고
 > 내보낼 수 있습니다(비밀번호 해시만 제외). 운영·스테이징은 `ADMIN=false` 를 명시하세요. 배포 체크리스트는
@@ -204,8 +220,9 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 | `/docs` 가 404 | `DEBUG=false` | `DEBUG=true` (MySQL 필요) |
 | 기능 API 만 500, `/ready` 503 | DB 없음 | 2단계 진행 |
 | 새 기능 route 가 안 보임 | `INSTALLED_APPS` 미등록 또는 `<name>_router` 이름 불일치 | 아래 절 참고. module 은 있는데 공개 이름이 없거나 import 가 깨지면 **기동이 실패**한다 |
+| `.env 파일이 없고, 필수 설정이 …` | `.env` 가 없다 | 0단계. 컨테이너라면 메시지에 나온 환경 변수를 주입 |
 | production 설정에서 기동 실패 | `ENV` 가 production/staging 인데 `ADMIN=true` | `ADMIN=false` 또는 프록시 차단 후 `ADMIN_UNAUTHENTICATED_ACK=true` |
-| production 설정에서 기동 실패 (`배포 설정이 안전하지 않습니다`) | 비밀키가 placeholder 이거나 access·refresh 키가 같다 / `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, debug 모드는 끈다 |
+| 기동 실패 (`설정이 안전하지 않습니다`) | 비밀키·비밀번호가 placeholder·빈 값·32자 미만이거나 access·refresh 키가 같다(개발 환경 포함) / 배포 환경의 `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, 안 쓰는 Redis·SMTP 비밀번호는 비운다, debug 모드는 끈다 |
 
 ## 앱 설치 — 목록에 한 줄
 

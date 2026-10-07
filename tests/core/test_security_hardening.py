@@ -26,6 +26,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: 로그에 절대 나타나면 안 되는 값. 실제 유출을 흉내내는 카나리아다.
 SECRET_CANARY = "s3cr3t-canary-do-not-log-9f2b"
 
+# 설정 검증(.env 출처·placeholder·길이)을 통과하는 값 — 로컬 `.env` 와 무관하게 결과를 고정한다.
+_VALID_SECRETS = {
+    "ACCESS_TOKEN_SECRET_KEY": "k7Qe2mZ9vX1pL4rT8wY3nB6cH0sD5fGa-access",
+    "REFRESH_TOKEN_SECRET_KEY": "Jm3Nq8Rt1Vw6Xy9Za2Bc5De0Fg4Hi7Kl-refresh",
+    "SESSION_SECRET_KEY": "Pq9Rs2Tu5Vw8Xy1Za4Bc7De0Fg3Hi6Jk-session",
+    "MYSQL_HOST": "127.0.0.1",
+    "MYSQL_USER": "app",
+    "MYSQL_PASSWORD": "Wz4Xa7Bc0De3Fg6Hi9Jk2Lm5No8Pq1Rs-mysql",
+    "MYSQL_DATABASE": "app",
+    "REDIS_PASSWORD": "",
+    "SMTP_PASSWORD": "",
+}
+
 
 # =============================================================================
 # 1. SQL 유출 차단 (C-5)
@@ -157,11 +170,12 @@ def _env_example_values() -> dict[str, str]:
     return values
 
 
-def test_env_example_passes_settings_validation(monkeypatch: pytest.MonkeyPatch):
-    """`.env.example` 을 그대로 `.env` 로 써도 Settings 검증을 통과한다.
+def test_env_example_only_asks_to_fill_secrets(monkeypatch: pytest.MonkeyPatch):
+    """`.env.example` 을 그대로 `.env` 로 쓰면 **비밀값을 채우라는 오류 하나만** 난다.
 
-    통과하지 못하면 "복사해서 시작하세요"라는 안내가 곧바로 기동 실패로 이어진다.
-    실제로 CORS wildcard + credentials 조합이 그 상태였다.
+    Settings 의 타입·조합 검증(CORS wildcard + credentials 등)은 통과해야 한다 — 실제로
+    그 조합이 막혀 "복사해서 시작하세요" 가 엉뚱한 오류로 이어진 적이 있다. 반면 예시
+    비밀키·비밀번호는 개발 환경에서도 거부된다(그대로 쓰지 말고 채우라는 신호).
     """
     values = _env_example_values()
     assert values, ".env.example 파싱 결과가 비었다 — 검사가 헛통과한다"
@@ -171,13 +185,16 @@ def test_env_example_passes_settings_validation(monkeypatch: pytest.MonkeyPatch)
 
     import config as config_module
 
-    importlib.reload(config_module)
     try:
-        assert config_module.app_settings is not None
+        with pytest.raises(ValueError) as excinfo:
+            importlib.reload(config_module)
+        assert not isinstance(excinfo.value, ValidationError), "타입·조합 검증에서 막혔다"
+        message = str(excinfo.value)
+        for key in ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY"):
+            assert key in message
     finally:
-        # 다른 테스트가 오염된 설정을 보지 않도록 되돌린다.
-        for key in values:
-            monkeypatch.delenv(key, raising=False)
+        # 다른 테스트가 오염된 설정을 보지 않도록 원래 환경(pytest 의 ENV=test)으로 되돌린다.
+        monkeypatch.undo()
         importlib.reload(config_module)
 
 
@@ -402,9 +419,8 @@ def test_sql_echo_is_rejected_in_production(env: str, monkeypatch: pytest.Monkey
     with pytest.raises(ValueError, match="LOG_SQL_ECHO_ENABLED"):
         importlib.reload(config_module)
 
-    # 오염된 설정을 남기지 않는다.
-    for key in ("ENV", "LOG_SQL_ECHO_ENABLED", "ADMIN"):
-        monkeypatch.delenv(key, raising=False)
+    # 오염된 설정을 남기지 않는다 — 원래 환경(pytest 의 ENV=test)으로 되돌린다.
+    monkeypatch.undo()
     importlib.reload(config_module)
 
 
@@ -413,6 +429,9 @@ def test_sql_echo_is_allowed_in_development(env: str, monkeypatch: pytest.Monkey
     """개발·테스트에서는 열 수 있다 — 디버깅 경로를 없애지는 않는다."""
     monkeypatch.setenv("ENV", env)
     monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "true")
+    # 개발 환경도 비밀값을 검증한다 — 로컬 `.env` 내용·유무와 무관하게 통과할 값을 준다.
+    for key, value in _VALID_SECRETS.items():
+        monkeypatch.setenv(key, value)
 
     import config as config_module
 
@@ -420,8 +439,7 @@ def test_sql_echo_is_allowed_in_development(env: str, monkeypatch: pytest.Monkey
         importlib.reload(config_module)
         assert config_module.log_settings.LOG_SQL_ECHO_ENABLED is True
     finally:
-        monkeypatch.delenv("ENV", raising=False)
-        monkeypatch.delenv("LOG_SQL_ECHO_ENABLED", raising=False)
+        monkeypatch.undo()
         importlib.reload(config_module)
 
 

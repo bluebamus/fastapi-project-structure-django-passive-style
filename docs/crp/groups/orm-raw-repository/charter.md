@@ -89,7 +89,7 @@
       2026-08-20 재검수에서 전수 대조했다 — 아래 매핑 참조)
 - [x] OpenAPI 문서 규칙 비공허성 검증 — 게이트의 `OpenAPI 규칙 fail-on-revert` 단계(`scripts/openapi_revert_check.py`) ("규칙이 실제로 결함을 잡는지 — 통과만으로는 알 수 없다")
 - [x] 질의 수준(design-baseline §0 = 적극) 준수 — Round 0~11 각 라운드 로그에 P/D 질의와 결정 근거가 남아 있다
-
+- [x] (ADR-036) 설정 검증 — `.env` 출처, 예시 비밀값·32자 미만 키(test 외 모든 ENV), 승인으로 연 배포 환경 `/admin` 의 기동 WARNING → `tests/core/test_deployment_safety.py` · `tests/core/test_security_hardening.py`
 
 ### 3-1. 불변식 → 검사 매핑 (2026-08-20 전수 대조)
 
@@ -142,3 +142,5 @@
 - v0.6 (2026-08-20): 재검수. 미체크로 남아 있던 인수 기준 7칸을 근거와 함께 닫고,
   불변식 범위 문구를 실제 집합(INV-1~25)에 맞췄다. §3-1 매핑표를 추가했다.
   인수 기준 자체는 바꾸지 않았다.
+- v0.7 (2026-10-07): §3 에 설정 검증(ADR-036) 칸을 더했다 — 비밀값 판정이 test 외 모든 ENV 로 넓어지고 `.env` 출처
+  검증과 승인 시 기동 WARNING 이 생겼다.

@@ -15,6 +15,8 @@
     3. Field의 default 값
 """
 
+import os
+from collections.abc import Mapping
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -1288,7 +1290,7 @@ _validate_cross_settings()
 
 
 # =============================================================================
-# 배포 안전 검증 — 운영·스테이징에 placeholder 비밀키를 들고 가는 사고를 막는다
+# 설정 검증 — `.env` 출처와 placeholder 비밀키(test 외 모든 ENV), 배포 환경의 debug 모드
 # =============================================================================
 def is_placeholder_secret(value: str) -> bool:
     """예시·기본값 그대로인 비밀키인지 판정한다(빈 값, ``your-`` 시작, ``change-this`` 포함)."""
@@ -1296,14 +1298,56 @@ def is_placeholder_secret(value: str) -> bool:
     return "change-this" in v or v.startswith("your-") or v == ""
 
 
+# 서명·세션 키의 최소 길이. `secrets.token_urlsafe(48)` 은 64자다.
+SECRET_KEY_MIN_LENGTH = 32
+
+# `.env` 파일이 없을 때 환경 변수로 **직접** 들어와야 하는 값. 컨테이너처럼 파일 없이
+# 주입하는 배포는 이것들이 모두 있으면 통과한다. 하나라도 없으면 코드 기본값으로 뜨게 되므로
+# (예: ENV 가 없으면 development 로 간주돼 배포 검증이 꺼진다) 기동을 멈춘다.
+REQUIRED_WITHOUT_ENV_FILE = (
+    "ENV",
+    "ACCESS_TOKEN_SECRET_KEY",
+    "REFRESH_TOKEN_SECRET_KEY",
+    "SESSION_SECRET_KEY",
+    "MYSQL_HOST",
+    "MYSQL_USER",
+    "MYSQL_PASSWORD",
+    "MYSQL_DATABASE",
+)
+
+
+def validate_env_source(
+    env: str,
+    env_file: Path = Path(".env"),
+    environ: Mapping[str, str] = os.environ,
+) -> None:
+    """`.env` 가 없고 필수 값이 환경 변수로도 오지 않았으면 기동을 멈춘다.
+
+    `env_file` 은 Settings 들의 ``env_file=".env"`` 와 같은 기준(작업 디렉터리)이다.
+    test 는 검사하지 않는다(pytest 가 ENV=test 를 준다). 메시지에는 빠진 설정 **이름**만 담는다.
+    """
+    if env == "test" or env_file.is_file():
+        return
+    missing = [name for name in REQUIRED_WITHOUT_ENV_FILE if name not in environ]
+    if missing:
+        raise ValueError(
+            ".env 파일이 없고, 필수 설정이 환경 변수로도 주어지지 않았습니다: "
+            + ", ".join(missing)
+            + ". 로컬에서는 `cp .env.example .env` 후 값을 채우고, 배포에서는 환경 변수로 "
+            "주입하세요."
+        )
+
+
 def validate_deployment_safety() -> None:
-    """ENV=staging|production 에서 비밀키·비밀번호와 debug 모드를 fail-fast 로 검증한다.
+    """비밀키·비밀번호(test 외 모든 ENV)와 debug 모드(staging/production)를 fail-fast 로 검증한다.
 
     코드 기본값과 `.env.example` 의 키는 누구나 아는 값이라, 그대로 배포하면
     JWT 를 위조할 수 있다. access 와 refresh 키가 같으면 refresh 토큰을 access
-    토큰으로 바꿔 쓰는 공격면이 생긴다.
+    토큰으로 바꿔 쓰는 공격면이 생긴다. 이 판정은 **개발 환경에도** 적용한다 —
+    기본값·예시 값 그대로는 `.env` 를 채우라는 신호이고, 잘못된 설정은 처음부터
+    오류로 드러나야 한다. 서명·세션 키는 32자 미만도 거부한다.
 
-    debug 모드도 같은 자리에서 막는다 — 유효 로그 레벨이 DEBUG 가 되면 세션
+    debug 모드는 배포 환경에서만 막는다 — 유효 로그 레벨이 DEBUG 가 되면 세션
     롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(``app/core/db/session.py``).
     개발에서 원하던 그 동작이 운영에서는 그대로 유출 경로다. ``DEBUG`` 는
     ``AppSettings``, ``LOG_LEVEL`` 은 ``LogSettings`` 에 있어 한쪽 validator 로는
@@ -1314,16 +1358,15 @@ def validate_deployment_safety() -> None:
     Redis 와 미사용 SMTP 는 정당한 배포라 값이 있을 때만 예시값인지 본다.
 
     위반은 한 번에 모두 모아 알리고, 메시지에는 설정 **이름만** 담는다 — 값은
-    로그로 흘러가면 안 된다. development/test 는 검사하지 않는다(받자마자 뜨는
-    개발 경험 유지).
+    로그로 흘러가면 안 된다. test 는 검사하지 않는다(pytest 가 ENV=test 를 준다).
     """
-    if app_settings.ENV not in ("production", "staging"):
+    if app_settings.ENV == "test":
         return
     secrets = {
         "ACCESS_TOKEN_SECRET_KEY": jwt_settings.ACCESS_TOKEN_SECRET_KEY,
         "REFRESH_TOKEN_SECRET_KEY": jwt_settings.REFRESH_TOKEN_SECRET_KEY,
         "SESSION_SECRET_KEY": session_settings.SESSION_SECRET_KEY,
-        # 빈 값도 위반이다 — 운영 DB 에 비밀번호 없이 붙는 것 자체가 사고다.
+        # 빈 값도 위반이다 — DB 에 비밀번호 없이 붙는 것 자체가 사고다.
         "MYSQL_PASSWORD": db_settings.MYSQL_PASSWORD,
     }
     # Redis·SMTP 는 빈 값이 정당한 구성이다(인증 없는 Redis, SMTP 미사용). 여기서
@@ -1339,19 +1382,28 @@ def validate_deployment_safety() -> None:
         for name, value in secrets.items()
         if is_placeholder_secret(value)
     ]
+    for name in SECRET_KEYS:
+        value = secrets[name]
+        if not is_placeholder_secret(value) and len(value.strip()) < SECRET_KEY_MIN_LENGTH:
+            problems.append(f"{name} 가 {SECRET_KEY_MIN_LENGTH}자보다 짧습니다")
     if jwt_settings.ACCESS_TOKEN_SECRET_KEY == jwt_settings.REFRESH_TOKEN_SECRET_KEY:
         problems.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
-    if app_settings.DEBUG:
-        problems.append("DEBUG 가 켜져 있습니다")
-    if (log_settings.LOG_LEVEL or "").strip().upper() == "DEBUG":
-        problems.append("LOG_LEVEL 이 DEBUG 레벨입니다")
+    if app_settings.ENV in ("production", "staging"):
+        if app_settings.DEBUG:
+            problems.append("DEBUG 가 켜져 있습니다")
+        if (log_settings.LOG_LEVEL or "").strip().upper() == "DEBUG":
+            problems.append("LOG_LEVEL 이 DEBUG 레벨입니다")
     if problems:
         raise ValueError(
-            f"ENV={app_settings.ENV} 에서 배포 설정이 안전하지 않습니다: "
+            f"ENV={app_settings.ENV} 에서 설정이 안전하지 않습니다: "
             + "; ".join(problems)
-            + ". 비밀키는 서로 다른 값으로 교체하세요 — "
-            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            + ". `.env`(또는 환경 변수)를 고치세요. 비밀키는 서로 다른 값으로 — "
+            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))", '
+            "비밀번호는 실제 값으로(Redis·SMTP 를 쓰지 않으면 비웁니다)."
         )
 
 
+SECRET_KEYS = ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY")
+
+validate_env_source(app_settings.ENV)
 validate_deployment_safety()

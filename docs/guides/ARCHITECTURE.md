@@ -396,9 +396,11 @@ flowchart TD
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
 | `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
-| `validate_deployment_safety()` | production/staging 에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나 access 키 = refresh 키. `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis·미사용 SMTP 는 정당한 구성이라 빈 값을 막지 않는다). **또는** `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). development/test 는 검사하지 않는다 |
+| `validate_env_source()` | `.env` 가 없으면 필수 값(`ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다 |
+| `validate_deployment_safety()` | test 외 모든 ENV(개발 포함)에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis·미사용 SMTP 는 정당한 구성이라 빈 값을 막지 않는다). **또는** production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). test 는 검사하지 않는다 |
 
-`_validate_cross_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
+`_validate_cross_settings()`·`validate_env_source()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
+`ADMIN_UNAUTHENTICATED_ACK=true` 로 배포 환경에서 `/admin` 을 열면 `app/core/bootstrap.py` 가 매 기동 WARNING 을 남긴다.
 
 **주요 환경변수** (전체 목록과 설명은 `.env.example`)
 
@@ -412,8 +414,8 @@ flowchart TD
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `3306` / `root` / 빈 값 / `fastapi_db` | primary(writer) DSN |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅(§4.4) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `localhost` / `6379` / `0` / 없음 | startup ping 대상이자 Celery broker/backend |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). staging/production 은 placeholder·동일 키 거부 |
-| `SESSION_SECRET_KEY` | `change-this-...` | 세션 키(소비처 없음). staging/production 은 placeholder 거부 |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부 |
+| `SESSION_SECRET_KEY` | `change-this-...` | 세션 키(소비처 없음). test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
 
 ### 3.3 `create_app()` 조립 순서
 

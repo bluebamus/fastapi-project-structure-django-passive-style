@@ -5,7 +5,7 @@
 
 | ID | 내용 | 수용 근거 | 상태 |
 |---|---|---|---|
-| R-001 | `/admin` 에 인증 백엔드가 없다 | 영구 비목표(확정). 대신 production/staging 은 `ADMIN_UNAUTHENTICATED_ACK` 미승인 시 기동 거부(F-007) | Accepted |
+| R-001 | `/admin` 에 인증 백엔드가 없다 | 영구 비목표(확정). 대신 production/staging 은 `ADMIN_UNAUTHENTICATED_ACK` 미승인 시 기동 거부(F-007) **갱신 (2026-10-07, ADR-036)**: 승인으로 연 배포 환경 `/admin` 은 매 기동 WARNING 을 남긴다. 인증은 로그인 고도화에서 붙인다. | Accepted |
 | R-002 | 개발 기본값 `ADMIN=true` 를 유지한다 | 2026-08-12 결정 — 받자마자 DB 를 들여다볼 수 있는 레퍼런스 구조 | Accepted |
 | R-003 | Queue logging 을 도입하지 않는다 | ADR-003 — ADR-019(console + RotatingFileHandler) 유지. 후속 ADR 과제 | Accepted |
 | R-004 | SQLite 단위 테스트는 MySQL 방언 정확성의 근거가 아니다 | ADR-004 — 방언은 `pytest -m mysql` 로만 승인 | Accepted |
