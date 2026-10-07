@@ -39,4 +39,4 @@
 - [x] (L-009) README 목차의 죽은 `레이트 리밋` 앵커 제거
 - [x] (L-010) browser 테스트 flake 수정 — 고정 대기 → 폴링. 이 그룹의 회귀가 아님을 stash 재현으로 먼저 확인
 - [x] (L-011) `pyproject.toml` name 잔재를 residual-risk RL-05 로 수용
-- [x] 커밋 3개로 분할 — `9acbad8`(T-4a+T-1) · `d74ab5a`(T-2) · `7b907cf`(T-3)
+- [x] 커밋 3개로 분할 — `68e98e4`(T-4a+T-1) · `6b84db7`(T-2) · `1fdf71e`(T-3)

@@ -4,7 +4,7 @@
 - [x] 이번 요청을 design-baseline §2 에 기록 (REQ-003) + 이전 요구 충돌 확인
 - [x] CRP 그룹 6파일 적재
 - [x] charter 인벤토리·계약·불변식(INV-1~6)·인수기준 확정
-- [x] 기준선 측정 — `9c93803` · 307 수집 / 306 passed / 1 failed
+- [x] 기준선 측정 — `375e777` · 307 수집 / 306 passed / 1 failed
 - [x] (F-001) 기준선 실패 1건 등재
 
 ## Round 1 — 2026-08-18 · 착수 게이트 (development-plan §10.1 A~E)
