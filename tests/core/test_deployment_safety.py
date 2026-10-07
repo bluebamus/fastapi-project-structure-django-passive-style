@@ -41,8 +41,15 @@ STRONG = {
     "SMTP_PASSWORD": "Bc1De4Fg7Hi0Jk3Lm6No9Pq2Rs5Tu8Vw-smtp",
 }
 
-# `.env` 가 없는 환경(CI)에서 출처 검증을 통과시키는 나머지 필수 값.
-SOURCE = {"MYSQL_HOST": "127.0.0.1", "MYSQL_USER": "app", "MYSQL_DATABASE": "app"}
+# `.env` 가 없는 환경(CI)에서 출처 검증을 통과시키는 나머지 필수 값. 비밀 키·MYSQL_PASSWORD 는
+# 각 테스트가 주는 값(대개 STRONG)이 덮어쓴다 — 기본으로 넣어 두지 않으면 `.env` 가 없을 때
+# 출처 검증이 먼저 걸려, 내용 검증을 보려는 테스트가 엉뚱한 이유로 실패한다.
+SOURCE = {
+    "MYSQL_HOST": "127.0.0.1",
+    "MYSQL_USER": "app",
+    "MYSQL_DATABASE": "app",
+    "MYSQL_PASSWORD": "Wz4Xa7Bc0De3Fg6Hi9Jk2Lm5No8Pq1Rs-mysql",
+}
 
 
 def _env_example_values() -> dict[str, str]:
@@ -205,15 +212,15 @@ def test_debug_mode_is_allowed_in_development(load_config):
 
 
 def _import_config_in_subprocess(values: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    env = dict(
-        os.environ,
-        ENV="production",
-        ADMIN="false",
-        LOG_SQL_ECHO_ENABLED="false",
-        DEBUG="false",
+    env = {
+        **os.environ,
+        "ENV": "production",
+        "ADMIN": "false",
+        "LOG_SQL_ECHO_ENABLED": "false",
+        "DEBUG": "false",
         **SOURCE,
         **values,
-    )
+    }
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(  # noqa: S603 - 인터프리터·코드가 이 파일에 고정돼 있다
         [sys.executable, "-X", "utf8", "-c", "import config"],
