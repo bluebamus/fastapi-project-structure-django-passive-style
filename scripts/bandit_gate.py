@@ -7,6 +7,8 @@
    크래시가 보이고, 그 크래시 뒤에 진짜 결과가 사라진다(ledger F-008).
 2. **리포트가 안 나와도 종료 코드가 0 일 수 있다.** reporter 가 실패하면 "검사한
    적 없음"인데 게이트는 초록불이 된다.
+3. **파싱하지 못한 파일은 리포트의 ``errors`` 에만 남는다.** 그 파일은 검사되지
+   않았는데 ``results`` 만 보면 초록이다 — 1번과 같은 종류의 거짓말이다.
 
 그래서 JSON reporter(항상 UTF-8)로 파일에 받고, **파일이 실제로 생겼는지**까지
 확인한 뒤 결과를 판정한다. 실패 시 stdout 과 stderr 를 함께 보존해 요약이 traceback
@@ -15,7 +17,7 @@
 임시 파일은 실행별 고유 디렉터리에 만들고 끝나면 지운다 — 공유 경로를 쓰면 앞선
 실행의 잔재가 이번 결과에 섞인다.
 
-    python -m scripts.bandit_gate            # 기본 대상: app main.py config.py
+    python -m scripts.bandit_gate            # 기본 대상: app scripts main.py config.py
     python -m scripts.bandit_gate app        # 대상 지정
 """
 
@@ -29,10 +31,29 @@ import tempfile
 from pathlib import Path
 
 #: 기본 검사 대상. 테스트 코드는 assert·하드코딩 문자열 오탐이 대부분이라 제외한다.
-DEFAULT_TARGETS = ("app", "main.py", "config.py")
+#: ``scripts`` 는 subprocess 로 도구를 부르는 코드라 넣는다(2026-10-08 기준 MEDIUM 이상 0건).
+DEFAULT_TARGETS = ("app", "scripts", "main.py", "config.py")
 
 #: MEDIUM 이상만 게이트로 삼는다 (bandit ``-ll`` 과 같은 의미).
 BLOCKING_SEVERITIES = {"MEDIUM", "HIGH"}
+
+
+def judge(report: dict) -> list[str]:
+    """리포트에서 게이트를 막는 항목을 고른다. 빈 목록 = 통과.
+
+    MEDIUM 이상 결과와 **검사하지 못한 파일**(``errors``)을 모두 막는다.
+    """
+    problems = [
+        f"{issue['issue_severity']} {issue['filename']}:{issue['line_number']} "
+        f"{issue['issue_text']}"
+        for issue in report.get("results", [])
+        if issue.get("issue_severity") in BLOCKING_SEVERITIES
+    ]
+    problems += [
+        f"검사 실패 {error.get('filename', '?')}: {error.get('reason', '?')}"
+        for error in report.get("errors", [])
+    ]
+    return problems
 
 
 def run_gate(targets: tuple[str, ...] = DEFAULT_TARGETS) -> int:
@@ -77,19 +98,11 @@ def run_gate(targets: tuple[str, ...] = DEFAULT_TARGETS) -> int:
 
         report = json.loads(report_path.read_text(encoding="utf-8"))
 
-    blocking = [
-        issue
-        for issue in report.get("results", [])
-        if issue.get("issue_severity") in BLOCKING_SEVERITIES
-    ]
-    for issue in blocking:
-        print(
-            f"{issue['issue_severity']} {issue['filename']}:{issue['line_number']} "
-            f"{issue['issue_text']}"
-        )
-
-    if blocking:
-        print(f"::error::bandit MEDIUM 이상 {len(blocking)}건", file=sys.stderr)
+    problems = judge(report)
+    for problem in problems:
+        print(problem)
+    if problems:
+        print(f"::error::bandit 게이트 실패 {len(problems)}건", file=sys.stderr)
         return 1
 
     scanned = len(report.get("metrics", {})) - 1  # _totals 제외

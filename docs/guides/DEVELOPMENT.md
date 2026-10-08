@@ -449,19 +449,20 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 | `mysql` | `docker compose -f compose.test.yaml up -d --wait` (MySQL 8.4, `127.0.0.1:3309` — 포트는 환경변수 MYSQL_TEST_PORT 로 변경, tmpfs) | `uv run python -m pytest -m mysql` → 끝나면 `docker compose -f compose.test.yaml down -v` |
 | `browser` | `uv run python -m playwright install chromium` + 위 compose(MySQL 과 함께 Redis `127.0.0.1:6380` 이 뜬다 — 포트는 환경변수 REDIS_TEST_PORT 로 변경) | `uv run python -m pytest -m browser` — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
 
-`review_gate` 단계(순서대로): `ruff format` → `ruff check` → `mypy` → `bandit` → `pip-audit`(`--strict`) → `pytest`(인프라 제외)
+`review_gate` 단계(순서대로): `ruff format` → `ruff check` → `mypy` → `bandit`(`app`·`scripts`·`main.py`·`config.py`, 파싱 실패도 실패) → `pip-audit`(`--strict`) → `pytest`(인프라 제외, 커버리지 하한)
 → OpenAPI 규칙 fail-on-revert(`scripts/openapi_revert_check.py`) → `pytest -m mysql`(skip 금지) → `pytest -m browser`(skip 금지).
 단계 수를 세지 말고 이름으로 가리킨다 — 정본은 `scripts/review_gate.py` 의 `build_steps()` 이고 `--list` 가 현재 목록을 출력한다.
 `--fast` 는 마지막 두 단계(`pytest -m mysql`·`pytest -m browser`)를 빼고 실행하지 않았다는 경고를 남긴다. 의존성 감사는 외부 인프라가 필요 없고 몇 초면 끝나므로
 `--fast` 에도 남긴다 — 코드가 그대로여도 권고는 새로 뜨고, 그걸 전체 게이트를 돌릴 때까지 몰라야 할 이유가 없다.
-도구 stdio 는 UTF-8 로 고정하고 실행별 임시 경로를 쓴다.
+도구 stdio 는 UTF-8 로 고정하고 실행별 임시 경로를 쓴다. pytest 단계는 모두 `--strict-markers` 를 주고 skipped·xfailed·xpassed·"no tests ran" 을 실패로 본다.
+커버리지 하한은 `pyproject.toml` 의 `[tool.coverage.report] fail_under`(85) 하나다 — CI 와 로컬 게이트 모두 `--cov` 만 주고 이 값을 읽는다.
 
 **CI** (`.github/workflows/ci.yml`) — 판정 규칙의 정본은 `scripts/review_gate.py` 이며 두 파일을 함께 고친다.
 
 | job | 내용 |
 |---|---|
-| gate | `uv sync --frozen` → ruff check·format → mypy(콜드 캐시) → bandit gate → pip-audit(`--strict`) → pytest 커버리지 85% 이상(`-m "not mysql and not browser"`) → skipped·xfailed·xpassed 0건 확인 → alembic 단일 head → SQLite `upgrade head` + `alembic check` |
-| mysql | compose 기동 → `upgrade head` → `downgrade -1` → 재-upgrade → `alembic check` → `pytest -m mysql`(skip·0건이면 실패) → Chromium 설치 → `pytest -m browser`(skip·0건이면 실패) → `down -v` |
+| gate | `uv sync --frozen` → ruff check·format → mypy(콜드 캐시) → bandit gate → pip-audit(`--strict`) → pytest 커버리지 하한(`fail_under`, `-m "not mysql and not browser"`) → skipped·xfailed·xpassed 0건 확인 → OpenAPI 규칙 fail-on-revert → alembic 단일 head → SQLite `upgrade head` + `alembic check` |
+| mysql | compose 기동 → `upgrade head` → `downgrade -1` → 재-upgrade → `alembic check` → `pytest -m mysql`(skip·xfail·0건이면 실패) → Chromium 설치 → `pytest -m browser`(skip·xfail·0건이면 실패) → `down -v` |
 
 ### 6.2 테스트 위치
 
