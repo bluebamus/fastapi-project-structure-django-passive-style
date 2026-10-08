@@ -312,7 +312,7 @@ DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성
 | NFR-02 / NFR-04 | populate 는 thread-safe·멱등·재진입 거부 / 실패 시 부분 상태를 남기지 않음 |
 | NFR-03 / NFR-07 | 모듈 부재와 내부 import 실패 구분(traceback 보존) / 오류 메시지에 고칠 위치 포함 |
 | NFR-05 / NFR-06 | 격리 `Apps()` 주입 가능 / registry core 는 FastAPI·SQLAdmin 에 의존하지 않음 |
-| NFR-08 | registry·adapter 커버리지 기준(프로젝트 전체 85% 는 CI 가 강제) |
+| NFR-08 | registry·adapter 커버리지 기준(프로젝트 전체 85% 는 `pyproject.toml` `fail_under` 가 정본이고 CI·로컬 게이트가 함께 강제) |
 | SEC-01 | `ADMIN=false` 면 sqladmin·앱 `admin.py` 를 로드하지 않음 |
 | SEC-02 | allowlist(`INSTALLED_APPS`)만 import, 디렉터리 스캔 금지 |
 | SEC-03 / SEC-04 | 생성기 경로 이탈 차단 / 부분 생성·덮어쓰기 금지 |

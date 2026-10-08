@@ -43,7 +43,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: ``deselected`` 는 넣지 않는다 — `-m mysql` 은 나머지를 정상적으로 deselect 하므로
 #: 성공 실행에도 항상 나타난다. 그걸 실패로 보면 게이트가 영원히 빨간불이다(실제로
 #: 첫 실행에서 그렇게 됐다).
-SKIP_MARKERS = ("skipped", "no tests ran")
+#:
+#: ``xfailed``·``xpassed`` 도 넣는다 — CI 는 둘을 막는데 여기는 막지 않아, 로컬 "전체
+#: 통과" 가 CI 통과를 뜻하지 않았다(2026-10-08, ADR-038).
+SKIP_MARKERS = ("skipped", "xfailed", "xpassed", "no tests ran")
 
 
 def _force_utf8() -> None:
@@ -114,12 +117,18 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                 "no:cacheprovider",
                 "-o",
                 "addopts=",
+                "--strict-markers",
                 "-m",
                 "not mysql and not browser",
                 # skip 사유를 찍는다 — 사유 없이 "안 돌았다" 만 알면 고칠 수가 없다.
                 "-rsxX",
+                # 임계값은 pyproject `[tool.coverage.report] fail_under` 하나다 — CI 도 같은 값을 읽는다.
+                "--cov=app",
+                "--cov-report=term-missing:skip-covered",
             ],
-            why="계층 불변식·공개 API baseline·OpenAPI 규칙이 모두 여기 들어 있다",
+            why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 하한이 모두 여기 들어 있다",
+            # 저장소 루트의 `.coverage` 를 쓰면 병렬 실행끼리 데이터가 섞인다.
+            env={"COVERAGE_FILE": str(cache_dir / ".coverage")},
             # 단위 단계에도 skip 을 실패로 본다(2026-10-07). 전에는 mysql·browser 단계에만 있어서
             # `tests/test_docs_secret_examples.py` 처럼 조건부로 skip 하는 테스트가 **조용히
             # 빠진 채** 게이트가 초록일 수 있었다 — 문서가 사라지면 비밀값 검사가 통째로 안 돈다.
@@ -145,6 +154,7 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                     "no:cacheprovider",
                     "-o",
                     "addopts=",
+                    "--strict-markers",
                     "-m",
                     "mysql",
                     "-rsxX",
@@ -166,6 +176,7 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                     "no:cacheprovider",
                     "-o",
                     "addopts=",
+                    "--strict-markers",
                     "-m",
                     "browser",
                     "-rsxX",
