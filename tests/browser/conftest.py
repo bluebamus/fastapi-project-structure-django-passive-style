@@ -85,8 +85,9 @@ def live_server() -> Iterator[str]:
     startup 이 `create_db_tables()` 로 DB 에 붙고 Redis 에 `ping()` 을 보낸다. 둘 중 하나라도
     없으면 앱이 아예 뜨지 않는다 — 그래서 `compose.test.yaml` 의 테스트 인스턴스를 가리킨다.
     MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
-    갈린다). Redis 는 기본값(`REDIS_HOST`·`REDIS_PORT`)을 그대로 쓰므로 **환경에 떠 있어야
-    한다** — `compose.test.yaml` 의 redis 서비스가 그 자리다.
+    갈린다). Redis 는 `compose.test.yaml` 의 `redis-test`(`127.0.0.1:${REDIS_TEST_PORT:-6380}`)를
+    가리킨다. 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 `.env` 값이
+    섞여 다른 Redis 에 붙거나 인증에 실패한다.
 
     stdout/stderr 는 버리지 않고 파이프로 받는다 — 시작이 실패했을 때 그 이유가
     보여야 한다(처음에 DEVNULL 로 버려서 "연결 거부" 만 보고 원인을 몰랐다).
@@ -126,6 +127,9 @@ def live_server() -> Iterator[str]:
             "MYSQL_USER": MYSQL_USER,
             "MYSQL_PASSWORD": MYSQL_PASSWORD,
             "MYSQL_DATABASE": MYSQL_DATABASE,
+            "REDIS_HOST": "127.0.0.1",
+            "REDIS_PORT": os.getenv("REDIS_TEST_PORT", "6380"),
+            "REDIS_PASSWORD": "",
             "PYTHONIOENCODING": "utf-8",
         },
     )
