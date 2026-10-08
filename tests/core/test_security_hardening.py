@@ -449,3 +449,20 @@ def test_test_database_is_published_on_loopback_only():
     assert (
         '"127.0.0.1:${MYSQL_TEST_PORT:-3309}:3306"' in compose
     ), "테스트 DB 포트가 loopback 에만 바인딩되지 않았다"
+    assert (
+        '"127.0.0.1:${REDIS_TEST_PORT:-6380}:6379"' in compose
+    ), "테스트 Redis 포트가 loopback 에만 바인딩되지 않았다"
+
+
+def test_ci_pipes_into_tee_only_with_pipefail():
+    """`pytest | tee` 는 pipefail 없이는 tee 의 0 을 돌려준다 — 실패가 초록으로 보인다.
+
+    GitHub 기본 셸(`bash -e {0}`)에는 pipefail 이 없다. 브라우저 단계가 실제로
+    7 errors 인 채 초록이었다(F-033).
+    """
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    steps = workflow.split("- name:")
+    piped = [step for step in steps if "| tee" in step]
+    assert piped, "tee 로 파이프하는 단계를 찾지 못했다 — 검사가 아무것도 보지 않는다"
+    missing = [step.splitlines()[0].strip() for step in piped if "set -o pipefail" not in step]
+    assert not missing, f"pipefail 없이 tee 로 파이프하는 단계: {missing}"

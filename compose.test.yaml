@@ -17,8 +17,10 @@
 #   uv run python -m pytest -m mysql                    # 통합 테스트만
 #   docker compose -f compose.test.yaml down -v         # 정리
 #
-# Redis 서비스는 없다. `-m browser` 테스트는 실제 서버를 띄우므로 startup ping 이 통과할
-# Redis(기본 localhost:6379)를 따로 준비해야 한다.
+# Redis 도 함께 띄운다. `-m browser` 테스트는 실제 서버를 띄우므로 startup ping 이 통과할
+# Redis 가 있어야 한다 — 없으면 앱이 뜨지 않아 7건이 모두 에러가 된다. 포트는 6380 이다:
+# 개발 머신의 6379 에는 보통 개발용 Redis 가 이미 떠 있다. REDIS_TEST_PORT 로 덮어쓰며,
+# tests/browser/conftest.py 가 같은 환경변수를 읽는다.
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
 # WSL2 의 localhost forwarding 으로 127.0.0.1:3309 가 그대로 연결된다.
@@ -58,3 +60,18 @@ services:
       timeout: 5s
       retries: 20
       start_period: 30s
+
+  redis-test:
+    image: redis:7.4-alpine
+    container_name: fastapi-passive-redis-test
+    # 테스트용이라 디스크에 남기지 않는다(RDB·AOF 끔).
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      # 127.0.0.1 에만 바인딩한다 — 인증 없는 Redis 를 0.0.0.0 에 열면 같은 네트워크의
+      # 다른 기기가 그대로 쓸 수 있다(MySQL 과 같은 이유).
+      - "127.0.0.1:${REDIS_TEST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20

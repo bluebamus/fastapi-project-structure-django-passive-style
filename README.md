@@ -53,7 +53,7 @@ fastapi-project-structure-django-passive-style/
 ├── config.py                    # INSTALLED_APPS + Pydantic Settings 12종
 ├── pyproject.toml / uv.lock     # 의존성·도구 설정 ([tool.uv] package = false)
 ├── alembic.ini
-├── compose.test.yaml            # 테스트 전용 MySQL 8.4 (127.0.0.1:3309)
+├── compose.test.yaml            # 테스트 전용 MySQL 8.4 (127.0.0.1:3309) · Redis (127.0.0.1:6380)
 ├── .env.example                 # 설정 키 전체 목록 (자동 fallback 아님)
 │
 ├── app/
