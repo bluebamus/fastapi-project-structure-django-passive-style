@@ -104,6 +104,8 @@ NON_ENV_UPPERCASE = frozenset(
         "SUM",
         # MySQL 날짜 함수. 07 문서가 "SQL 이 아니라 Python 에서 계산하는 이유" 로 인용한다.
         "DATE_ADD",
+        # KST→UTC 리비전(e5a7c2d9f310)의 오프셋 상수 — 배포 전 확인 항목으로 문서가 가리킨다.
+        "LEGACY_OFFSET",
     }
 )
 
@@ -346,6 +348,7 @@ DOC_INDEX_ORDER = (
     "docs/guides/DEVELOPMENT.md",
     "docs/guides/server-lifecycle-guide.html",
     "docs/guides/feature-development-guide.html",
+    "docs/guides/admin-auth-guide.html",
     "docs/specs/orm-raw-repository/requirements.md",
     "docs/specs/orm-raw-repository/development-plan.md",
     "docs/specs/orm-raw-repository/workflow-guide.md",
@@ -355,6 +358,7 @@ DOC_INDEX_ORDER = (
 HTML_GUIDES = (
     "docs/guides/server-lifecycle-guide.html",
     "docs/guides/feature-development-guide.html",
+    "docs/guides/admin-auth-guide.html",
 )
 
 #: ``<code>`` 안에서 저장소 루트 기준으로 해석하는 최상위 파일.

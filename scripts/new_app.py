@@ -180,6 +180,7 @@ def _admin(name: str) -> str:
 
 registry adapter 가 설치 앱의 ``admin_views`` 를 읽어 등록한다. 앱이
 ``config.INSTALLED_APPS`` 에 없으면 이 파일이 있어도 등록되지 않는다.
+관리 화면은 ``ADMIN_DISABLED=false``(기본)일 때만 있고, 슈퍼유저로 로그인해야 보인다.
 """
 
 from sqladmin import ModelView
@@ -301,7 +302,8 @@ def config_entry(name: str) -> str:
 def next_steps(name: str, *, with_admin: bool = False) -> str:
     """생성 후 사용자가 해야 할 일 — 등록이 첫 단계다."""
     admin_note = (
-        "\n5. Admin 은 ADMIN=true 인 환경에서만 등록된다(운영에서는 비활성 권장)."
+        "\n5. Admin 은 ADMIN_DISABLED=false(기본)인 환경에서만 등록되고, /admin 은 슈퍼유저"
+        " 로그인이 필요하다. 관리 화면을 쓰지 않는 배포는 ADMIN_DISABLED=true 로 끈다."
         if with_admin
         else ""
     )

@@ -73,9 +73,10 @@ def load_config(monkeypatch: pytest.MonkeyPatch, restore_config) -> Iterator:
 
     def _load(env: str, values: dict[str, str]) -> object:
         monkeypatch.setenv("ENV", env)
-        # 다른 운영 가드(무인증 /admin, SQL echo, debug 모드)를 비켜 검증 대상에 도달시킨다.
+        # 다른 운영 가드(SQL echo, debug 모드)를 비켜 검증 대상에 도달시킨다. ADMIN_DISABLED=true 는
+        # 관리 화면 조립을 빼 검증 대상만 남긴다.
         # pytest 는 DEBUG=true 로 돌기 때문에(pyproject `env`) 명시적으로 꺼 준다.
-        monkeypatch.setenv("ADMIN", "false")
+        monkeypatch.setenv("ADMIN_DISABLED", "true")
         monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "false")
         monkeypatch.setenv("DEBUG", "false")
         for key, value in {**SOURCE, **values}.items():
@@ -93,7 +94,7 @@ def test_env_example_secrets_are_rejected_in_production(load_config):
     for key in SECRET_KEYS:
         assert key in values, f".env.example 에 {key} 가 없다"
     values["ENV"] = "production"
-    values["ADMIN"] = "false"
+    values["ADMIN_DISABLED"] = "true"
 
     with pytest.raises(ValueError) as excinfo:
         load_config("production", values)
@@ -212,7 +213,7 @@ def _import_config_in_subprocess(values: dict[str, str]) -> subprocess.Completed
     env = {
         **os.environ,
         "ENV": "production",
-        "ADMIN": "false",
+        "ADMIN_DISABLED": "true",
         "LOG_SQL_ECHO_ENABLED": "false",
         "DEBUG": "false",
         **SOURCE,
@@ -258,7 +259,7 @@ def test_env_example_passwords_are_rejected_in_production(load_config):
     for key in PASSWORD_KEYS:
         assert key in values, f".env.example 에 {key} 가 없다"
     values["ENV"] = "production"
-    values["ADMIN"] = "false"
+    values["ADMIN_DISABLED"] = "true"
 
     with pytest.raises(ValueError) as excinfo:
         load_config("production", values)
@@ -374,20 +375,29 @@ def test_import_fails_without_env_file_and_environ(tmp_path):
     assert ".env 파일이 없고" in result.stderr
 
 
-def test_deployed_admin_with_ack_logs_warning_on_startup():
-    """승인(ADMIN_UNAUTHENTICATED_ACK)으로 연 /admin 은 기동마다 WARNING 을 남긴다."""
+def test_deployed_admin_boots_with_login_backend_and_ignores_the_removed_ack():
+    """배포 환경에서 관리 화면을 켜도(``ADMIN_DISABLED=false``) 배포 안전 검사를 통과하고 로그인 백엔드를 단다.
+
+    예전 승인 플래그(``ADMIN_UNAUTHENTICATED_ACK``)가 `.env`·환경에 남아 있어도 기동이 깨지지
+    않는다 — 설정 클래스는 ``extra="ignore"`` 다(admin-login ADR-004). "인증 없이 열려 있다" 는
+    경고도 더는 나오지 않는다.
+    """
     env = dict(
         os.environ,
         **FULL_ENVIRON,
-        ADMIN="true",
+        ADMIN_DISABLED="false",
         ADMIN_UNAUTHENTICATED_ACK="true",
         LOG_SQL_ECHO_ENABLED="false",
         DEBUG="false",
         LOG_LEVEL="INFO",
     )
     env["PYTHONIOENCODING"] = "utf-8"
+    probe = (
+        "import main; "
+        "print('__BACKEND__' + type(main.app.state.admin.authentication_backend).__name__)"
+    )
     result = subprocess.run(  # noqa: S603 - 인터프리터·코드가 이 파일에 고정돼 있다
-        [sys.executable, "-X", "utf8", "-c", "import main"],
+        [sys.executable, "-X", "utf8", "-c", probe],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -398,5 +408,5 @@ def test_deployed_admin_with_ack_logs_warning_on_startup():
     )
     assert result.returncode == 0, result.stderr[-2000:]
     output = result.stdout + result.stderr
-    assert "WARNING" in output
-    assert "SQLAdmin 이 인증 없이 열려 있습니다" in output
+    assert "__BACKEND__AdminAuthBackend" in output
+    assert "인증 없이" not in output

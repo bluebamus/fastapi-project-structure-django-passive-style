@@ -1,5 +1,12 @@
 """store datetimes as UTC with microseconds
 
+!! 배포 전 확인 (MySQL 운영 DB) !!
+* 이 리비전은 기존 MySQL 시각 값이 ``+09:00``(KST 벽시계)으로 저장됐다고 **가정**하고 UTC 로
+  옮긴다. 다른 시간대로 운영했던 DB 라면 적용 전에 아래 ``LEGACY_OFFSET`` 상수를 그 오프셋으로
+  바꾼다(틀린 오프셋으로 올리면 모든 시각이 그만큼 어긋난 채 저장된다).
+* 적용 전에 반드시 백업한다 — ``UPDATE`` 로 값을 다시 쓰므로 되돌리려면 백업이나 정확한
+  downgrade 가 필요하다.
+
 Revision ID: e5a7c2d9f310
 Revises: d1f8c4a70b93
 Create Date: 2026-10-12 00:00:00.000000

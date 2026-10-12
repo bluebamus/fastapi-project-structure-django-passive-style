@@ -75,6 +75,36 @@ def _wait_until_serving(port: int, process: subprocess.Popen[bytes]) -> None:
     raise TimeoutError(f"{STARTUP_TIMEOUT_SECONDS:.0f}s 안에 uvicorn 이 뜨지 않았다\n{tail}")
 
 
+def server_env() -> dict[str, str]:
+    """live server 와 그 서버에 붙는 보조 프로세스(예: ``scripts.create_superuser``)가 함께 쓰는 환경.
+
+    MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
+    갈린다). Redis 는 ``compose.test.yaml`` 의 ``redis-test`` 다. 호스트·포트·비밀번호를 **모두**
+    덮어쓴다 — 하나라도 빠지면 개발자의 ``.env`` 값이 섞여 다른 DB·Redis 에 붙는다.
+    """
+    from tests.integration.conftest import (
+        MYSQL_DATABASE,
+        MYSQL_HOST,
+        MYSQL_PASSWORD,
+        MYSQL_PORT,
+        MYSQL_USER,
+    )
+
+    return {
+        **os.environ,
+        "DEBUG": "true",
+        "MYSQL_HOST": MYSQL_HOST,
+        "MYSQL_PORT": str(MYSQL_PORT),
+        "MYSQL_USER": MYSQL_USER,
+        "MYSQL_PASSWORD": MYSQL_PASSWORD,
+        "MYSQL_DATABASE": MYSQL_DATABASE,
+        "REDIS_HOST": "127.0.0.1",
+        "REDIS_PORT": os.getenv("REDIS_TEST_PORT", "6380"),
+        "REDIS_PASSWORD": "",
+        "PYTHONIOENCODING": "utf-8",
+    }
+
+
 @pytest.fixture(scope="session")
 def live_server() -> Iterator[str]:
     """실제 uvicorn 프로세스를 띄우고 base URL 을 돌려준다.
@@ -92,14 +122,6 @@ def live_server() -> Iterator[str]:
     stdout/stderr 는 버리지 않고 파이프로 받는다 — 시작이 실패했을 때 그 이유가
     보여야 한다(처음에 DEVNULL 로 버려서 "연결 거부" 만 보고 원인을 몰랐다).
     """
-    from tests.integration.conftest import (
-        MYSQL_DATABASE,
-        MYSQL_HOST,
-        MYSQL_PASSWORD,
-        MYSQL_PORT,
-        MYSQL_USER,
-    )
-
     port = _free_port()
     # `-X utf8` 은 저장소 계약이다(C-7). Windows 기본 인코딩(cp949)으로 자식이 쓰면
     # 부모가 stderr 를 디코딩하다 터져 **실패 원인이 통째로 사라진다**.
@@ -119,19 +141,7 @@ def live_server() -> Iterator[str]:
         cwd=REPO_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        env={
-            **os.environ,
-            "DEBUG": "true",
-            "MYSQL_HOST": MYSQL_HOST,
-            "MYSQL_PORT": str(MYSQL_PORT),
-            "MYSQL_USER": MYSQL_USER,
-            "MYSQL_PASSWORD": MYSQL_PASSWORD,
-            "MYSQL_DATABASE": MYSQL_DATABASE,
-            "REDIS_HOST": "127.0.0.1",
-            "REDIS_PORT": os.getenv("REDIS_TEST_PORT", "6380"),
-            "REDIS_PASSWORD": "",
-            "PYTHONIOENCODING": "utf-8",
-        },
+        env=server_env(),
     )
     try:
         _wait_until_serving(port, process)

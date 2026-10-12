@@ -28,7 +28,8 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **JWT 인증·인가**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
   슈퍼유저/일반 2단계 권한과 작성자 소유권(`CurrentPrincipal`·`require_superuser`·`OwnershipPolicy`), 첫 관리자 생성 스크립트.
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500, SQL·비밀값 로그 차단, 종료 시 자원 정리 순서 보장.
-- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면(`ADMIN=true`, 인증 없음).
+- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면 + 서명 세션 쿠키,
+  매 요청 DB 재확인). 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true` 로 마운트·링크까지 없앤다.
 
 ## 기술 스택
 
@@ -42,7 +43,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | Redis | **필수** — startup 연결 검증, `get_redis` 주입, `/ready` 확인, refresh 회전·인증 레이트 리밋, Celery broker·result backend |
 | Task Queue | Celery 5 |
 | Auth | OAuth2 Password + PyJWT + pwdlib(Argon2) · 기존 bcrypt 해시 검증 · Redis(refresh 회전·레이트 리밋) |
-| Admin / Docs | SQLAdmin / Scalar |
+| Admin / Docs | SQLAdmin(슈퍼유저 세션 로그인 — starlette `SessionMiddleware` + itsdangerous 서명 쿠키, Bootstrap 5.3 로그인 화면) / Scalar |
 | Quality | pytest, Ruff, mypy, Bandit, pip-audit, Playwright |
 
 정확한 버전 범위는 `pyproject.toml` 과 `uv.lock` 이 기준입니다.
@@ -178,7 +179,8 @@ uv run uvicorn main:app --reload --port 8000
 MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
 `CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;` 를 씁니다.
 
-- API 문서: <http://127.0.0.1:8000/docs> · 관리 화면: <http://127.0.0.1:8000/admin> · 헬스체크: `/health`, `/ready`
+- API 문서: <http://127.0.0.1:8000/docs> · 관리 화면: <http://127.0.0.1:8000/admin> (먼저 [첫 관리자 만들기](#첫-관리자-만들기)로
+  슈퍼유저를 만들고 그 계정으로 로그인) · 헬스체크: `/health`, `/ready`
 - 운영처럼 스키마를 Alembic 으로 관리하려면 `uv run alembic upgrade head` 후 `DEBUG=false` 로 실행합니다.
 
 ### 환경 변수 — 처음에 알아야 할 것
@@ -194,15 +196,16 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 | `DEBUG` | `true` | true = 개발 테이블 생성 + `/docs` 노출 + DEBUG 로그 / false = 모두 끔(스키마는 Alembic) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()` 대상. 연결 실패 시 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
-| `ADMIN` | `true` | `/admin` 이 **인증 없이** 열린다(개발 편의 결정) |
-| `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다(승인하면 매 기동 WARNING). `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 여도 실패한다. 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
+| `ADMIN_DISABLED` | `false` | false = `/admin` 마운트(**활성 슈퍼유저 로그인 필요**) / true = 관리 화면 자체가 없다(404, 응답 어디에도 경로·링크 없음, sqladmin 미로드). 예전 `ADMIN` 은 제거됐다 — 남아 있으면 기동 실패 |
+| `ENV` | `development` | production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 면 설정 로드가 실패하고, `/admin` 세션 쿠키에 `Secure` 가 붙는다(HTTPS 전용). 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access·refresh 수명. `JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·`JWT_LEEWAY_SECONDS` 와 레이트 리밋 `AUTH_LOGIN_*`·`AUTH_REGISTER_*` 는 `.env.example`·[아키텍처 §7](docs/guides/ARCHITECTURE.md#7-인증-jwt) |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. `SESSION_SECRET_KEY` 는 `/admin` 로그인 세션 쿠키의 서명 키다(바꾸면 모든 관리 세션이 끊긴다). 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
-> **`/admin` 에는 인증이 없습니다.** `ADMIN=true` 면 앱에 도달할 수 있는 누구나 사용자·게시글·접속 로그 등을 조회·수정·삭제하고
-> 내보낼 수 있습니다(비밀번호 해시만 제외). 운영·스테이징은 `ADMIN=false` 를 명시하세요. 배포 체크리스트는
-> [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
+> **`/admin` 은 활성 슈퍼유저만 들어갑니다.** 로그인 화면(Bootstrap)에서 `scripts/create_superuser.py` 로 만든 계정으로
+> 로그인하면 `admin_session` 쿠키(path `/admin`·SameSite=Strict·HttpOnly·8시간)가 발급되고, 권한은 매 요청 DB 로 다시 확인합니다.
+> 세션은 **`/admin` 전용**이며 API 인증(JWT Bearer)과 섞이지 않습니다. 설계·흐름도·문제 해결은
+> [관리 화면 인증 가이드](docs/guides/admin-auth-guide.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
 
 선택 기능(Celery worker, replica 라우팅, Alembic)은 기본 실행에 필요 없습니다 — 필요할 때 [아키텍처 레퍼런스](docs/guides/ARCHITECTURE.md)를 봅니다.
 
@@ -226,7 +229,9 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 | 기능 API 만 500, `/ready` 503 | DB 없음 | 2단계 진행 |
 | 새 기능 route 가 안 보임 | `INSTALLED_APPS` 미등록 또는 `<name>_router` 이름 불일치 | 아래 절 참고. module 은 있는데 공개 이름이 없거나 import 가 깨지면 **기동이 실패**한다 |
 | `.env 파일이 없고, 필수 설정이 …` | `.env` 가 없다 | 0단계. 컨테이너라면 메시지에 나온 환경 변수를 주입 |
-| production 설정에서 기동 실패 | `ENV` 가 production/staging 인데 `ADMIN=true` | `ADMIN=false` 또는 프록시 차단 후 `ADMIN_UNAUTHENTICATED_ACK=true` |
+| 기동 실패 (`ADMIN 은 ADMIN_DISABLED 로 바뀌었다`) | 환경 변수나 `.env` 에 예전 `ADMIN` 줄이 남아 있다 | `ADMIN` 이 false 였다면 `ADMIN_DISABLED=true` 로 바꾸고, true 였다면 그 줄을 지운다 |
+| `/admin` 로그인 후 다시 로그인 화면 | staging/production 에서 HTTP 로 접속해 `Secure` 쿠키가 저장되지 않았다 / 계정이 슈퍼유저·활성이 아니다 | HTTPS 로 접속(프록시 TLS 종단 포함). 계정은 `scripts.create_superuser` 로 승격 |
+| `/admin` 로그인이 429 | ip 또는 ip+사용자명 시도 한도(`AUTH_LOGIN_*`) 초과. 프록시 뒤에서 `TRUSTED_PROXY_HOPS=0` 이면 모두가 한도를 나눠 쓴다 | `Retry-After` 초만큼 기다린다. 프록시 뒤라면 `TRUSTED_PROXY_HOPS` 설정 |
 | 기동 실패 (`설정이 안전하지 않습니다`) | 비밀키·비밀번호가 placeholder·빈 값·32자 미만이거나 access·refresh 키가 같다(개발 환경 포함) / 배포 환경의 `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, 안 쓰는 Redis·SMTP 비밀번호는 비운다, debug 모드는 끈다 |
 
 ## 앱 설치 — 목록에 한 줄
@@ -266,7 +271,8 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 
 ## API
 
-`DEBUG=true` 일 때 Scalar 문서 `/docs` 와 `/openapi.json` 이 열립니다(Swagger UI·ReDoc 은 끔). `/admin` 은 `ADMIN=true` 일 때만 있습니다.
+`DEBUG=true` 일 때 Scalar 문서 `/docs` 와 `/openapi.json` 이 열립니다(Swagger UI·ReDoc 은 끔). `/admin` 은 `ADMIN_DISABLED=false`(기본)일 때만
+있고 슈퍼유저 로그인이 필요합니다 — OpenAPI 에는 나오지 않습니다(SQLAdmin 하위 앱).
 
 `app.openapi()` 실측 **23 경로 / 38 오퍼레이션**입니다. 공개 경로 목록은 `tests/test_route_inventory.py` 가 고정하므로 route 를 바꾸면 이 표도 함께 고칩니다.
 
@@ -337,24 +343,30 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 ```
 
 비밀번호는 명령행 인자로 받지 않습니다(셸 기록에 남는다). 종료 코드는 0 성공 · 1 입력 거부 · 2 인자 오류입니다.
-만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다.
+만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다. **같은 계정이 `/admin` 로그인 계정입니다** — 활성 슈퍼유저만
+들어갈 수 있고, API 로 강등·비활성화하면 다음 관리 화면 요청부터 바로 로그인 화면으로 돌아갑니다.
 
 ## 운영 배포 체크리스트
 
-전체 표는 [아키텍처 §11.1](docs/guides/ARCHITECTURE.md#111-배포-체크리스트--사람이-확인할-것)입니다. 이번 인증·인가와 함께 꼭 볼 것:
+전체 표는 [아키텍처 §11.1](docs/guides/ARCHITECTURE.md#111-배포-체크리스트--사람이-확인할-것)입니다. 배포 전에 해야 할 일:
 
-- **API 는 이제 인증·인가가 걸려 있습니다** — 쓰기·관리 API 는 토큰 없이 401, 권한 없이 403 입니다. 단, **`/admin`(SQLAdmin)에는 여전히
-  인증이 없습니다**(영구 비목표). 운영·스테이징은 `ADMIN=false`, 켜야 하면 프록시에서 막고 `ADMIN_UNAUTHENTICATED_ACK=true`.
-- **프록시 뒤에 배포하면 `TRUSTED_PROXY_HOPS` 를 앞단 프록시 단 수로 설정합니다.** 0 으로 두면 모든 요청이 프록시 IP 하나로 보여
-  **IP 레이트 리밋(로그인 20회/60초·가입 5회/시간)을 모든 사용자가 나눠 씁니다** — 한 사람이 한도를 채우면 전원이 429 를 받습니다.
-  실제보다 크게 잡으면 위조된 `X-Forwarded-For` 를 믿습니다(검수 기록 service-hardening R-013).
-- 첫 관리자를 `scripts.create_superuser` 로 만들고, 일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지 확인합니다.
+- **`TRUSTED_PROXY_HOPS`** — 프록시 뒤 배포면 앞단 프록시 단 수로 설정합니다. 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여
+  접속 로그와 로그인 레이트 리밋(API·`/admin`, 로그인 20회/60초·가입 5회/시간)이 **전체 사용자를 한 사람으로 취급**합니다 — 한 사람이
+  한도를 채우면 전원이 429 를 받습니다. 실제보다 크게 잡으면 위조된 `X-Forwarded-For` 를 믿어 IP 를 위조할 수 있습니다(service-hardening R-013).
+- **KST→UTC 시각 마이그레이션** — 리비전 `e5a7c2d9f310` 은 기존 MySQL 시각 값이 `+09:00` 으로 저장됐다고 가정합니다. 다른 시간대로
+  운영했다면 적용 전에 리비전의 `LEGACY_OFFSET` 상수를 그 오프셋으로 바꿉니다. **적용 전에 백업합니다.**
+- **첫 관리자** — `scripts/create_superuser.py` 로 만듭니다(대화형 또는 `--password-stdin`). 이 계정이 `/admin` 로그인 계정입니다.
+  일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지도 확인합니다.
+- **`/admin` 은 슈퍼유저 로그인이 필요합니다** — 세션 쿠키 서명 키는 `SESSION_SECRET_KEY` 입니다(바꾸면 모든 관리 세션이 끊깁니다).
+  staging/production 은 쿠키에 `Secure` 가 붙으므로 HTTPS 로 접속해야 로그인이 유지됩니다.
+- **관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`** — 마운트·링크·세션 미들웨어가 모두 사라집니다. 예전 `ADMIN` 줄이 `.env`·환경에
+  남아 있으면 기동이 멈추니 `ADMIN_DISABLED` 로 옮깁니다.
 - `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY` 는 서로 다른 무작위 값이어야 합니다 — 키를 아는 사람은 `su=true` 토큰을 만들 수 있습니다.
 - 마이그레이션 `uv run alembic upgrade head` 로 `users.is_superuser`·게시물 `author_id` 를 추가합니다(리비전 `a3c9e8f1b274`).
 
 ## 문서 안내
 
-**문서 색인은 이 표 한 곳에만 둡니다.** 같은 내용을 두 곳에 쓰지 않습니다 — HTML 안내서 두 편은 흐름을 따라 읽는
+**문서 색인은 이 표 한 곳에만 둡니다.** 같은 내용을 두 곳에 쓰지 않습니다 — HTML 안내서는 흐름을 따라 읽는
 요약이고, 표·수치의 정본은 Markdown 가이드입니다(HTML 은 브라우저로 엽니다).
 
 | 문서 | 역할 | 언제 보나 |
@@ -364,6 +376,7 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 | [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 | 새 기능·API·테이블을 만들 때, ORM/Raw 를 고를 때, 테스트·CI 게이트를 돌릴 때 |
 | [docs/guides/server-lifecycle-guide.html](docs/guides/server-lifecycle-guide.html) | 서버 수명주기 안내서 (설정 → 기동 → 요청 → 종료 추적) | 기동 실패·로그 레벨·요청별 세션·종료 순서를 코드 흐름대로 따라갈 때 |
 | [docs/guides/feature-development-guide.html](docs/guides/feature-development-guide.html) | 신규 뷰·테이블 개발 안내서 | catalog(ORM)·reports(Raw) 예제를 따라 새 뷰·테이블을 연결할 때 |
+| [docs/guides/admin-auth-guide.html](docs/guides/admin-auth-guide.html) | 관리 화면(`/admin`) 인증 가이드 — 세션 범위·구성도·로그인 시퀀스·쿠키·위협 모델·운영 | 관리 화면 로그인을 이해·운영·확장할 때, `ADMIN_DISABLED` 를 정할 때 |
 | [docs/specs/orm-raw-repository/requirements.md](docs/specs/orm-raw-repository/requirements.md) | 고정 기준선 — ORM/Raw 착수 요구명세 | 코드 주석의 `RAW-REP-*`·`NFR-0xx`·`DOC-*` 원문을 찾을 때 |
 | [docs/specs/orm-raw-repository/development-plan.md](docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 개발계획 | 코드 주석의 `development-plan §N`·`Phase N` 인용을 따라갈 때 |
 | [docs/specs/orm-raw-repository/workflow-guide.md](docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 워크플로 지침 | 착수 당시의 작업·검수 절차를 확인할 때 |

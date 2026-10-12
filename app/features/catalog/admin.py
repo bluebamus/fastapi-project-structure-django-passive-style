@@ -1,11 +1,12 @@
 """Catalog 기능 SQLAdmin 설정 — 상품 관리 화면.
 
 Note:
-    SQLAdmin 은 ``ADMIN`` 설정으로 제어된다(DEBUG 와 독립적). 이 앱이
+    SQLAdmin 은 ``ADMIN_DISABLED`` 설정으로 제어된다(DEBUG 와 독립적). 이 앱이
     ``config.INSTALLED_APPS`` 에 없으면 이 파일이 있어도 등록되지 않는다.
 """
 
 from sqladmin import ModelView
+from sqladmin.filters import BooleanFilter
 
 from app.features.catalog.models.models import Product
 
@@ -34,7 +35,10 @@ class ProductAdmin(ModelView, model=Product):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [Product.sku, Product.name]
-    column_filters = [Product.is_active]
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넘기면 sqladmin 0.32 목록 처리가
+    # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다(admin-login F-007).
+    # 시각 컬럼(UTCDateTime)은 넣지 않는다 — 연산 필터가 날짜로 인식하지 못해 문자열을 바인딩한다.
+    column_filters = [BooleanFilter(Product.is_active)]
 
     column_details_list = [
         Product.id,

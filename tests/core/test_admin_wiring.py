@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -105,6 +106,85 @@ def test_admin_page_is_mounted_when_enabled():
     """``Admin(...)`` 생성이 ``/admin`` 을 직접 마운트한다 — include_router 는 없다."""
     from app.core.bootstrap import create_app
 
-    app = create_app(registry=Apps(), enable_admin=True)
+    app = create_app(registry=Apps(), admin_disabled=False)
 
     assert any(getattr(route, "path", "") == "/admin" for route in app.routes)
+
+
+# =============================================================================
+# 인증 백엔드 조립 (admin-login ADR-001~ADR-003)
+# =============================================================================
+def _create():
+    from app.core.apps.wiring import create_admin
+
+    registry = Apps()
+    registry.populate(INSTALLED_APPS)  # ready() 까지 — auth 가 자격 확인 팩토리를 등록한다
+    return create_admin(FastAPI(), _ENGINE, registry, title="T")
+
+
+def test_admin_is_assembled_with_the_login_backend():
+    from app.core.security.admin_auth import AdminAuthBackend
+    from app.features.auth.admin_credentials import UserAdminCredentials
+
+    admin = _create()
+
+    assert isinstance(admin.authentication_backend, AdminAuthBackend)
+    assert isinstance(admin.authentication_backend.credentials, UserAdminCredentials)
+    assert admin.authentication_backend.templates is admin.templates
+
+
+@pytest.mark.parametrize(
+    ("env", "secure"),
+    [("development", False), ("test", False), ("staging", True), ("production", True)],
+)
+def test_session_cookie_options_follow_env(monkeypatch: pytest.MonkeyPatch, env: str, secure: bool):
+    import config
+
+    monkeypatch.setattr(config.app_settings, "ENV", env)
+    options = _create().authentication_backend.middlewares[0].kwargs
+
+    assert options["session_cookie"] == "admin_session"
+    assert options["path"] == "/admin"
+    assert options["same_site"] == "strict"
+    assert options["max_age"] == 8 * 60 * 60
+    assert options["https_only"] is secure
+    assert options["secret_key"] == config.session_settings.SESSION_SECRET_KEY
+
+
+def test_missing_credentials_registration_stops_startup(monkeypatch: pytest.MonkeyPatch):
+    from app.core.apps.exceptions import ImproperlyConfigured
+    from app.core.apps.wiring import create_admin
+    from app.core.security import admin_credentials
+
+    registry = Apps()
+    registry.populate(INSTALLED_APPS, run_ready=False)
+    monkeypatch.setattr(admin_credentials, "_factory", None)
+
+    with pytest.raises(ImproperlyConfigured, match="ADMIN_DISABLED=true"):
+        create_admin(FastAPI(), _ENGINE, registry, title="T")
+
+
+def test_cookie_name_collision_with_the_api_session_cookie_stops_startup(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import config
+    from app.core.apps.exceptions import ImproperlyConfigured
+
+    monkeypatch.setattr(config.session_settings, "SESSION_COOKIE_NAME", "admin_session")
+
+    with pytest.raises(ImproperlyConfigured, match="SESSION_COOKIE_NAME"):
+        _create()
+
+
+def test_login_template_overrides_the_sqladmin_default():
+    """``templates_dir`` 의 파일이 패키지 템플릿보다 먼저 잡힌다(sqladmin 0.32 ChoiceLoader 순서)."""
+    from app.core.apps.wiring import ADMIN_TEMPLATES_DIR
+
+    admin = _create()
+    template = admin.templates.env.get_template("sqladmin/login.html")
+
+    assert template.filename is not None
+    assert (
+        Path(template.filename).resolve()
+        == (ADMIN_TEMPLATES_DIR / "sqladmin" / "login.html").resolve()
+    )

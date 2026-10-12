@@ -223,6 +223,10 @@ NON_ENV_UPPERCASE_TOKENS = {
     "HS256",
     "INFO",
     "INSTALLED_APPS",
+    # 제거된 설정 이름(admin-login ADR-005) — 문서는 "남아 있으면 기동이 멈춘다" 는 이전 안내로만 쓴다.
+    "ADMIN",
+    # KST→UTC 리비전(e5a7c2d9f310)의 오프셋 상수 — 배포 전 확인 항목으로 문서가 가리킨다.
+    "LEGACY_OFFSET",
 }
 
 

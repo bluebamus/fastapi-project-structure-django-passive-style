@@ -2,7 +2,7 @@
 
 ``main.py`` 가 모듈 최상단에서 앱을 조립하던 구조를 factory 로 옮겼다. 이유는 하나다:
 **테스트가 격리된 앱을 만들 수 있어야 한다.** 모듈 최상단 조립은 프로세스당 하나뿐이라
-"auth 를 뺀 앱", "ADMIN=False 인 앱", "다른 registry 를 쓴 앱" 을 만들 수 없고, 그러면
+"auth 를 뺀 앱", "관리 화면을 끈 앱", "다른 registry 를 쓴 앱" 을 만들 수 없고, 그러면
 수동 등록의 핵심 계약(등록 안 한 앱은 안 붙는다)을 실행으로 증명할 방법이 없다.
 
 조립 순서(§6.5)는 다음과 같고, 순서 자체가 계약이다.
@@ -13,10 +13,10 @@
 4. CORS · user-info middleware · 예외 핸들러
 5. registry 기반 Router 설치
 6. health · Scalar docs
-7. 허용된 경우에만 registry 기반 SQLAdmin 설치
+7. 허용된 경우에만 registry 기반 SQLAdmin 설치(슈퍼유저 로그인 백엔드 포함)
 
 2번이 3번보다 먼저인 이유는 startup 테이블 생성과 migration metadata 가 같은 모델
-집합을 봐야 하기 때문이다. 7번이 마지막인 이유는 SEC-01 — ``ADMIN=False`` 면 sqladmin
+집합을 봐야 하기 때문이다. 7번이 마지막인 이유는 SEC-01 — ``ADMIN_DISABLED=true`` 면 sqladmin
 이 아예 import 되지 않아야 한다.
 """
 
@@ -328,7 +328,7 @@ def create_app(
     installed_apps: Sequence[str] | None = None,
     registry: Apps | None = None,
     *,
-    enable_admin: bool | None = None,
+    admin_disabled: bool | None = None,
 ) -> FastAPI:
     """설치된 앱으로 FastAPI 애플리케이션을 조립한다.
 
@@ -336,14 +336,15 @@ def create_app(
         installed_apps: 설치할 앱 목록. ``None`` 이면 ``config.INSTALLED_APPS``.
         registry: 사용할 registry. ``None`` 이면 프로세스 전역 registry 를 쓴다.
             테스트는 격리 인스턴스를 주입해 서로의 상태를 오염시키지 않는다(NFR-05).
-        enable_admin: Admin 설치 여부. ``None`` 이면 ``app_settings.ADMIN``.
+        admin_disabled: 관리 화면을 끌지 여부. ``None`` 이면 ``app_settings.ADMIN_DISABLED``.
+            끄면 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두 생기지 않는다.
 
     Returns:
         조립이 끝난 FastAPI 인스턴스.
     """
     apps_list = list(INSTALLED_APPS if installed_apps is None else installed_apps)
     app_registry = default_registry if registry is None else registry
-    admin_enabled = app_settings.ADMIN if enable_admin is None else enable_admin
+    disabled = app_settings.ADMIN_DISABLED if admin_disabled is None else admin_disabled
 
     # 1~2. registry population — FastAPI 생성보다 먼저다. startup 테이블 생성과
     # migration metadata 가 같은 모델 집합을 봐야 한다.
@@ -380,20 +381,13 @@ def create_app(
 
     # 7. Admin — 여기서만 sqladmin 을 부른다(SEC-01).
     app.state.app_registry = app_registry
-    if admin_enabled:
+    if not disabled:
         app.state.admin = create_admin(
             app, engine, app_registry, title=f"{app_settings.PROJECT_NAME} Admin"
         )
-        if app_settings.ENV in ("production", "staging"):
-            # 여기 왔다면 ADMIN_UNAUTHENTICATED_ACK=true 다(없으면 AppSettings 가 기동을 멈춘다).
-            # 운영 로그를 보는 사람이 이 상태를 놓치지 않도록 매 기동 경고한다.
-            logger.warning(
-                "SQLAdmin 이 인증 없이 열려 있습니다 (ENV=%s, ADMIN_UNAUTHENTICATED_ACK=true): /admin",
-                app_settings.ENV,
-            )
-        else:
-            logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
+        logger.info("SQLAdmin 관리자 페이지 활성화 (슈퍼유저 로그인 필요): /admin")
     else:
-        logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
+        # 경로를 싣지 않는다 — 끈 관리 화면의 위치를 로그로도 알리지 않는다(admin-login ADR-005).
+        logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
 
     return app

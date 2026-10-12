@@ -6,18 +6,20 @@ SQLAdmin을 사용한 UserAccessLog 모델의 관리자 인터페이스를 정�
 등록 경로:
     이 파일은 ModelView 정의와 ``admin_views`` 노출까지만 담당합니다.
     registry adapter 가 설치 앱 순서대로 이를 취합하고,
-    ``main.py`` 는 ADMIN=true 일 때 ``register_admin(app, engine)`` 만 호출합니다.
+    관리 화면이 켜져 있으면(``ADMIN_DISABLED=false``) ``app.core.apps.wiring.create_admin`` 이
+    이 파일의 ``admin_views`` 를 등록합니다.
     이 파일에서 ``Admin`` 인스턴스를 직접 만들지 않습니다.
 
 Note:
-    SQLAdmin은 ADMIN 설정으로 제어됩니다 (DEBUG와 독립적).
-    ADMIN=True: /admin 접근 가능, ADMIN=False: /admin 접근 차단
-    운영 환경에서는 보안상 ADMIN=False 설정을 권장합니다.
+    SQLAdmin은 ADMIN_DISABLED 설정으로 제어됩니다 (DEBUG와 독립적).
+    ADMIN_DISABLED=false(기본): /admin 마운트 — 활성 슈퍼유저 로그인이 필요합니다.
+    ADMIN_DISABLED=true: 관리 화면 자체가 없습니다(마운트·링크 없음).
 """
 
 from typing import Any
 
 from sqladmin import ModelView
+from sqladmin.filters import BooleanFilter, OperationColumnFilter
 
 from app.features.home.models.models import UserAccessLog
 
@@ -89,16 +91,18 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     ]
 
     # 필터 가능한 컬럼
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넘기면 sqladmin 0.32 목록 처리가
+    # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다(admin-login F-007).
+    # 시각 컬럼(UTCDateTime)은 넣지 않는다 — 연산 필터가 날짜로 인식하지 못해 문자열을 바인딩한다.
     column_filters = [
-        UserAccessLog.ip_address,
-        UserAccessLog.os_name,
-        UserAccessLog.browser_name,
-        UserAccessLog.device_type,
-        UserAccessLog.is_bot,
-        UserAccessLog.response_status,
-        UserAccessLog.request_method,
-        UserAccessLog.country,
-        UserAccessLog.created_at,
+        OperationColumnFilter(UserAccessLog.ip_address),
+        OperationColumnFilter(UserAccessLog.os_name),
+        OperationColumnFilter(UserAccessLog.browser_name),
+        OperationColumnFilter(UserAccessLog.device_type),
+        BooleanFilter(UserAccessLog.is_bot),
+        OperationColumnFilter(UserAccessLog.response_status),
+        OperationColumnFilter(UserAccessLog.request_method),
+        OperationColumnFilter(UserAccessLog.country),
     ]
 
     # =========================================================================
@@ -197,5 +201,5 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
 # registry adapter(app/core/apps/wiring.py)가 설치 앱의 이 이름을 읽어 SQLAdmin 에 등록한다.
 # 앱이 config.INSTALLED_APPS 에 없으면 이 파일이 있어도 등록되지 않는다.
 # 패키지 __init__.py 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
-# sqladmin 이 딸려 와 ADMIN=false 가 무의미해진다(가드: tests/core/test_admin_wiring.py).
+# sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다(가드: tests/core/test_admin_wiring.py).
 admin_views: list[type] = [UserAccessLogAdmin]

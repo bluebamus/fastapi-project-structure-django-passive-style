@@ -9,6 +9,7 @@
 """
 
 from sqladmin import ModelView
+from sqladmin.filters import OperationColumnFilter
 
 from app.features.reports.models.models import SalesOrder
 
@@ -35,7 +36,10 @@ class SalesOrderAdmin(ModelView, model=SalesOrder):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [SalesOrder.order_no, SalesOrder.customer]
-    column_filters = [SalesOrder.status, SalesOrder.ordered_at]
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넘기면 sqladmin 0.32 목록 처리가
+    # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다(admin-login F-007).
+    # 시각 컬럼(UTCDateTime)은 넣지 않는다 — 연산 필터가 날짜로 인식하지 못해 문자열을 바인딩한다.
+    column_filters = [OperationColumnFilter(SalesOrder.status)]
 
     column_details_list = [
         SalesOrder.id,

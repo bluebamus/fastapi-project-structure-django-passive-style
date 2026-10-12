@@ -6,7 +6,7 @@
 1. SQL 본문·바인딩 파라미터가 **어떤 handler 로도** 새지 않는다 (C-5).
 2. alembic 실행이 앱 로거를 죽이지 않는다.
 3. `.env.example` 을 그대로 `.env` 로 써도 기동한다.
-4. 운영에서 인증 없는 `/admin` 이 사고로 열리지 않는다.
+4. `/admin` 은 로그인으로 막고, 예전 승인 플래그는 남지 않는다.
 """
 
 from __future__ import annotations
@@ -193,24 +193,18 @@ def test_env_example_only_asks_to_fill_secrets(monkeypatch: pytest.MonkeyPatch, 
 
 
 # =============================================================================
-# 4. 운영에서 인증 없는 /admin 차단
+# 4. /admin 은 로그인으로 막는다 — 배포 환경 승인 플래그는 제거됐다 (admin-login ADR-004)
 # =============================================================================
-@pytest.mark.parametrize("env", ["production", "staging"])
-def test_unauthenticated_admin_is_rejected_in_production(env: str):
-    """개발 기본값(ADMIN=true)을 그대로 배포하면 기동이 실패한다."""
-    from config import AppSettings
-
-    with pytest.raises(ValidationError, match="ADMIN_UNAUTHENTICATED_ACK"):
-        AppSettings(ENV=env, ADMIN=True, ADMIN_UNAUTHENTICATED_ACK=False)
+#: 제거된 설정 이름. 이 파일 자체가 검사 대상에 걸리지 않도록 조각으로 둔다.
+_REMOVED_ACK = "ADMIN_UNAUTHENTICATED" + "_ACK"
 
 
 @pytest.mark.parametrize("env", ["production", "staging"])
-def test_explicit_choices_are_allowed(env: str):
-    """끄거나(false) 승인하거나(ack) — 명시적으로 고르면 통과한다."""
+def test_admin_is_allowed_in_deployment_without_an_ack(env: str):
+    """``/admin`` 에 슈퍼유저 로그인이 붙었으므로 배포 환경에서 관리 화면을 켜도 거부하지 않는다."""
     from config import AppSettings
 
-    assert AppSettings(ENV=env, ADMIN=False).ADMIN is False
-    assert AppSettings(ENV=env, ADMIN=True, ADMIN_UNAUTHENTICATED_ACK=True).ADMIN is True
+    assert AppSettings(ENV=env, ADMIN_DISABLED=False).ADMIN_DISABLED is False
 
 
 @pytest.mark.parametrize("env", ["development", "test"])
@@ -218,14 +212,35 @@ def test_development_default_is_untouched(env: str):
     """개발 기본값은 그대로다 — 받자마자 /admin 을 쓸 수 있어야 한다(2026-08-12 결정)."""
     from config import AppSettings
 
-    assert AppSettings(ENV=env, ADMIN=True).ADMIN is True
+    assert AppSettings(ENV=env).ADMIN_DISABLED is False
 
 
-def test_admin_residual_risk_is_documented():
-    """인증 없는 /admin 의 잔여 위험이 운영 문서에 남아 있다."""
-    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    assert "인증이 없습니다" in env_example
-    assert "ADMIN_UNAUTHENTICATED_ACK" in env_example
+def test_leftover_ack_in_environment_is_ignored(monkeypatch: pytest.MonkeyPatch):
+    """`.env`·환경에 예전 승인 플래그가 남아 있어도 설정 로드가 깨지지 않는다(``extra="ignore"``)."""
+    from config import AppSettings
+
+    monkeypatch.setenv(_REMOVED_ACK, "true")
+    settings = AppSettings(ENV="production")
+
+    assert not hasattr(settings, _REMOVED_ACK)
+
+
+def test_removed_ack_does_not_survive_in_code_or_operator_docs():
+    """승인 플래그가 코드·운영 문서에 남지 않는다(CRP 기록은 append-only 라 제외)."""
+    targets = [
+        REPO_ROOT / "config.py",
+        REPO_ROOT / ".env.example",
+        REPO_ROOT / "README.md",
+        *(REPO_ROOT / "app").rglob("*.py"),
+        *(REPO_ROOT / "docs" / "guides").glob("*.*"),
+    ]
+    leftovers = [
+        str(path.relative_to(REPO_ROOT))
+        for path in targets
+        if _REMOVED_ACK in path.read_text(encoding="utf-8")
+    ]
+
+    assert not leftovers, f"제거된 설정이 남아 있다: {leftovers}"
 
 
 # =============================================================================
@@ -406,9 +421,8 @@ def test_sql_echo_is_rejected_in_production(
     """운영에서 ``LOG_SQL_ECHO_ENABLED=true`` 는 기동을 거부한다."""
     monkeypatch.setenv("ENV", env)
     monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "true")
-    # 운영에서는 무인증 /admin 가드가 먼저 걸린다(F-007). 그것을 통과시켜야
-    # 이 테스트가 보려는 SQL echo 검증에 도달한다.
-    monkeypatch.setenv("ADMIN", "false")
+    # 관리 화면 조립을 빼 이 테스트가 보려는 SQL echo 검증만 남긴다.
+    monkeypatch.setenv("ADMIN_DISABLED", "true")
 
     # 오염된 설정은 restore_config 가 원래 객체로 되돌린다.
     with pytest.raises(ValueError, match="LOG_SQL_ECHO_ENABLED"):

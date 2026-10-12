@@ -6,7 +6,7 @@ app loading lifecycle 을 옮긴 것이고, 이 모듈은 그 결과를 이 프�
 
 * registry core 가 FastAPI·SQLAdmin 에 의존하지 않는다(NFR-06). Alembic 이나 CLI 가
   registry 를 쓸 때 웹 스택이 딸려오지 않는다.
-* ``ADMIN=False`` 에서 sqladmin 이 로드되지 않는다(SEC-01). 아래 admin 함수는 호출될
+* ``ADMIN_DISABLED=true`` 에서 sqladmin 이 로드되지 않는다(SEC-01). 아래 admin 함수는 호출될
   때 비로소 ``sqladmin`` 을 import 한다 — module 최상단에 두면 registry 를 쓰는 모든
   진입점이 sqladmin 을 끌고 들어온다.
 
@@ -18,6 +18,7 @@ app loading lifecycle 을 옮긴 것이고, 이 모듈은 그 결과를 이 프�
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.core.apps.exceptions import ImproperlyConfigured
@@ -29,6 +30,9 @@ if TYPE_CHECKING:  # pragma: no cover - 타입 검사 전용
     from sqladmin import Admin
 
 logger = get_logger("app.core.apps.wiring")
+
+#: SQLAdmin 템플릿 덮어쓰기 디렉터리 — 여기의 ``sqladmin/<이름>.html`` 이 패키지 템플릿보다 먼저다.
+ADMIN_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates" / "admin"
 
 
 def install_routers(app: FastAPI, registry: Apps) -> list[str]:
@@ -97,19 +101,74 @@ def install_admin(admin: Admin, registry: Apps) -> list[str]:
 def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Admin:
     """SQLAdmin 을 만들어 ``/admin`` 에 마운트하고 설치 앱의 뷰를 등록한다.
 
-    ``sqladmin`` import 가 함수 안에 있는 것이 핵심이다(SEC-01) — ``ADMIN=False`` 인
+    ``sqladmin`` import 가 함수 안에 있는 것이 핵심이다(SEC-01) — ``ADMIN_DISABLED=true`` 인
     프로세스는 이 함수를 부르지 않으므로 sqladmin 도, 앱별 ``admin.py`` 도,
     거기 딸린 ModelView 들도 메모리에 올라오지 않는다.
+
+    ``/admin`` 은 활성 슈퍼유저 로그인이 필요하다(admin-login ADR-001). 인증 백엔드
+    (``AdminAuthBackend``)는 여기서 조립해 ``Admin(authentication_backend=...)`` 로 주입한다.
+    자격 확인 구현은 설치 앱이 ``ready()`` 에서 등록한 팩토리다(core 는 사용자 모델을 모른다) —
+    등록한 앱이 없으면 인증 없는 관리 화면을 여는 대신 기동을 멈춘다. 로그인 화면은
+    ``app/templates/admin/sqladmin/login.html`` 이 sqladmin 기본 템플릿을 덮어쓴다
+    (``templates_dir`` 의 ``FileSystemLoader`` 가 패키지 템플릿보다 먼저다).
 
     Args:
         app: FastAPI 인스턴스. ``Admin(...)`` 생성 시 SQLAdmin 이 ``/admin`` 을 직접
             마운트한다 — 별도 ``include_router`` 는 필요 없다.
         engine: SQLAlchemy async 엔진.
-        registry: population 이 끝난 registry.
+        registry: population 이 끝난 registry(``ready()`` 까지 끝나 있어야 한다).
         title: 관리 화면 제목.
+
+    Raises:
+        ImproperlyConfigured: 자격 확인을 등록한 설치 앱이 없다, 또는 관리 화면 세션 쿠키
+            이름이 ``SESSION_COOKIE_NAME`` 과 같다.
     """
     from sqladmin import Admin
 
-    admin = Admin(app, engine, title=title)
+    from app.core.middlewares.client_ip import ClientIPResolver
+    from app.core.security.admin_auth import (
+        AdminAuthBackend,
+        AdminLoginLimits,
+        AdminSessionCookie,
+    )
+    from app.core.security.admin_credentials import get_admin_credentials_factory
+    from app.core.security.rate_limit import RateLimiter
+    from config import app_settings, jwt_settings, middleware_settings, session_settings
+
+    credentials_factory = get_admin_credentials_factory()
+    if credentials_factory is None:
+        raise ImproperlyConfigured(
+            "관리 화면이 켜져 있는데 로그인의 자격 확인을 등록한 설치 앱이 없습니다. "
+            "auth 앱(app.features.auth.apps.AuthConfig)을 INSTALLED_APPS 에 두거나 "
+            "ADMIN_DISABLED=true 로 끄세요."
+        )
+    cookie = AdminSessionCookie(https_only=app_settings.ENV in ("staging", "production"))
+    if cookie.name == session_settings.SESSION_COOKIE_NAME:
+        raise ImproperlyConfigured(
+            f"SESSION_COOKIE_NAME 이 관리 화면 세션 쿠키 이름('{cookie.name}')과 같습니다. "
+            "접속 로그가 관리자 세션 쿠키를 기록하게 되므로 다른 이름을 쓰세요."
+        )
+
+    backend = AdminAuthBackend(
+        credentials=credentials_factory(),
+        # Redis 는 lifespan 이 기동 때 app.state 에 둔다 — 조립 시점에는 아직 없어 요청 때 꺼낸다.
+        rate_limiter=lambda: RateLimiter(app.state.redis),
+        ip_resolver=ClientIPResolver(middleware_settings.TRUSTED_PROXY_HOPS),
+        limits=AdminLoginLimits(
+            per_user=jwt_settings.AUTH_LOGIN_MAX_ATTEMPTS,
+            per_ip=jwt_settings.AUTH_LOGIN_IP_MAX_ATTEMPTS,
+            window_seconds=jwt_settings.AUTH_LOGIN_WINDOW_SECONDS,
+        ),
+        secret_key=session_settings.SESSION_SECRET_KEY,
+        cookie=cookie,
+    )
+    admin = Admin(
+        app,
+        engine,
+        title=title,
+        authentication_backend=backend,
+        templates_dir=str(ADMIN_TEMPLATES_DIR),
+    )
+    backend.templates = admin.templates
     install_admin(admin, registry)
     return admin

@@ -1,6 +1,6 @@
-"""AC-07 — ``ADMIN=False`` 면 관리 계층이 **로드조차 되지 않는다** (SEC-01).
+"""AC-07 — ``ADMIN_DISABLED=true`` 면 관리 계층이 **로드조차 되지 않는다** (SEC-01).
 
-``ADMIN=False`` 가 "라우트만 안 붙임" 이면 설정의 의미가 실제와 어긋난다. sqladmin 과
+``ADMIN_DISABLED=true`` 가 "라우트만 안 붙임" 이면 설정의 의미가 실제와 어긋난다. sqladmin 과
 앱별 ModelView 가 전부 메모리에 올라온 채로 라우트만 없는 상태라면, sqladmin 을
 선택적 의존성으로 분리할 수도 없고 공격면도 줄지 않는다.
 
@@ -23,7 +23,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _PROBE = """
 import json, os, sys
 
-os.environ["ADMIN"] = "{admin}"
+os.environ["ADMIN_DISABLED"] = "{disabled}"
 os.environ["DEBUG"] = "false"
 
 import main
@@ -41,9 +41,9 @@ print("__RESULT__" + json.dumps({{
 """
 
 
-def _boot(admin: str) -> dict:
+def _boot(disabled: str) -> dict:
     proc = subprocess.run(  # noqa: S603 - 인터프리터·스크립트가 이 파일에 고정돼 있다
-        [sys.executable, "-X", "utf8", "-c", _PROBE.format(admin=admin)],
+        [sys.executable, "-X", "utf8", "-c", _PROBE.format(disabled=disabled)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -52,29 +52,33 @@ def _boot(admin: str) -> dict:
         timeout=300,
         check=False,
     )
-    assert proc.returncode == 0, f"ADMIN={admin} 로 앱을 띄우지 못했습니다:\n{proc.stderr[-3000:]}"
+    assert (
+        proc.returncode == 0
+    ), f"ADMIN_DISABLED={disabled} 로 앱을 띄우지 못했습니다:\n{proc.stderr[-3000:]}"
     line = next(x for x in proc.stdout.splitlines() if x.startswith("__RESULT__"))
     return json.loads(line.removeprefix("__RESULT__"))
 
 
 def test_admin_layer_is_not_loaded_when_disabled():
     """SEC-01: sqladmin 과 앱별 admin 모듈이 sys.modules 에 없다."""
-    result = _boot("false")
+    result = _boot("true")
 
     assert result["sqladmin"] is False, (
-        "ADMIN=false 인데 sqladmin 이 로드됐습니다. registry adapter 나 앱 패키지가 "
+        "ADMIN_DISABLED=true 인데 sqladmin 이 로드됐습니다. registry adapter 나 앱 패키지가 "
         "admin 모듈을 eager import 하고 있지 않은지 확인하세요."
     )
     assert (
         result["feature_admin_modules"] == []
-    ), f"ADMIN=false 인데 앱 admin 모듈이 로드됐습니다: {result['feature_admin_modules']}"
+    ), f"ADMIN_DISABLED=true 인데 앱 admin 모듈이 로드됐습니다: {result['feature_admin_modules']}"
     assert result["admin_routes"] == []
 
 
 def test_admin_layer_loads_when_enabled():
     """대조군 — 위 검사가 '어차피 안 붙는 구조' 라서 통과하는 것이 아님을 보인다."""
-    result = _boot("true")
+    result = _boot("false")
 
     assert result["sqladmin"] is True
-    assert result["feature_admin_modules"], "ADMIN=true 인데 앱 admin 모듈이 로드되지 않았다"
+    assert result[
+        "feature_admin_modules"
+    ], "ADMIN_DISABLED=false 인데 앱 admin 모듈이 로드되지 않았다"
     assert "/admin" in result["admin_routes"]
