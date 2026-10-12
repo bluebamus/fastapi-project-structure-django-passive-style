@@ -19,6 +19,7 @@ Django ``django.apps.AppConfig`` 의 공개 의미(``name``·``label``·``verbos
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import keyword
 from pathlib import Path
 from types import ModuleType
@@ -86,6 +87,8 @@ class AppConfig:
     router_attribute: str | None = None
     models_module: str = "models"
     admin_module: str = "admin"
+    #: Celery 태스크 module. 있으면 워커가 include 한다(service-hardening ADR-012).
+    tasks_module: str = "tasks"
     #: 이 앱 router 를 붙일 prefix. 앱별로 바꿀 수 있다.
     router_prefix: str = "/api"
 
@@ -283,6 +286,17 @@ class AppConfig:
     def import_admin_views(self) -> Any | None:
         """앱의 ``admin_views`` 를 돌려준다. admin module 이 없으면 ``None``."""
         return self._import_component(self.admin_module, "admin_views")
+
+    def tasks_module_path(self) -> str | None:
+        """앱의 Celery 태스크 module 경로. module 이 없으면 ``None``.
+
+        router·admin 과 달리 **import 하지 않고** ``find_spec`` 으로 존재만 본다. 태스크
+        module 은 ``app.celery.app`` 의 ``celery_app`` 을 import 하는데, 그 ``celery_app`` 이
+        include 목록을 만들려고 여기를 부른다 — 여기서 import 하면 순환 import 다.
+        실제 import 는 워커가 include 를 읽을 때 한다(내부 import 오류도 그때 터진다).
+        """
+        dotted = f"{self.name}.{self.tasks_module}"
+        return dotted if importlib.util.find_spec(dotted) is not None else None
 
     def _import_component(self, relative_module: str, attribute: str) -> Any | None:
         dotted = f"{self.name}.{relative_module}"

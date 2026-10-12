@@ -36,10 +36,10 @@ tags_metadata = [
 
 liveness 와 readiness 를 **분리**해서 제공합니다(ADR-013).
 
-| 경로 | 묻는 것 | DB 접속 |
+| 경로 | 묻는 것 | 의존 자원 확인 |
 |---|---|---|
 | `GET /health` | 프로세스가 살아 있는가 | 하지 않음 |
-| `GET /ready` | 요청을 받을 준비가 됐는가 | writer 에 ping |
+| `GET /ready` | 요청을 받을 준비가 됐는가 | writer DB·Redis 에 ping(각 2초) |
 
 `/health` 가 DB 를 보지 않는 이유는, liveness 가 DB 에 의존하면 DB 가 잠깐
 흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽이기 때문입니다. 준비되지 않은
