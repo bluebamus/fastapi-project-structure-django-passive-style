@@ -41,12 +41,10 @@ teardown 에 있던 **옛 구조**의 기록이다. P1-3 이 적용돼 커밋이
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.blog.models.models import Post  # noqa: F401  (register table)
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 _NEW_POST = {"title": "경계 검증", "content": "본문", "author": "kim"}
 _MISSING_ID = "00000000-0000-0000-0000-000000000000"
@@ -59,47 +57,33 @@ async def tx_client():
     `calls["fail_commit"] = True` 로 두면 commit 이 실패하도록 주입할 수 있다.
     실제 커밋 동작은 그대로 위임하므로 데이터 검증도 같이 가능하다.
     """
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
     calls = {"commit": 0, "rollback": 0, "fail_commit": False}
 
-    async def _override_get_session():
-        async with maker() as session:
-            original_commit = session.commit
-            original_rollback = session.rollback
+    def _count_calls(session):
+        original_commit = session.commit
+        original_rollback = session.rollback
 
-            async def _counting_commit(*args, **kwargs):
-                calls["commit"] += 1
-                if calls["fail_commit"]:
-                    raise RuntimeError("injected commit failure")
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            calls["commit"] += 1
+            if calls["fail_commit"]:
+                raise RuntimeError("injected commit failure")
+            return await original_commit(*args, **kwargs)
 
-            async def _counting_rollback(*args, **kwargs):
-                calls["rollback"] += 1
-                return await original_rollback(*args, **kwargs)
+        async def _counting_rollback(*args, **kwargs):
+            calls["rollback"] += 1
+            return await original_rollback(*args, **kwargs)
 
-            session.commit = _counting_commit  # type: ignore[method-assign]
-            session.rollback = _counting_rollback  # type: ignore[method-assign]
-            yield session
+        session.commit = _counting_commit
+        session.rollback = _counting_rollback
 
-    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다. 같은 세션으로 오버라이드해야
-    # 읽기/쓰기 커밋 횟수를 한 카운터로 셀 수 있다.
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    # raise_app_exceptions=False: 서버 예외를 그대로 던지지 않고 실제 응답으로 받아야
-    # "클라이언트가 무엇을 보는가"를 검증할 수 있다.
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, calls
-    app.dependency_overrides.clear()
-    await engine.dispose()
+    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다. 두 의존성의 세션에 같은 훅을
+    # 걸어야 읽기/쓰기 커밋 횟수를 한 카운터로 셀 수 있다.
+    async with sqlite_session_overrides(app, on_session=_count_calls):
+        # raise_app_exceptions=False: 서버 예외를 그대로 던지지 않고 실제 응답으로 받아야
+        # "클라이언트가 무엇을 보는가"를 검증할 수 있다.
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c, calls
 
 
 async def test_read_path_does_not_commit(tx_client):

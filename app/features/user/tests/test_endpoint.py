@@ -6,38 +6,20 @@ in-memory sqlite(get_writer_db_session 오버라이드)로 검증한다.
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 
 @pytest_asyncio.fixture
 async def client():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def _override_get_session():
-        async with maker() as session:
-            yield session
-
-    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다 — 함께 오버라이드하지 않으면
-    # 읽기 경로가 실제 MySQL 로 새어나간다.
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
+    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다 — 헬퍼가 두 의존성을 함께
+    # 오버라이드한다(읽기 경로가 실제 MySQL 로 새지 않고, 몰래 쓰면 거부된다).
+    async with sqlite_session_overrides(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
 
 
 def test_user_auto_registered():

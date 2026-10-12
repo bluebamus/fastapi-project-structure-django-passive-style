@@ -62,15 +62,14 @@ def _env_example_values() -> dict[str, str]:
 
 
 @pytest.fixture
-def load_config(monkeypatch: pytest.MonkeyPatch) -> Iterator:
+def load_config(monkeypatch: pytest.MonkeyPatch, restore_config) -> Iterator:
     """환경변수를 덮어쓰고 config 를 다시 import 한다. 끝나면 원상 복구.
 
     reload 는 같은 모듈 dict 에 새 설정 객체를 채운다. 다른 테스트 모듈이 수집 시점에
-    잡아 둔 ``db_settings`` 등과 어긋나지 않도록, 끝나면 원래 객체로 되돌린다.
+    잡아 둔 ``db_settings`` 등과 어긋나지 않도록, 끝나면 원래 객체로 되돌린다
+    (루트 ``conftest.py`` 의 ``restore_config``).
     """
-    import config as config_module
-
-    snapshot = dict(vars(config_module))
+    config_module = restore_config
 
     def _load(env: str, values: dict[str, str]) -> object:
         monkeypatch.setenv("ENV", env)
@@ -86,8 +85,6 @@ def load_config(monkeypatch: pytest.MonkeyPatch) -> Iterator:
     yield _load
 
     monkeypatch.undo()
-    vars(config_module).clear()
-    vars(config_module).update(snapshot)
 
 
 def test_env_example_secrets_are_rejected_in_production(load_config):

@@ -101,9 +101,52 @@
 - **수렴 판정:** 단계 B `CONVERGED` (F-005~F-013 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 12)
 - **잔여 위험 변화:** R-007(신뢰 홉 수 설정 의존)·R-008(SQLite FK 방향 미구분) 등록
 
+### Round 3 — 2026-10-12 (base SHA: `2dd6706`) · 단계 C
+- **트리거:** REQ-001 단계 C (제안 6) — ADR-009, 신규 ADR-026
+- **검수 범위:** F-014 ~ F-016 (`2dd6706` 이후 단계 C 커밋)
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 □ (F-015 는 CI mysql job 판정 대기)
+- **변경:**
+  - C1: `tests/session_overrides.py` `sqlite_session_overrides(app, *, on_session=None)` — writer 는 `using_writer`, read-only 는
+    `mark_read_only` 를 거친 세션을 yield(운영 `get_writer_db_session`·`get_read_only_db_session` 과 같은 표시). 전환한 파일:
+    `app/features/{auth,blog,catalog,reply,reports,sns,user}/tests/test_endpoint.py`, `app/features/{auth,blog,catalog}/tests/test_transaction_boundary.py`,
+    `tests/test_validate_before_commit.py`. 커밋 집계는 `on_session` 훅으로 옮겼다. `test_validate_before_commit` 의 `except: rollback`
+    은 운영 의존성처럼 세션 `__aexit__` 에 맡겼다. 전환 후 기존 테스트 121건이 모두 통과 — 읽기 전용 경로의 숨은 쓰기는 없었다.
+  - C2: `tests/integration/test_mysql_orm_smoke.py`(`mysql` 마커) — catalog `CatalogService` CRUD, 같은 `created_at` 5행의 2개씩 offset
+    페이지(비중복·DB 의 `id DESC` 순서와 일치·재질의 동일), `UserRepository.create` "Kim" → "kim" 이 1062 → `DuplicateException`(409)
+    (컬럼 콜레이션 `utf8mb4_unicode_ci` 와 `get_by_username("KIM")` 도 단언), `ProductRepository.update(id, {"name": None})` 가 1048 →
+    `ValidationException`(422)·값 보존, `UserAccessLogService.create_access_log` 가 긴 값(5000자 경로·500자 OS 등)을 컬럼 길이로 잘라 저장.
+    strict 모드(`STRICT_TRANS_TABLES`)를 전제로 단언한다.
+  - C3: `tests/core/test_migration_chain.py` 가 `config.db_settings` 를 호출 시점에 patch. 루트 `conftest.py` 에 `restore_config`
+    (모듈 dict 스냅샷 복원) — `test_security_hardening.py` 의 reload 3곳과 `test_deployment_safety.py::load_config` 가 공용으로 쓴다
+    (reload 로 "복구" 하던 코드는 지웠다).
+  - 문서: `docs/guides/DEVELOPMENT.md` §6.2(세션 오버라이드 헬퍼·`restore_config`·호출 시점 patch),
+    `docs/guides/feature-development-guide.html`(endpoint 테스트 문단).
+- **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 수정 전 내용을 넣어 실행 후 복원):**
+  - `tests/test_session_overrides.py::test_read_only_override_rejects_a_sneaky_write`·`test_writer_override_is_pinned_to_the_writer` —
+    헬퍼에서 `mark_read_only`·`using_writer` 를 빼면 둘 다 실패 확인(DID NOT RAISE / pinned False)
+  - `test_session_dependencies_are_overridden_only_through_the_helper` — `app/features/user/tests/test_endpoint.py` 를 전환 전(main)
+    내용으로 되돌리면 실패 확인. `test_detector_sees_the_helper_itself` 는 탐지기 자체 검사(헬퍼의 두 줄을 찾는다)
+  - `tests/core/test_migration_chain.py::test_upgrade_follows_the_patch_after_a_config_reload` — `_upgrade_to_head` 를 import 시점
+    객체 patch 로 되돌리면 실패 확인. reload 된 설정에는 `tmp_path` 의 미끼 SQLite URL 을 심어 되돌린 코드도 실제 DB 에 닿지 않는다
+  - `tests/integration/test_mysql_orm_smoke.py` 5건 — MySQL 이 없어 로컬 실행 불가(docker 금지). 수집 확인 + 방언 무관한 3건
+    (CRUD·정렬·NOT NULL 흐름)과 자르기 1건을 SQLite 세션으로 별도 실행해 API 사용 오류가 없음을 확인(그 과정에서 rollback 뒤 만료된
+    인스턴스 접근을 고쳤다). 콜레이션·strict 단언은 CI 에서만 판정된다
+- **검사:** ruff check 통과 · ruff format --check 334 파일 · mypy 206 파일 이슈 0
+  (로컬 정책이 컴파일된 mypy `.pyd` 를 차단해 같은 버전 1.20.2 의 순수 Python 빌드로 실행) ·
+  `pytest -m "not mysql and not browser" -p no:randomly --cov=app` **782 passed · 27 deselected · skip 0** · coverage **94.96%** ·
+  같은 마커식으로 테스트 파일 68개를 **역순**으로 명시 실행 782 passed(security_hardening → migration_chain 순서 포함) ·
+  `-m "mysql or browser" --collect-only` 27건 수집 · bandit MEDIUM 이상 0(238 파일) · OpenAPI revert check 20/20 감지 ·
+  `scripts.review_gate --fast`: ruff·bandit·pip-audit·OpenAPI 통과, mypy 는 로컬 `.pyd` 차단(위 순수 빌드로 대체), pytest 단계는
+  F-026(커버리지 문구 오인)으로 실패 표시 — 같은 실행의 요약은 782 passed · skip 0
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 1 (F-026, Accept-out-of-scope)
+- **수렴 판정:** 단계 C `NOT CONVERGED` 1건 — F-015 가 CI mysql job 그린과 단계 D(시각 왕복)를 기다린다. F-014·F-016 Fixed.
+  그룹 전체는 `NOT CONVERGED` (Open Fix 10)
+- **잔여 위험 변화:** R-009(review_gate 의 커버리지 문구 오인) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
 | 0 | 0 | 1 | 16 | 8 | 25 | NOT CONVERGED (계획) |
 | 1 | 0 | 0 | 0 | 0 | 0 (Fixed 4: F-001~F-004) | 단계 A CONVERGED · 그룹 Open 21 |
 | 2 | 0 | 0 | 0 | 0 | 0 (Fixed 9: F-005~F-013) | 단계 B CONVERGED · 그룹 Open 12 |
+| 3 | 0 | 0 | 0 | 1 | 0 (Fixed 2: F-014·F-016, F-026 Accepted) | 단계 C: F-015 CI 판정 대기 · 그룹 Open 10 |

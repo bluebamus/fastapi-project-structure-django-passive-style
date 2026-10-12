@@ -22,12 +22,11 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
+from app.core.db.session import Base
 from app.features.reports.models.models import SalesOrder
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 _ENDPOINT = "/api/v1/reports/daily-sales"
 
@@ -44,38 +43,22 @@ def _order(no: str, day: int, amount: str, status: str = "paid") -> SalesOrder:
 
 @pytest_asyncio.fixture
 async def client():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with sqlite_session_overrides(app) as maker:
+        # 원본 데이터는 ORM 으로 심는다 — 검증 대상은 조회 쪽이다.
+        async with maker() as seed:
+            seed.add_all(
+                [
+                    _order("ORD-1", 1, "1000.00"),
+                    _order("ORD-2", 1, "2500.50"),
+                    _order("ORD-3", 2, "300.00"),
+                    _order("ORD-4", 3, "999.00", status="cancelled"),  # 집계 제외
+                ]
+            )
+            await seed.commit()
 
-    # 원본 데이터는 ORM 으로 심는다 — 검증 대상은 조회 쪽이다.
-    async with maker() as seed:
-        seed.add_all(
-            [
-                _order("ORD-1", 1, "1000.00"),
-                _order("ORD-2", 1, "2500.50"),
-                _order("ORD-3", 2, "300.00"),
-                _order("ORD-4", 3, "999.00", status="cancelled"),  # 집계 제외
-            ]
-        )
-        await seed.commit()
-
-    async def _override_get_session():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
-    await engine.dispose()
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
 
 
 # =============================================================================

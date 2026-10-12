@@ -36,16 +36,14 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.blog.models.models import Post
 from app.features.catalog.models.models import Product
 from app.features.reply.models.models import Reply
 from app.features.sns.models.models import SnsPost
 from app.features.user.models.models import User
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 
 @dataclass(frozen=True)
@@ -167,38 +165,22 @@ CASES = [
 @pytest_asyncio.fixture
 async def counting_client():
     """커밋 횟수를 세는 in-memory DB 클라이언트와 세션 팩토리."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
     calls = {"commit": 0}
 
-    async def _override_get_session():
-        async with maker() as session:
-            original_commit = session.commit
+    def _count_commits(session):
+        original_commit = session.commit
 
-            async def _counting_commit(*args, **kwargs):
-                calls["commit"] += 1
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            calls["commit"] += 1
+            return await original_commit(*args, **kwargs)
 
-            session.commit = _counting_commit  # type: ignore[method-assign]
-            try:
-                yield session
-            except Exception:
-                await session.rollback()
-                raise
+        session.commit = _counting_commit
 
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, calls, maker
-    app.dependency_overrides.clear()
-    await engine.dispose()
+    # 예외 경로의 rollback 은 세션의 ``__aexit__`` 가 한다 — 운영 의존성과 같다.
+    async with sqlite_session_overrides(app, on_session=_count_commits) as maker:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client, calls, maker
 
 
 def _broken_dto(original: type) -> type:
