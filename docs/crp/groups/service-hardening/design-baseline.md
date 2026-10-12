@@ -76,7 +76,7 @@
 | ADR-017 | 2026-10-12 | 인증 주입은 core security 의 상태 없는 `Principal`(id, username, is_superuser)과 `get_current_principal`(Bearer → `TokenService` 검증, **DB 조회 없음**), `require_superuser`, `CurrentPrincipal` 타입 별칭으로 한다. 인증 성공 시 `request.state.user_id` 를 채운다. DB 조회(`get_current_user`)는 사용자 엔티티가 필요한 곳에서만 | 기능이 인증을 쓰려고 user 기능을 import 하면 계층 규칙이 깨진다. core 하나만 의존하면 된다. access 만료가 짧아(15분) 상태 없는 판정의 위험이 작다 | Accepted | |
 | ADR-018 | 2026-10-12 | 소유권은 core security 의 `OwnershipPolicy.ensure_can_modify(owner_id, principal)` 한 곳에서 판정한다 — 소유자 또는 슈퍼유저, 아니면 403. blog/sns/reply 에 `author_id` 를 더하고(기존 행은 NULL = 슈퍼유저만 수정), 서비스 메서드가 principal 을 인자로 받아 호출한다 | 같은 판정이 기능마다 흩어지면 하나가 빠진다. 서버가 작성자를 채워 요청 본문의 author 를 믿지 않는다(IDOR 방지) | Accepted | |
 | ADR-019 | 2026-10-12 | 권한은 **슈퍼유저/일반 2단계**다. `users.is_superuser` 를 더하고, 운영 도구 `scripts/create_superuser.py` 가 서비스·리포지토리를 background 세션으로 조립해 만든다(이미 있으면 승격) | 골격이 RBAC 를 세분화하면 복사한 쪽이 지워야 할 것이 늘어난다. Django `createsuperuser` 와 같은 역할 | Accepted | |
-| ADR-020 | 2026-10-12 | SQLAdmin 정책은 바꾸지 않는다 — `/admin` 인증 백엔드는 **영구 비목표**로 유지하고, 배포 환경의 `ADMIN_UNAUTHENTICATED_ACK` 확인과 기동 WARNING(orm-raw-repository ADR-007·ADR-036·C-10)을 그대로 둔다 | API 인증과 관리 화면 인증은 별개 결정이다. 이번 요청은 API 인증만 다룬다 | Accepted | |
+| ADR-020 | 2026-10-12 | SQLAdmin 정책은 바꾸지 않는다 — `/admin` 인증 백엔드는 **영구 비목표**로 유지하고, 배포 환경의 `ADMIN_UNAUTHENTICATED_ACK` 확인과 기동 WARNING(orm-raw-repository ADR-007·ADR-036·C-10)을 그대로 둔다 | API 인증과 관리 화면 인증은 별개 결정이다. 이번 요청은 API 인증만 다룬다 | **Superseded (2026-10-12, admin-login ADR-001·ADR-004)** — `/admin` 에 슈퍼유저 세션 로그인이 붙고 승인 플래그·WARNING 이 제거됐다 | |
 | ADR-021 | 2026-10-12 | 기존 그룹의 "인증 체계 개편/도입은 범위 밖" 비목표를 **이 그룹에 한해 대체(supersede)** 한다 — orm-raw-repository charter §2-4 의 "인증 체계 개편", 같은 그룹 residual-risk 잔여 위험 10번(예제 API 무인증), skeleton-purpose-audit charter §2-4 의 "인증 체계 도입". 두 그룹의 design-baseline 변경 이력에 상태 갱신 한 줄을 남긴다(append-only) | 그 비목표들은 각 그룹의 작업 범위를 좁힌 것이지 영구 금지가 아니었다(orm-raw-repository R-001 도 "인증은 로그인 고도화에서 붙인다" 고 적었다). 사용자가 2026-10-12 에 로그인 고도화(제안 9)를 명시 요청했다 | Accepted | orm-raw-repository charter §2-4 "인증 체계 개편" · residual-risk 10번 · skeleton-purpose-audit charter §2-4 "인증 체계 도입" |
 | ADR-022 | 2026-10-12 | 협력 객체는 생성자 인자로 받고, 조립은 provider 함수(`Depends`)가 한다. 구현이 하나뿐인 Protocol·팩토리는 만들지 않는다 — Redis 를 쓰는 클래스는 fakeredis 로 실물을 시험한다. 커밋은 핸들러가 응답 DTO 검증 후 1회 하고, 의존성 함수는 커밋하지 않는다 | 사용자 요구("필수 작업은 반드시 주입을 통해"). 단일 구현 추상화는 읽는 비용만 늘린다. 커밋 위치는 orm-raw-repository ADR-008 | Accepted | |
 | ADR-023 | 2026-10-12 | `TRUSTED_PROXY_HOPS` 기본값 0 은 **기존 동작을 바꾼다** — 이전에는 `X-Forwarded-For` 의 맨 왼쪽 값을 무조건, 없으면 `X-Real-IP` 를 기록했다. 이제 기본은 소켓 주소이고, 프록시 뒤 배포는 홉 수를 설정해야 실제 클라이언트 IP 가 기록된다. 해석은 XFF + 직접 피어를 이은 목록에서 직접 피어를 0번째로 센 오른쪽 N번째(= XFF 의 오른쪽 N번째)이고, 체인이 N 보다 짧으면 직접 피어로 돌아간다. 미들웨어는 `ClientIPResolver` 를 생성자 인자로 받고 `setup_user_info_middleware()` 가 설정으로 한 번 만든다. `.env.example`·ARCHITECTURE §6 에 같은 내용을 적는다 | ADR-005 의 "오른쪽 N번째" 를 werkzeug `ProxyFix(x_for=N)` 와 같은 뜻으로 고정한다(직접 피어를 1번째로 세면 hops=1 이 프록시 자신을 기록한다). 체인이 짧을 때 맨 왼쪽을 쓰면 클라이언트가 쓴 값을 믿게 된다. 안전한 기본값이 기존 배포의 기록 IP 를 바꾸므로 운영자가 알아야 한다 | Accepted | |
@@ -102,7 +102,7 @@
 - C-10: Redis 는 필수다 — API 기동은 Redis ping 이 성공해야 하고 `/ready` 는 DB·Redis 를 모두 본다 — ADR-011
 - C-11: API 인증은 core 의 `get_current_principal` 주입 하나로 한다. 기능이 인증을 위해 다른 기능을 import 하지 않는다 — ADR-017
 - C-12: 비밀번호·토큰·민감 query 값·DB 원문은 로그·접속 로그·응답에 원문으로 남지 않는다 (orm-raw-repository C-5·C-12·C-13 확장) — ADR-006
-- C-13: SQLAdmin 정책(무인증 허용 + 배포 환경 확인 플래그 + WARNING)은 이 그룹에서 바꾸지 않는다 — ADR-020
+- C-13: SQLAdmin 정책(무인증 허용 + 배포 환경 확인 플래그 + WARNING)은 이 그룹에서 바꾸지 않는다 — ADR-020 — **Superseded (2026-10-12)**: admin-login 그룹이 관리 화면 로그인으로 바꿨다(admin-login C-1~C-6)
 - C-14: Celery 워커는 `INSTALLED_APPS` 에 없는 기능을 import 하지 않는다 — ADR-012
 - C-15: CI 의 의존성 설치는 `uv sync --locked` 다 — 락이 `pyproject.toml` 과 어긋나면 실패한다 — ADR-001
 
@@ -115,6 +115,8 @@
 - v0.6 (2026-10-12): Round 5(단계 E) 완료 — ADR-011·ADR-012 구현, ADR-028(`get_redis`·`/ready` gather·`find_spec` 발견·워커 격리 registry·home provider 재사용) 추가 — ADR-012 의 `import_optional` 세부를 대체. ledger F-018·F-019 Fixed, F-015 Fixed(CI run 38210910082 mysql job 24 passed).
 - v0.8 (2026-10-12): Round 7(단계 F2) 완료 — ADR-017~ADR-020 구현, ADR-030(core 주입 경로·`su` 필수·본인 판정 순서·쓰기 전용 협력 객체·revoke 시점·author 서버 채움·접속 로그 user_id 시점·리비전 컬럼 배치·create_superuser 입력 경로·실토큰 테스트) 추가 — ADR-029 ①②를 대체. ledger F-022~F-025 Fixed. **그룹 CONVERGED** — Open Fix 0, REQ-001 의 단계 A~F2 모두 완료.
 - v0.7 (2026-10-12): Round 6(단계 F1) 완료 — ADR-013~ADR-016 구현, ADR-029(보안 부품 4개를 core security 로·`su` claim F2 보류·정수 레이트 리밋 설정·`InvalidTokenException`/`TooManyRequestsException` core 이동·`AppException.headers`·login 커밋·`/logout` 추가·`app/utils/authenticator` 제거) 추가 — ADR-013 의 위치·ADR-014 의 `su`·ADR-016 의 설정 이름을 대체. ledger F-020·F-021 Fixed.
+
+- v0.9 (2026-10-12): ADR-020·C-13 상태를 Superseded 로 바꿨다 — admin-login 그룹(`docs/crp/groups/admin-login/`)이 `/admin` 에 슈퍼유저 세션 로그인을 붙이고 `ADMIN_UNAUTHENTICATED_ACK`·배포 환경 거부 규칙·WARNING 을 제거했다(admin-login ADR-001·ADR-004). 항목은 지우지 않는다(append-only).
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

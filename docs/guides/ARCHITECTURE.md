@@ -68,7 +68,7 @@ FastAPI 프로젝트 골격**이다. 한 문장으로 줄이면 다음과 같다
 | 디렉터리 자동 스캔으로 앱 활성화 | 설치 범위와 순서가 파일 시스템 상태에 암묵적으로 끌려간다 |
 | `main.py` 에 `include_router` 를 앱마다 나열 | 앱이 늘수록 `main.py` 가 모든 기능 추가의 공유 편집 지점이 된다(한때 이 방식으로 되돌렸다가 registry 로 복귀했다 — §12) |
 | 기능 간 직접 import·FK·relationship 중심의 예제 | 앱 탈착성이 깨진다. 실제 제품에서 관계를 추가할 때는 앱 제거 가능성과 migration 순서를 함께 설계한다 |
-| SQLAdmin 인증 백엔드 | 영구 비목표. 대신 운영 환경에서는 명시적 승인 없이 기동을 거부한다(§8) |
+| 관리 화면에 API 와 같은 JWT 를 쓰기 | 브라우저 화면은 서명 세션 쿠키가 표준이다. 대신 세션은 `/admin` 하위 앱에만 두고 API 인증과 섞지 않는다(§8) |
 | 인메모리 레이트 리밋 | 워커별로 카운터가 갈라져 실질 한도를 보장하지 못했다. 필요하면 프록시·게이트웨이에서 건다 |
 
 ---
@@ -210,7 +210,7 @@ Apps.populate(INSTALLED_APPS)
 |---|---|
 | `install_routers(app, registry)` | 설치 순서대로 `<label>_router` 를 `router_prefix` 로 마운트. 두 앱이 같은 method + 최종 path 를 등록하면 `ImproperlyConfigured` 로 기동 실패(먼저 등록된 쪽이 조용히 이기지 않는다) |
 | `install_admin(admin, registry)` | 설치 앱의 `admin_views` 를 선언 순서대로 `add_view` |
-| `create_admin(app, engine, registry, title=...)` | **함수 안에서** `sqladmin` 을 import 하고 `/admin` 을 마운트. `ADMIN=false` 프로세스는 sqladmin 과 앱별 `admin.py` 를 로드조차 하지 않는다 |
+| `create_admin(app, engine, registry, title=...)` | **함수 안에서** `sqladmin` 을 import 하고, 슈퍼유저 로그인 백엔드(`AdminAuthBackend`)를 조립해 `Admin(authentication_backend=..., templates_dir=...)` 로 `/admin` 을 마운트(§8). `ADMIN_DISABLED=true` 프로세스는 이 함수를 부르지 않아 sqladmin 과 앱별 `admin.py` 를 로드조차 하지 않는다 |
 
 `app/core/apps/config.py`·`registry.py` 는 FastAPI·SQLAdmin·SQLAlchemy 를 import 하지 않는다. Alembic·CLI 가
 registry 를 써도 웹 스택이 딸려오지 않는다(`tests/core/apps/test_core_independence.py`,
@@ -318,7 +318,7 @@ DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성
 | NFR-03 / NFR-07 | 모듈 부재와 내부 import 실패 구분(traceback 보존) / 오류 메시지에 고칠 위치 포함 |
 | NFR-05 / NFR-06 | 격리 `Apps()` 주입 가능 / registry core 는 FastAPI·SQLAdmin 에 의존하지 않음 |
 | NFR-08 | registry·adapter 커버리지 기준(프로젝트 전체 85% 는 `pyproject.toml` `fail_under` 가 정본이고 CI·로컬 게이트가 함께 강제) |
-| SEC-01 | `ADMIN=false` 면 sqladmin·앱 `admin.py` 를 로드하지 않음 |
+| SEC-01 | `ADMIN_DISABLED=true` 면 sqladmin·앱 `admin.py` 를 로드하지 않음 |
 | SEC-02 | allowlist(`INSTALLED_APPS`)만 import, 디렉터리 스캔 금지 |
 | SEC-03 / SEC-04 | 생성기 경로 이탈 차단 / 부분 생성·덮어쓰기 금지 |
 | SEC-05 | `ready()` 에서 DB·network·subprocess·secret 출력 금지 |
@@ -365,7 +365,7 @@ flowchart TD
 - 두 경로 모두 정상 ASGI lifespan 을 탄다. `--lifespan off` 는 Redis 검증·자원 정리를 건너뛰므로 정상 경로가 아니다.
 - reload·다중 worker 는 프로세스마다 import·lifespan 을 다시 수행한다. API worker 마다 Redis client 와 DB pool 이 따로 있고,
   Celery worker 는 별도 프로세스다.
-- factory 로 만든 이유는 테스트가 **격리된 앱**(auth 를 뺀 앱, `ADMIN=False` 앱, 독립 registry 앱)을 만들어
+- factory 로 만든 이유는 테스트가 **격리된 앱**(auth 를 뺀 앱, 관리 화면을 끈 앱, 독립 registry 앱)을 만들어
   "등록 안 한 앱은 안 붙는다"를 실행으로 증명하기 위해서다.
 
 ### 3.2 설정 로딩
@@ -381,14 +381,14 @@ flowchart TD
 | 설정 클래스 (전역 인스턴스) | 소비처 |
 |---|---|
 | `TimezoneSettings` (`timezone_settings`) | 모델 시각 기본값, 로그 시각, Celery timezone |
-| `AppSettings` (`app_settings`) | 앱 메타데이터, `DEBUG`·`ENV`·`ADMIN`, 직접 실행 host/port |
+| `AppSettings` (`app_settings`) | 앱 메타데이터, `DEBUG`·`ENV`·`ADMIN_DISABLED`, 직접 실행 host/port |
 | `DatabaseSettings` (`db_settings`) | DSN·라우팅·풀, `session.py`, Alembic URL |
 | `CORSSettings` (`cors_settings`) | `CustomCORSMiddleware` |
 | `LogSettings` (`log_settings`) | `build_dictconfig()` |
 | `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
 | `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
-| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 만 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록). 나머지 필드는 소비처가 없다 |
+| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 로그인 세션 쿠키의 서명 키다(§8). `SESSION_EXPIRE_SECONDS` 는 소비처가 없다(관리 세션은 8시간 고정) |
 | `ApiSettings`·`SMTPSettings`·`UploadSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` 도 현재 로깅 구성에서 읽지 않는다(§5).
@@ -397,36 +397,35 @@ flowchart TD
 
 | 검증 | 거부 조건 |
 |---|---|
-| `AppSettings._guard_unauthenticated_admin` | `ENV` 가 production/staging 이고 `ADMIN=true` 인데 `ADMIN_UNAUTHENTICATED_ACK` 가 false |
 | `DatabaseSettings._validate_routing` | 복제 on + 라우터 off, 복제 on + replica 목록 비어 있음, 잘못된 replica 표기(IPv6 는 대괄호 필수), `DB_MAX_SERVER_CONNECTIONS` 가 0이 아닐 때 최대 연결 수 초과 |
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
 | `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
+| `validate_removed_settings()` | 예전 `ADMIN` 설정이 환경 변수나 `.env` 에 남아 있다(대소문자 무시) — 뜻이 뒤집혀 `ADMIN_DISABLED` 로 바뀌었으므로 조용히 무시하지 않는다. test 는 검사하지 않는다 |
 | `validate_env_source()` | `.env` 가 없으면 필수 값(`ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다 |
 | `validate_deployment_safety()` | test 외 모든 ENV(개발 포함)에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis·미사용 SMTP 는 정당한 구성이라 빈 값을 막지 않는다). **또는** production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). test 는 검사하지 않는다 |
 
-`_validate_cross_settings()`·`validate_env_source()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
-`ADMIN_UNAUTHENTICATED_ACK=true` 로 배포 환경에서 `/admin` 을 열면 `app/core/bootstrap.py` 가 매 기동 WARNING 을 남긴다.
+`_validate_cross_settings()`·`validate_env_source()`·`validate_removed_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
+배포 환경에서 관리 화면을 켜는 것은 더 이상 거부하지 않는다 — `/admin` 은 슈퍼유저 로그인이 필요하다(§8). 쓰지 않는 배포는 `ADMIN_DISABLED=true`.
 
 **주요 환경변수** (전체 목록과 설명은 `.env.example`)
 
 | 변수 | 기본값 | 효과 |
 |---|---|---|
 | `DEBUG` | `true` | true: 개발용 테이블 자동 생성, `/docs`·`/openapi.json` 노출, 미지정 로그 레벨 DEBUG, 직접 실행 시 reload. false: 모두 반대(로그 INFO, 스키마는 Alembic) |
-| `ADMIN` | `true` | `/admin` 마운트. `DEBUG` 와 독립. 인증 없음(§8) |
-| `ADMIN_UNAUTHENTICATED_ACK` | `false` | production/staging 에서 `ADMIN=true` 를 허용하는 명시적 승인 |
+| `ADMIN_DISABLED` | `false` | false: `/admin` 마운트(슈퍼유저 로그인 필요, §8). true: 관리 화면 자체가 없다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 생기지 않고 응답 어디에도 경로가 나오지 않는다. `DEBUG` 와 독립 |
 | `ENV` | `development` | development / staging / production / test. 로그 핸들러·타임존과 위 검증에 쓰인다 |
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | 직접 실행 시 바인딩 |
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `3306` / `root` / 빈 값 / `fastapi_db` | primary(writer) DSN |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅(§4.4) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `localhost` / `6379` / `0` / 없음 | startup ping 대상이자 Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부 |
-| `SESSION_SECRET_KEY` | `change-this-...` | 세션 키(소비처 없음). test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
+| `SESSION_SECRET_KEY` | `change-this-...` | `/admin` 로그인 세션 쿠키 서명 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
 
 ### 3.3 `create_app()` 조립 순서
 
 ```python
-def create_app(installed_apps=None, registry=None, *, enable_admin=None) -> FastAPI: ...
+def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -> FastAPI: ...
 ```
 
 1. 설치 목록 결정(`config.INSTALLED_APPS` 또는 주입값), registry 결정(전역 `apps` 또는 주입값)
@@ -435,7 +434,7 @@ def create_app(installed_apps=None, registry=None, *, enable_admin=None) -> Fast
 4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 4종
 5. `install_routers(app, registry)`
 6. `/health`, `/ready`, `DEBUG` 일 때만 Scalar `/docs`
-7. `app.state.app_registry` 저장, `enable_admin`(기본 `ADMIN`)이면 `create_admin(...)`
+7. `app.state.app_registry` 저장, `admin_disabled`(기본 `ADMIN_DISABLED`)가 false 면 `create_admin(...)` — 끈 경우 로그에도 경로를 싣지 않는다
 
 2번이 3번보다 먼저인 이유는 모델·hook 등록을 앱 조립 전에 끝내기 위해서다.
 
@@ -833,7 +832,7 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 
 1. **login** — `login_rate_limit` 의존성이 ip(`AUTH_LOGIN_IP_MAX_ATTEMPTS`)와 ip+소문자 username(`AUTH_LOGIN_MAX_ATTEMPTS`)을
    `AUTH_LOGIN_WINDOW_SECONDS` 창으로 센다. ip 는 접속 로그와 같은 `ClientIPResolver`(`TRUSTED_PROXY_HOPS`, §6)로 정한다.
-   `AuthService.authenticate` 가 해시기를 `asyncio.to_thread` 로 부르고, bcrypt → Argon2 재해시가 있으면 `UserRepository.update` 로
+   `AuthService.authenticate`(`/admin` 로그인과 같은 `verify_credentials`)가 해시기를 `asyncio.to_thread` 로 부르고, bcrypt → Argon2 재해시가 있으면 `UserRepository.update` 로
    flush 해 둔다. 새 family 로 토큰 쌍을 발급하고 refresh 의 jti 를 기록한 뒤 핸들러가 **커밋**하고 ip+username 카운터를 지운다.
 2. **refresh** — refresh 토큰을 검증하고 GETDEL `auth:rt:{jti}` 로 소비한다. 값이 없으면 이미 쓴 토큰의 **재사용**(탈취 신호)이라
    그 family 를 폐기하고 401 — 정상 사용자가 가진 같은 family 의 최신 토큰도 함께 죽는다. family 가 폐기됐거나 사용자가 없거나
@@ -859,6 +858,7 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 - **상수 시간 인증**: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
   bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).
 - **논블로킹 해싱**: Argon2·bcrypt 는 `asyncio.to_thread` 로 이벤트 루프 밖에서 돈다.
+- **API 인증은 세션을 쓰지 않는다**: 메인 앱에는 `SessionMiddleware` 가 없고, `admin_session` 쿠키를 보내도 API 는 401 이다. 세션 로그인은 `/admin` 전용이다(§8).
 
 ### 7.1 인가 — 주체·소유권·슈퍼유저
 
@@ -893,12 +893,24 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 
 ## 8. 관리 화면 (SQLAdmin)
 
-- `ADMIN=true`(기본)일 때만 `create_admin()` 이 `/admin` 을 마운트하고 설치 앱의 `admin_views` 를 등록한다. `DEBUG` 와 독립이다.
+설계·흐름도·쿠키 구조·위협 모델·문제 해결은 [관리 화면 인증 가이드](admin-auth-guide.html)에 있다. 여기는 요약이다.
+
+- `ADMIN_DISABLED=false`(기본)일 때만 `create_admin()` 이 `/admin` 을 마운트하고 설치 앱의 `admin_views` 를 등록한다. `DEBUG` 와 독립이다.
+  `ADMIN_DISABLED=true` 면 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두 없고, 앱의 어떤 응답에도 `/admin` 이 나오지 않는다
+  (`tests/core/test_admin_disabled.py`). 예전 `ADMIN` 설정이 남아 있으면 기동이 멈춘다(§3.2).
 - ModelView 는 모델과 같은 기능 폴더의 `admin.py` 가 소유한다(중앙 취합 파일 없음). 모델이 있는 앱은 `admin.py` 를 가져야 한다(`tests/core/test_admin_wiring.py`).
-- **인증 백엔드가 없다**(영구 비목표). `/admin/login` 은 503 이고, 도달 가능한 누구나 게시글·댓글·사용자·상품 등을 조회·수정·삭제하고 내보낼 수 있다.
   `User` 의 `hashed_password` 는 목록·상세·폼·내보내기 어디에도 나오지 않고 `User` 생성은 막혀 있다(`tests/core/test_admin_views.py`).
-- 기본값이 `true` 인 것은 받자마자 DB 를 들여다보게 하려는 **개발 우선 결정**(2026-08-12)이다. 대신 `ENV` 가 production/staging 이면
-  `ADMIN=false` 로 끄거나 `ADMIN_UNAUTHENTICATED_ACK=true` 로 승인해야 기동된다(§3.2).
+- **활성 슈퍼유저 로그인이 필요하다.** `AdminAuthBackend`(`app/core/security/admin_auth.py`)가 SQLAdmin `AuthenticationBackend` 를 구현한다.
+  - 로그인: 폼 username/password → 레이트 리밋(`AUTH_LOGIN_*` 한도 재사용, 키 접두사 `admin-login:` 으로 API 와 분리, ip·ip+username) →
+    자격 확인 → 활성·슈퍼유저면 `request.session.clear()` 후 사용자 id 만 저장(세션 고정 방지). 실패는 사유 없이 400, 한도 초과는 로그인 화면을 429 + `Retry-After` 로 다시 그린다.
+  - 매 요청: 세션의 id 로 **DB 를 다시 확인**해 활성·슈퍼유저가 아니면 세션을 비우고 로그인 화면으로 보낸다(강등·비활성화 즉시 반영).
+  - 자격 확인은 core 가 사용자 모델을 모르므로 `AuthConfig.ready()` 가 `app/core/security/admin_credentials.py` 의 훅에 등록한
+    `UserAdminCredentials`(`app/features/auth/admin_credentials.py`, `background_session` + `PasswordHasher`, API 로그인과 같은 `verify_credentials`)가 한다.
+    등록한 앱이 없으면 관리 화면을 열지 않고 기동을 멈춘다.
+- 세션 쿠키 `admin_session`: path `/admin`, SameSite=Strict, HttpOnly, Max-Age 8시간, staging/production 에서 Secure, 서명 키 `SESSION_SECRET_KEY`
+  (starlette `SessionMiddleware` + itsdangerous). 세션 미들웨어는 **SQLAdmin 하위 앱에만** 있다 — API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
+- 로그인 화면은 `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, SRI)이 sqladmin 기본 템플릿을 덮어쓴다 — `templates_dir` 의 로더가 패키지 템플릿보다 먼저다.
+- 기본이 "켜짐" 인 것은 받자마자 DB 를 들여다보게 하려는 **개발 우선 결정**(2026-08-12)이다. 배포 환경에서도 켤 수 있다(로그인이 막는다).
 
 ---
 
@@ -947,6 +959,8 @@ config.set_main_option(                                              # URL → �
 - `target_metadata` 는 전역 `Base.metadata` 다. 같은 프로세스에서 미설치 모델을 먼저 import 하면 metadata 에 남으므로, registry 소유 모델만으로 완전히 필터링하는 구조는 아니다(Alembic CLI 의 깨끗한 프로세스에서는 설치 앱 모델만 들어간다).
 - URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값을 `make_url()` 로 읽고(로컬·CI·SQLite), 없으면 primary URL 의 drivername 만 `mysql+pymysql` 로 바꾼다. DSN 은 모두 `sqlalchemy.engine.URL` 로 조립하므로 비밀번호의 `@ : / # ? %` 가 구분자로 읽히지 않는다. ConfigParser 보간 때문에 `%` 는 `%%` 로 넘긴다. **migration 은 항상 writer** 에서 실행한다.
 - Alembic 은 FastAPI lifespan 에 들어가지 않으므로 Redis ping 을 하지 않는다. 서버 기동이 자동 upgrade 를 하지도 않는다.
+- **배포 전**: `e5a7c2d9f310` 은 기존 MySQL 시각 값이 `+09:00` 으로 저장됐다고 가정한다 — 다른 시간대로 운영했다면 적용 전에 리비전의
+  `LEGACY_OFFSET` 상수를 바꾸고, 적용 전에 백업한다(값을 UPDATE 문으로 다시 쓴다).
 - revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders → `e5a7c2d9f310` 시각 UTC·`DATETIME(6)`(head — MySQL 만 변환, 기존 KST 벽시계를 `CONVERT_TZ(col, '+09:00', '+00:00')` 로 UTC 로 옮긴다. SQLite 는 no-op).
 - 검증: `tests/core/test_migration_chain.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.
 
@@ -959,16 +973,18 @@ config.set_main_option(                                              # URL → �
 | # | 확인 | 빠뜨리면 |
 |---|---|---|
 | 1 | `DEBUG=false` (그리고 `LOG_LEVEL` 을 `DEBUG` 로 두지 않는다) | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2) |
-| 2 | `ENV=production`(또는 staging) + `ADMIN=false` | `ADMIN=true` 인데 승인이 없으면 기동이 거부된다. 승인(`ADMIN_UNAUTHENTICATED_ACK=true`)했다면 프록시에서 `/admin` 을 반드시 막는다 |
-| 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 인증 없는 `/admin` 과 곱해지면 관리 화면이 네트워크에 열린다 |
-| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
+| 2 | 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`. 쓴다면 HTTPS 로만 접근(staging/production 쿠키는 `Secure`) | 켜 둔 `/admin` 은 로그인 화면을 공개한다(로그인은 필요하다). 예전 `ADMIN` 줄이 남아 있으면 기동이 멈춘다 |
+| 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 관리 화면을 내부망으로만 쓰려면 프록시에서 `/admin` 을 제한한다 |
+| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 쿠키 서명)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
 | 5 | CORS 는 실제 frontend origin 만 | `CORS_ALLOW_ORIGINS=["*"]` 와 `CORS_ALLOW_CREDENTIALS=true` 조합은 설정 로드가 거부한다 |
 | 6 | Redis 는 인증·사설망 | startup 필수 자원이자 Celery broker |
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
 | 8 | 오케스트레이터가 `/health` 를 liveness, `/ready` 를 readiness 로 연결 | DB 흔들림에 프로세스 재시작 |
 | 9 | 로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록 | — |
-| 10 | 프록시 뒤 배포면 `TRUSTED_PROXY_HOPS` 를 **앞단 프록시 단 수**로 | 0 으로 두면 모든 요청이 프록시 IP 하나로 보여 로그인·가입 IP 레이트 리밋을 모두가 나눠 쓴다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 `X-Forwarded-For` 를 믿는다(service-hardening R-013) |
-| 11 | 첫 관리자를 `scripts.create_superuser` 로 만들고, 관리 API(사용자 목록·접속 로그·리포트·상품 쓰기)가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 를 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
+| 10 | 프록시 뒤 배포면 `TRUSTED_PROXY_HOPS` 를 **앞단 프록시 단 수**로 | 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋(API·`/admin`)이 전체 사용자를 한 사람으로 취급한다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 `X-Forwarded-For` 를 믿어 IP 위조가 가능하다(service-hardening R-013) |
+| 11 | 첫 관리자를 `scripts/create_superuser.py` 로 만들고(대화형 또는 `--password-stdin`), 관리 API 가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 도 `/admin` 로그인도 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
+| 12 | KST→UTC 리비전 `e5a7c2d9f310` 적용 전 백업, 기존 값의 시간대가 `+09:00` 이 아니면 `LEGACY_OFFSET` 수정 | 모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10) |
+| 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션 쿠키 서명 키는 `SESSION_SECRET_KEY` | 키가 새면 관리 세션 쿠키를 위조할 수 있다(권한은 매 요청 DB 로 다시 보므로 존재하는 활성 슈퍼유저 id 가 필요하다) |
 
 ### 11.2 배포 절차와 확인
 
@@ -984,7 +1000,7 @@ uv run alembic upgrade head       # writer 에서 적용 (ALEMBIC_DATABASE_URL �
 curl -s https://<host>/health                                            # 200
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/ready            # 200 (DB 준비), 아니면 503
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/docs             # DEBUG=false 면 404
-curl -s -o /dev/null -w '%{http_code}\n' https://<host>/admin            # ADMIN=false 면 404
+curl -s -o /dev/null -w '%{http_code}\n' https://<host>/admin/           # 302(로그인 화면으로), ADMIN_DISABLED=true 면 404
 ```
 
 API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순서·백업/복구 시험은 배포 인프라에서 별도로 승인한다(이 저장소는 이미지 빌드·배포를 다루지 않는다).
@@ -995,7 +1011,8 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 - **API 인가의 세분**: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). `Principal` 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
   다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.
-- **Admin 인증**: 영구 비목표(§8).
+- **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 로그인 CSRF 토큰은 두지 않는다 —
+  `SameSite=Strict` 쿠키라 다른 사이트에서 온 요청에는 세션이 실리지 않는다(관리 화면 인증 가이드 §10).
 - **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·삭제)로 대신한다.
 - **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
   `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장되고,
@@ -1003,7 +1020,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
 - **레이트 리밋**: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.
 - **자동 앱 탐색**: 없음(설계 원칙).
-- **미사용 설정**: `ApiSettings`·`SMTPSettings`·`UploadSettings`, `SessionSettings` 의 쿠키 이름 밖의 필드, 일부 로그 설정(§3.2).
+- **미사용 설정**: `ApiSettings`·`SMTPSettings`·`UploadSettings`, `SESSION_EXPIRE_SECONDS`, 일부 로그 설정(§3.2).
 - **검증하지 않은 것**: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.
 
 ---
@@ -1014,6 +1031,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](admin-auth-guide.html) (`docs/crp/groups/admin-login/`). |
 | 2026-10-12 | **service-hardening**: DSN `URL.create`, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 `/ready`, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(`Principal`·`OwnershipPolicy`·슈퍼유저·`scripts/create_superuser.py`, §7.1) (`docs/crp/groups/service-hardening/`). |
 | 2026-09-21 ~ 2026-10-02 | **읽기 전용 강제를 라우터와 분리 + 게이트·문서 위생**: 읽기 전용 세션의 쓰기 차단을 `get_bind()` 안에서 `Session` 전역 이벤트(`before_flush`·`do_orm_execute`)로 옮겨 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하게 했다 — 이전에는 **기본 설정(라우터 off)에서 차단이 통째로 없었다**(§4.4, `tests/core/test_read_only_guard.py`). `ValidationException` 을 `HTTP_422_UNPROCESSABLE_CONTENT` 로 옮겼다(값은 그대로 422, starlette 1.x 폐기 예고). 게이트에 `pip-audit` 단계를 넣어 9단계가 됐고, 게이트를 가리키는 문서 포인터를 번호에서 **스텝 이름**으로 바꿨다(번호는 단계가 끼면 밀린다). `filterwarnings` 를 `error::` 로 올리고 파일 핸들 누수를 없앴다. `redis 6.4.0`·`uvicorn 0.54.0` 상향, pyjwt 권고 10건 해소. 문서가 인용한 비밀값이 배포 안전 검사에 걸리는지 보는 `tests/test_docs_secret_examples.py` 를 신설했다. |
 | 2026-09-17 | **HTML 안내서 복원 + 정합성 점검**: 재구성에서 지운 `server-lifecycle-guide.html`·`feature-development-guide.html` 을 되살려 현재 코드·Markdown 과 맞췄다(다른 저장소 비교 제거, 부록 설정표를 `config.py` 에서 재생성). README 「문서 안내」를 `문서 / 역할 / 언제 보나` 표로 바꾸고 두 안내서를 넣었다. 코드 설명 정정: `API_DESCRIPTION`(다른 프로젝트 제목·UnitOfWork 제거), `pyproject.toml` 이름·설명, `/api/v1/catalog/products` 설명(`active_only=false` 는 정렬 없음), 미사용 설정(`ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings`·`LOG_CONSOLE_ENABLED`·로그 포맷 3종) 표기, `ENV` 가 `/health` 에 포함된다는 잘못된 주석. 문서 검사에 HTML(코드 경로·`data-source`·링크·앵커·꺾쇠 이스케이프)과 Markdown 앵커 검사를 추가했다. 같은 날 후속: 모든 쓰기 핸들러를 **응답 DTO 검증 → commit** 순서로 통일했다(이전에는 commit 후 검증이라 DTO 실패 시 데이터가 남았다, `tests/test_validate_before_commit.py`). Python 규칙을 `>=3.13`·ruff `py313`·mypy `3.13` 으로 올렸다. |

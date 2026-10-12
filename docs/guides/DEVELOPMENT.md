@@ -29,7 +29,7 @@
 | Service | `services/` — `BaseService` 상속, 업무 규칙·Repository 조합 | 중간 커밋, FastAPI 객체 |
 | Repository | `repositories/` — `BaseRepository` 또는 `RawRepositoryBase` 상속 | 커밋, HTTP 상태 |
 | DI 조립 | `dependencies/` — 세션 선택 후 `Service(session)` 를 **return** | 유스케이스 실행, teardown 커밋 |
-| 관리 UI | `admin.py` — ModelView + `admin_views` | API 권한과의 공유(별개다) |
+| 관리 UI | `admin.py` — ModelView + `admin_views` (슈퍼유저 로그인 뒤에만 보인다) | API 권한·인증과의 공유(별개다 — 관리 화면은 세션, API 는 JWT) |
 
 - Router 에서 ORM·SQL 을 직접 쓰지 않는다. Service·Repository 는 커밋하지 않는다.
 - 다른 기능을 import 하지 않는다(예외: `auth → user`). `app/core` 에 특정 기능 import 를 추가하지 않는다 — core 에 붙어야 하면 등록 훅을 만든다.
@@ -214,7 +214,8 @@ async def create_item(
 | 기동 중 `ModuleNotFoundError` | 선택 module **내부**의 import 오류 — 부재로 넘어가지 않는다 |
 | 기동 중 `RuntimeError`(재진입) | `ready()` 안에서 `populate()` 호출 |
 | 모델이 migration 에 없음 | 앱 설치 여부, `models/__init__.py` 재노출 |
-| Admin view 가 없음 | `ADMIN`, 설치 여부, `admin_views` |
+| Admin view 가 없음 | `ADMIN_DISABLED`(true 면 관리 화면 자체가 없다), 설치 여부, `admin_views`, 슈퍼유저로 로그인했는지 |
+| 기동 중 `ImproperlyConfigured`(관리 화면 자격 확인 없음) | 관리 화면이 켜져 있는데 auth 앱이 `INSTALLED_APPS` 에 없다 — auth 를 두거나 `ADMIN_DISABLED=true` |
 | OpenAPI 계약 테스트 실패 | 태그 미선언, `operation_id` 누락·중복, 2xx `response_model` 누락 |
 
 ---
@@ -438,6 +439,10 @@ async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service:
 - 엔드포인트 테스트는 `get_current_principal` 을 override 하지 않고 `tests/auth_headers.py` 의 헤더(`admin_headers()`·`user_headers()`)로
   실제 토큰을 보낸다. 토큰 검증·`su` claim·`request.state.user_id` 기록까지 같이 시험된다.
 - `Principal` 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.
+- **API 에 세션(쿠키) 인증을 섞지 않는다.** `/admin` 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 `SessionMiddleware` 를 붙이거나
+  API 의존성이 `admin_session` 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 [관리 화면 인증 가이드](admin-auth-guide.html).
+- 새 기능의 `admin.py` ModelView 는 따로 인증을 붙이지 않는다 — `/admin` 전체가 `AdminAuthBackend` 뒤에 있다. 로그인 화면은
+  `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §12).
 
 ---
 
@@ -525,7 +530,9 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 등록 순서 보존, 중복 name·label 거부 | `tests/core/apps/test_population_order.py` · `tests/core/apps/test_registry_errors.py` |
 | 선택 module 부재 vs 내부 import 실패 | `tests/core/apps/test_optional_modules.py` |
 | 컨벤션 결선과 route 충돌 | `tests/core/apps/test_wiring.py` |
-| registry core 가 웹 스택에 의존하지 않음 / `ADMIN=false` 에서 sqladmin 미로드 | `tests/core/apps/test_core_independence.py` · `tests/core/test_admin_lazy_loading.py` |
+| registry core 가 웹 스택에 의존하지 않음 / `ADMIN_DISABLED=true` 에서 sqladmin 미로드 | `tests/core/apps/test_core_independence.py` · `tests/core/test_admin_lazy_loading.py` |
+| `ADMIN_DISABLED=true` 면 관리 화면 경로가 404 이고 응답·헤더·로그 어디에도 나오지 않음, 예전 `ADMIN` 잔존 시 기동 실패 | `tests/core/test_admin_disabled.py` |
+| `/admin` 슈퍼유저 로그인(성공·실패 400·429·강등·로그아웃·세션 고정·쿠키 속성), 로그인 화면, 세션은 `/admin` 전용 | `tests/core/security/test_admin_auth.py` · `app/features/auth/tests/test_admin_credentials.py` · `tests/core/test_admin_login_flow.py` · `tests/core/test_admin_wiring.py` |
 | `ready()` 에 I/O 없음 | `tests/core/apps/test_installed_apps.py` |
 | 공개 route 골든 목록 | `tests/test_route_inventory.py` |
 | OpenAPI 계약(operationId·태그·응답 모델·스키마 이름) | `tests/test_openapi_contract.py` · `tests/test_layering_and_openapi.py` |
@@ -536,7 +543,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | ORM·Raw 예제는 Repository 만 다르다 | `tests/test_orm_raw_parity.py` |
 | migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migration_chain.py` |
 | 설정 계약·`.env.example` 일치 | `tests/core/test_settings_contract.py` |
-| `.env` 출처, 비밀키 placeholder·32자 미만·access=refresh 거부(test 외 모든 ENV, import 시점), 배포 환경 debug 거부, ADMIN 승인 시 기동 WARNING | `tests/core/test_deployment_safety.py` |
+| `.env` 출처, 비밀키 placeholder·32자 미만·access=refresh 거부(test 외 모든 ENV, import 시점), 배포 환경 debug 거부, 배포 환경 관리 화면 허용(로그인 백엔드) | `tests/core/test_deployment_safety.py` |
 | 자원 수명(Redis·DDL·종료 순서) | `tests/core/test_bootstrap.py` · `tests/core/test_runtime_lifecycle.py` |
 | SQL·비밀값 비노출, 500 불투명 | `tests/core/test_security_hardening.py` · `tests/core/test_db_error_conversion.py` |
 | 생성기 동작·경계 | `tests/scripts/test_new_app.py` |

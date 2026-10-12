@@ -24,6 +24,30 @@ from app.features.user.models.models import User
 from app.features.user.repositories.user_repository import UserRepository
 
 
+async def verify_credentials(
+    users: UserRepository, password_hasher: PasswordHasher, username: str, password: str
+) -> User:
+    """사용자명/비밀번호 검증 — API 로그인과 ``/admin`` 로그인이 함께 쓰는 한 곳.
+
+    사용자가 없거나 비밀번호가 없는 계정도 해시기가 더미 해시로 같은 비용의 검증을
+    치른다(응답 시간으로 사용자명을 열거하는 타이밍 공격 방지). 저장 해시를 바꿔야
+    하면(bcrypt → Argon2 이전) 새 해시를 flush 까지 해 둔다 — 커밋은 호출자가 한다.
+
+    Raises:
+        InvalidCredentialsException: 사용자 없음·비활성·비밀번호 불일치(사유를 구분하지 않는다).
+    """
+    user = await users.get_by_username(username)
+    stored = user.hashed_password if user is not None else None
+    password_ok, new_hash = await asyncio.to_thread(
+        password_hasher.verify_and_update, password, stored
+    )
+    if user is None or not user.is_active or not password_ok:
+        raise InvalidCredentialsException()
+    if new_hash is not None:
+        await users.update(user.id, {"hashed_password": new_hash})
+    return user
+
+
 class AuthService(BaseService):
     """인증 비즈니스 로직. 커밋은 쓰기 핸들러가 한다."""
 
@@ -55,22 +79,8 @@ class AuthService(BaseService):
         )
 
     async def authenticate(self, username: str, password: str) -> User:
-        """사용자명/비밀번호를 검증하고 사용자를 반환한다(실패 시 401).
-
-        사용자가 없거나 비밀번호가 없는 계정도 해시기가 더미 해시로 같은 비용의 검증을
-        치른다(응답 시간으로 사용자명을 열거하는 타이밍 공격 방지). 저장 해시를 바꿔야
-        하면(bcrypt → Argon2 이전) 새 해시를 flush 까지 해 둔다 — 커밋은 호출자가 한다.
-        """
-        user = await self.users.get_by_username(username)
-        stored = user.hashed_password if user is not None else None
-        password_ok, new_hash = await asyncio.to_thread(
-            self.password_hasher.verify_and_update, password, stored
-        )
-        if user is None or not user.is_active or not password_ok:
-            raise InvalidCredentialsException()
-        if new_hash is not None:
-            await self.users.update(user.id, {"hashed_password": new_hash})
-        return user
+        """사용자명/비밀번호를 검증하고 사용자를 반환한다(실패 시 401, ``verify_credentials``)."""
+        return await verify_credentials(self.users, self.password_hasher, username, password)
 
     async def issue_tokens(self, user: User) -> TokenResponse:
         """새 family 로 access·refresh 토큰을 발급한다(로그인)."""

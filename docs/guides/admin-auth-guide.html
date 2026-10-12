@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="FastAPI Django Passive Style — 관리 화면(/admin) 슈퍼유저 세션 로그인의 범위·구성·흐름·쿠키·위협 모델·운영 가이드">
+<title>관리 화면 인증 가이드 | FastAPI Project Structure — Django Passive Style</title>
+<style>
+:root{color-scheme:light;--ink:#183047;--muted:#4d6175;--accent:#12657a;--line:#d5e0e8;--paper:#fff;--bg:#edf3f6}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.85 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}a{color:#085a88;text-underline-offset:3px}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #d78300;outline-offset:4px}
+.skip{position:absolute;top:-80px;padding:12px;background:#fff;z-index:5}.skip:focus{top:0}
+header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{color:#abdce7;font-size:.9rem;letter-spacing:.08em}h1{font-size:clamp(1.8rem,3vw,2.8rem);line-height:1.35;max-width:1050px;margin:.6rem 0 1rem}header p{max-width:1050px}header a{color:#caedf5}.layout{display:grid;grid-template-columns:260px minmax(0,1050px);gap:2rem;max-width:1450px;margin:auto;padding:2rem 1.5rem}nav{position:sticky;top:1rem;align-self:start;max-height:95vh;overflow:auto;font-size:.94rem}nav ol{padding-left:1.5rem}nav li{margin:.45rem 0}nav a{text-decoration:none}main{min-width:0}section{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:2rem;margin-bottom:1.5rem;overflow-wrap:anywhere}h2{font-size:1.65rem;line-height:1.45;margin:0 0 1rem}h3{font-size:1.22rem;line-height:1.55;margin:1.7rem 0 .65rem}p{margin:.7rem 0}li{margin:.35rem 0}code,pre{font-family:Consolas,"Cascadia Code",monospace;font-size:.88em}code{background:#eef3f6;border-radius:4px;padding:.15rem .3rem}pre{background:#122e40;color:#eff6fb;padding:1rem;border-radius:8px;overflow:auto;line-height:1.65;white-space:pre}pre code{background:none;padding:0;color:inherit}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.93rem;margin:1rem 0}th,td{border:1px solid var(--line);padding:.65rem .8rem;text-align:left;vertical-align:top}th{background:#e8f1f5}td code{white-space:normal}.callout{padding:1rem 1.2rem;background:#eaf5f7;border-left:5px solid var(--accent);margin:1rem 0}.warning{background:#fff4e5;border-color:#b76d0d}.meta,.source,figcaption{font-size:.87rem;color:var(--muted)}.pill{display:inline-block;background:#e0f0f4;color:#174f62;border-radius:20px;padding:.15rem .65rem;font-size:.85rem}.figure{margin:1.2rem 0;border:1px solid var(--line);border-radius:8px;padding:1rem;overflow:auto}.mermaid{min-height:1rem}.mermaid svg{max-width:100%;height:auto}details{margin:1rem 0;border:1px solid var(--line);border-radius:6px;padding:.65rem 1rem}summary{cursor:pointer;font-weight:600}details pre{font-size:.8rem}footer{max-width:1050px;margin:0 auto;padding:1rem 2rem 3rem;color:var(--muted)}button{font:inherit;padding:.4rem .8rem;border:1px solid var(--line);border-radius:6px;background:white;cursor:pointer}
+@media(max-width:1000px){.layout{grid-template-columns:1fr;padding:1rem}nav{position:static;max-height:none;background:#fff;border:1px solid var(--line);padding:1rem;border-radius:8px}nav ol{columns:2}section{padding:1.3rem}}
+@media(max-width:600px){nav ol{columns:1}body{font-size:16px}header{padding:2rem 1rem}}
+@media print{body{background:white;font-size:10.5pt}header{background:white;color:#000;padding:0}header a{color:#000}.layout{display:block;padding:0}nav,.skip,button{display:none}section{border:0;border-bottom:1px solid #aaa;border-radius:0;padding:1rem 0;break-inside:auto}h2,h3{break-after:avoid}pre{white-space:pre-wrap;background:#f3f3f3;color:#000}table{font-size:9pt}.figure{break-inside:avoid}.meta{color:#333}footer{padding:1rem 0}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main-content">본문으로 바로 이동</a>
+<header><div class="eyebrow">FastAPI Project Structure — Django Passive Style · 관리 화면 인증 가이드</div><h1>/admin 로그인: 세션은 관리 화면 전용이다</h1><p>SQLAdmin 관리 화면의 슈퍼유저 세션 로그인을 설계·흐름·쿠키·위협 모델·운영 순서로 설명한다. 표·수치의 정본은 <a href="ARCHITECTURE.md#8-관리-화면-sqladmin">ARCHITECTURE §8</a>·코드이고, 이 가이드는 그 동작을 따라 읽는 설명이다.</p><p>기준일: 2026-10-12 · 기준: 현재 작업 트리의 소스·테스트(CRP admin-login) · <a href="../../README.md#문서-안내">문서 안내(README)</a> · <a href="ARCHITECTURE.md">아키텍처 레퍼런스</a> · <a href="DEVELOPMENT.md">개발 가이드</a> · <a href="server-lifecycle-guide.html">서버 수명주기 안내서</a></p></header>
+<div class="layout">
+<nav aria-label="문서 목차"><strong>목차</strong><ol><li><a href="#scope">개요와 범위</a></li><li><a href="#architecture">구성도</a></li><li><a href="#startup">기동 결정 흐름</a></li><li><a href="#login">로그인 시퀀스</a></li><li><a href="#per-request">요청별 인증 흐름</a></li><li><a href="#failures">실패 경로</a></li><li><a href="#logout">로그아웃 흐름</a></li><li><a href="#cookie">세션 쿠키 구조와 속성</a></li><li><a href="#lifecycle">계정 수명주기</a></li><li><a href="#security">보안 설계 근거와 위협 모델</a></li><li><a href="#operations">운영</a></li><li><a href="#extending">확장할 때 주의</a></li></ol></nav>
+<main id="main-content">
+<aside class="callout"><span class="pill">도식 읽기</span><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·코드·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section id="scope"><h2>1. 개요와 범위 — 인증 체계는 둘이고, 세션은 /admin 전용이다</h2><p>이 저장소에는 인증 체계가 <strong>두 개</strong> 있다. API(<code>/api/...</code>)는 OAuth2 password flow 로 받은 <strong>JWT Bearer</strong> 토큰으로,
+관리 화면(<code>/admin</code>, SQLAdmin)은 로그인 화면에서 발급한 <strong>서명 세션 쿠키</strong>(<code>admin_session</code>)로 인증한다.
+두 체계가 공유하는 것은 사용자 테이블(<code>users</code>)·비밀번호 검증 함수(<code>verify_credentials</code>)·레이트 리밋 부품(<code>RateLimiter</code>)과 그 한도 설정뿐이고,
+<strong>자격 증명(토큰·쿠키)은 서로를 인정하지 않는다</strong>.</p>
+<aside class="callout"><span class="pill">확인 결과 (2026-10-12)</span><p><strong>세션 기반 인증은 /admin 에만 적용되고 API 인증과 다른 작업에는 쓰지 않는다 — 맞다.</strong> 코드와 테스트로 확인한 근거:</p>
+<ul>
+<li>메인 FastAPI 앱에는 <code>SessionMiddleware</code> 가 없다. 세션 미들웨어는 <code>AdminAuthBackend.middlewares</code> 로만 만들어지고 SQLAdmin 이 자기 하위 Starlette 앱에 붙인다(<code>app/core/security/admin_auth.py:91</code>, sqladmin <code>Admin.__init__</code> 이 <code>authentication_backend.middlewares</code> 를 하위 앱 미들웨어로 넣는다). 테스트: <code>tests/core/test_admin_login_flow.py::test_session_middleware_lives_only_in_the_admin_sub_app</code>.</li>
+<li>API 인증은 <code>get_current_principal</code>(<code>app/core/security/dependencies.py:81</code>)이 <code>Authorization: Bearer</code> 만 읽는다. 유효한 <code>admin_session</code> 쿠키를 직접 실어 보내도 <code>/api/v1/auth/me</code>·<code>/api/v1/user/users</code> 는 401 이다. 테스트: <code>test_admin_session_cookie_does_not_authenticate_the_api</code>.</li>
+<li>관리 세션 쿠키는 <code>/admin</code> 밖 응답에서 설정되지 않는다(쿠키 path 도 <code>/admin</code>). 테스트: <code>test_admin_session_cookie_is_never_set_outside_admin</code>.</li>
+<li><code>SESSION_COOKIE_NAME</code>(기본 <code>session</code>)은 접속 로그 미들웨어가 그 쿠키 <strong>값을 기록</strong>할 때만 읽는다(<code>app/core/middlewares/user_info_middleware.py:54</code>·<code>:177</code>) — 인증에는 쓰이지 않는다. 관리 쿠키 이름과 같으면 기동을 멈춘다(관리자 쿠키가 접속 로그에 남지 않게, <code>app/core/apps/wiring.py:146</code>).</li>
+<li><code>SESSION_SECRET_KEY</code> 의 소비처는 정확히 둘이다: ① 관리 세션 쿠키 서명(<code>app/core/apps/wiring.py:162</code> → <code>SessionMiddleware(secret_key=...)</code>), ② 설정 검증(<code>config.py</code> 의 <code>REQUIRED_WITHOUT_ENV_FILE</code>·<code>validate_deployment_safety()</code> — placeholder·32자 미만 거부). 다른 코드는 이 키를 읽지 않는다.</li>
+<li>Celery 태스크·접속 로그 저장·<code>scripts/create_superuser.py</code> 는 세션을 쓰지 않는다(요청 밖 세션 팩토리 <code>background_session</code> 으로 DB 에 직접 붙는다).</li>
+</ul></aside>
+<h3>두 인증 체계 비교</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">항목</th><th scope="col">API — JWT Bearer</th><th scope="col">관리 화면 — 서명 세션 쿠키</th></tr></thead><tbody><tr><td>적용 경로</td><td><code>/api/...</code> 의 보호 라우트(의존성으로 건 곳만)</td><td><code>/admin</code> 하위 전부(로그인·정적 파일 제외)</td></tr><tr><td>자격 증명 저장 위치</td><td>클라이언트가 보관해 <code>Authorization</code> 헤더로 보낸다</td><td>브라우저 쿠키 <code>admin_session</code>(HttpOnly — JS 가 읽지 못한다)</td></tr><tr><td>담는 값</td><td><code>sub·username·su</code> 등 claims(서명)</td><td>사용자 id 하나(서명, 암호화 아님)</td></tr><tr><td>수명</td><td>access 15분 · refresh 7일(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)</td><td>8시간 고정(쿠키 Max-Age, 서명 타임스탬프로 서버도 검사)</td></tr><tr><td>폐기</td><td>refresh family 폐기(logout·재사용 탐지·강등·비활성화·삭제). access 는 만료까지 유효</td><td>로그아웃 시 세션 비움. 강등·비활성화·삭제는 <strong>다음 요청에서 즉시</strong> 거부(세션도 비움)</td></tr><tr><td>권한 확인 시점</td><td>토큰 claims 로 판정 — DB 조회 없음</td><td><strong>매 요청 DB 조회</strong>(활성·슈퍼유저)</td></tr><tr><td>강등 즉시 반영</td><td>아니오(access 만료까지, 최대 15분)</td><td>예(다음 요청)</td></tr><tr><td>CSRF</td><td>해당 없음(헤더 토큰은 브라우저가 자동으로 붙이지 않는다)</td><td><code>SameSite=Strict</code> 쿠키 — 다른 사이트에서 시작한 요청에는 쿠키가 실리지 않는다</td></tr><tr><td>레이트 리밋</td><td><code>login:ip:</code>·<code>login:user:</code> 키, <code>AUTH_LOGIN_*</code> 한도</td><td><code>admin-login:ip:</code>·<code>admin-login:user:</code> 키, 같은 <code>AUTH_LOGIN_*</code> 한도(카운터는 분리)</td></tr><tr><td>실패 응답</td><td>401(JSON 오류 봉투) · 429 + <code>Retry-After</code></td><td>400 로그인 화면(사유 미구분) · 429 + <code>Retry-After</code> 로그인 화면</td></tr><tr><td>끄는 법</td><td>라우트 의존성으로 정한다</td><td><code>ADMIN_DISABLED=true</code> — 관리 화면 자체가 사라진다</td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_auth.py" data-symbol="AdminAuthBackend" href="../../app/core/security/admin_auth.py">app/core/security/admin_auth.py · AdminAuthBackend</a> · <a data-source="app/core/security/dependencies.py" data-symbol="get_current_principal" href="../../app/core/security/dependencies.py">app/core/security/dependencies.py · get_current_principal</a> · <a data-source="app/core/middlewares/user_info_middleware.py" href="../../app/core/middlewares/user_info_middleware.py">app/core/middlewares/user_info_middleware.py</a> · <a data-source="tests/core/test_admin_login_flow.py" href="../../tests/core/test_admin_login_flow.py">tests/core/test_admin_login_flow.py</a></p></section>
+<section id="architecture"><h2>2. 구성도 — 어디에 무엇이 붙는가</h2><p>메인 앱의 미들웨어 체인에는 세션이 없다. SQLAdmin 은 <code>Admin(...)</code> 생성 시 자기 하위 Starlette 앱을 <code>/admin</code> 에 마운트하고, 그 하위 앱의 미들웨어로 인증 백엔드가 준
+<code>SessionMiddleware</code> 를 붙인다. 그래서 세션 쿠키는 <code>/admin</code> 요청에서만 해석된다. 모든 관리 라우트는 sqladmin 의 <code>login_required</code> 를 거쳐 백엔드의 <code>authenticate</code> 를 부른다.</p>
+<figure class="figure"><figcaption>런타임 구성 — 메인 앱과 SQLAdmin 하위 앱, 두 인증 경로</figcaption><div class="mermaid">flowchart LR
+  browser[&quot;브라우저&quot;] --&gt; mainApp[&quot;메인 FastAPI 앱&quot;]
+  apiClient[&quot;API 클라이언트&quot;] --&gt; mainApp
+  subgraph mainStack[&quot;메인 앱 미들웨어 체인 (세션 없음)&quot;]
+    userInfo[&quot;UserInfoMiddleware / 접속 로그&quot;] --&gt; cors[&quot;CustomCORSMiddleware&quot;]
+  end
+  mainApp --&gt; userInfo
+  cors --&gt; apiRouters[&quot;API 라우터 /api/...&quot;]
+  apiRouters --&gt; jwtDep[&quot;get_current_principal / JWT Bearer&quot;]
+  cors --&gt; adminMount[&quot;Mount /admin&quot;]
+  subgraph adminApp[&quot;SQLAdmin 하위 Starlette 앱&quot;]
+    sessionMw[&quot;SessionMiddleware / admin_session&quot;] --&gt; adminRoutes[&quot;Admin 라우트&quot;]
+    adminRoutes --&gt; loginRequired[&quot;login_required&quot;]
+    loginRequired --&gt; backend[&quot;AdminAuthBackend&quot;]
+    loginRequired --&gt; modelViews[&quot;ModelView / 앱별 admin.py&quot;]
+  end
+  adminMount --&gt; sessionMw
+  backend --&gt; limiter[&quot;RateLimiter&quot;]
+  limiter --&gt; redis[(&quot;Redis&quot;)]
+  backend --&gt; creds[&quot;UserAdminCredentials&quot;]
+  creds --&gt; db[(&quot;DB users&quot;)]
+  jwtDep --&gt; tokenSvc[&quot;TokenService&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
+  browser[&quot;브라우저&quot;] --&gt; mainApp[&quot;메인 FastAPI 앱&quot;]
+  apiClient[&quot;API 클라이언트&quot;] --&gt; mainApp
+  subgraph mainStack[&quot;메인 앱 미들웨어 체인 (세션 없음)&quot;]
+    userInfo[&quot;UserInfoMiddleware / 접속 로그&quot;] --&gt; cors[&quot;CustomCORSMiddleware&quot;]
+  end
+  mainApp --&gt; userInfo
+  cors --&gt; apiRouters[&quot;API 라우터 /api/...&quot;]
+  apiRouters --&gt; jwtDep[&quot;get_current_principal / JWT Bearer&quot;]
+  cors --&gt; adminMount[&quot;Mount /admin&quot;]
+  subgraph adminApp[&quot;SQLAdmin 하위 Starlette 앱&quot;]
+    sessionMw[&quot;SessionMiddleware / admin_session&quot;] --&gt; adminRoutes[&quot;Admin 라우트&quot;]
+    adminRoutes --&gt; loginRequired[&quot;login_required&quot;]
+    loginRequired --&gt; backend[&quot;AdminAuthBackend&quot;]
+    loginRequired --&gt; modelViews[&quot;ModelView / 앱별 admin.py&quot;]
+  end
+  adminMount --&gt; sessionMw
+  backend --&gt; limiter[&quot;RateLimiter&quot;]
+  limiter --&gt; redis[(&quot;Redis&quot;)]
+  backend --&gt; creds[&quot;UserAdminCredentials&quot;]
+  creds --&gt; db[(&quot;DB users&quot;)]
+  jwtDep --&gt; tokenSvc[&quot;TokenService&quot;]</code></pre></details></figure>
+<h3>주입 관계 — 누가 무엇을 생성자에 넣는가</h3>
+<p><code>AdminAuthBackend</code> 는 협력 객체를 모두 생성자로 받는다. core 는 사용자 모델을 모르므로(계층 규칙: core 는 features 를 import 하지 않는다) 자격 확인은 auth 앱이
+<code>AuthConfig.ready()</code> 에서 core 훅에 <strong>팩토리</strong>로 등록하고, <code>create_admin()</code> 이 관리 화면을 조립할 때만 그 팩토리를 부른다 — 접속 로그 sink 와 같은 방식이다.
+Redis 클라이언트는 lifespan 이 기동 때 만들기 때문에 조립 시점에는 없어서, 레이트 리미터는 요청 때 꺼내는 provider(<code>lambda</code>)로 넣는다.
+로그인 화면 템플릿 객체는 <code>Admin</code> 이 만든 뒤에야 생기므로 조립 지점이 사후에 넣는다(<code>app/core/apps/wiring.py:172</code>).</p>
+<figure class="figure"><figcaption>주입 그래프 — 화살표 라벨이 생성자 인자 이름</figcaption><div class="mermaid">flowchart TD
+  ready[&quot;AuthConfig.ready()&quot;] --&gt;|&quot;register_admin_credentials(팩토리)&quot;| hook[&quot;admin_credentials 훅 (core)&quot;]
+  createApp[&quot;create_app()&quot;] --&gt;|&quot;ADMIN_DISABLED=false&quot;| createAdmin[&quot;create_admin()&quot;]
+  hook --&gt;|&quot;팩토리 호출&quot;| creds[&quot;UserAdminCredentials(background_session, PasswordHasher)&quot;]
+  createAdmin --&gt; backend[&quot;AdminAuthBackend&quot;]
+  creds --&gt;|&quot;credentials&quot;| backend
+  limiterProvider[&quot;lambda: RateLimiter(app.state.redis)&quot;] --&gt;|&quot;rate_limiter&quot;| backend
+  resolver[&quot;ClientIPResolver(TRUSTED_PROXY_HOPS)&quot;] --&gt;|&quot;ip_resolver&quot;| backend
+  limits[&quot;AdminLoginLimits(AUTH_LOGIN_*)&quot;] --&gt;|&quot;limits&quot;| backend
+  secret[&quot;SESSION_SECRET_KEY&quot;] --&gt;|&quot;secret_key&quot;| backend
+  cookie[&quot;AdminSessionCookie(https_only=ENV)&quot;] --&gt;|&quot;cookie&quot;| backend
+  backend --&gt;|&quot;authentication_backend&quot;| admin[&quot;Admin(app, engine, templates_dir)&quot;]
+  admin --&gt;|&quot;admin.templates (사후 주입)&quot;| backend
+  verify[&quot;verify_credentials (auth_service)&quot;] --&gt; creds</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  ready[&quot;AuthConfig.ready()&quot;] --&gt;|&quot;register_admin_credentials(팩토리)&quot;| hook[&quot;admin_credentials 훅 (core)&quot;]
+  createApp[&quot;create_app()&quot;] --&gt;|&quot;ADMIN_DISABLED=false&quot;| createAdmin[&quot;create_admin()&quot;]
+  hook --&gt;|&quot;팩토리 호출&quot;| creds[&quot;UserAdminCredentials(background_session, PasswordHasher)&quot;]
+  createAdmin --&gt; backend[&quot;AdminAuthBackend&quot;]
+  creds --&gt;|&quot;credentials&quot;| backend
+  limiterProvider[&quot;lambda: RateLimiter(app.state.redis)&quot;] --&gt;|&quot;rate_limiter&quot;| backend
+  resolver[&quot;ClientIPResolver(TRUSTED_PROXY_HOPS)&quot;] --&gt;|&quot;ip_resolver&quot;| backend
+  limits[&quot;AdminLoginLimits(AUTH_LOGIN_*)&quot;] --&gt;|&quot;limits&quot;| backend
+  secret[&quot;SESSION_SECRET_KEY&quot;] --&gt;|&quot;secret_key&quot;| backend
+  cookie[&quot;AdminSessionCookie(https_only=ENV)&quot;] --&gt;|&quot;cookie&quot;| backend
+  backend --&gt;|&quot;authentication_backend&quot;| admin[&quot;Admin(app, engine, templates_dir)&quot;]
+  admin --&gt;|&quot;admin.templates (사후 주입)&quot;| backend
+  verify[&quot;verify_credentials (auth_service)&quot;] --&gt; creds</code></pre></details></figure>
+<div class="table-wrap"><table><thead><tr><th scope="col">객체</th><th scope="col">위치</th><th scope="col">받는 것</th></tr></thead><tbody><tr><td><code>AdminAuthBackend</code></td><td><code>app/core/security/admin_auth.py:67</code></td><td>credentials · rate_limiter · ip_resolver · limits · secret_key · cookie</td></tr><tr><td><code>UserAdminCredentials</code></td><td><code>app/features/auth/admin_credentials.py:26</code></td><td>session_factory(<code>background_session</code>) · password_hasher(<code>PasswordHasher</code>)</td></tr><tr><td><code>verify_credentials</code></td><td><code>app/features/auth/services/auth_service.py:27</code></td><td>UserRepository · PasswordHasher · username · password — API 로그인(<code>AuthService.authenticate</code>)과 공용</td></tr><tr><td>자격 확인 훅</td><td><code>app/core/security/admin_credentials.py:38</code></td><td>팩토리 하나(마지막 등록이 유효)</td></tr><tr><td>조립 지점</td><td><code>app/core/apps/wiring.py:101</code></td><td>app · engine · registry · title — 설정은 함수 안에서 읽는다</td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="app/core/apps/wiring.py" data-symbol="create_admin" href="../../app/core/apps/wiring.py">app/core/apps/wiring.py · create_admin</a> · <a data-source="app/core/security/admin_credentials.py" data-symbol="register_admin_credentials" href="../../app/core/security/admin_credentials.py">app/core/security/admin_credentials.py · register_admin_credentials</a> · <a data-source="app/features/auth/admin_credentials.py" data-symbol="UserAdminCredentials" href="../../app/features/auth/admin_credentials.py">app/features/auth/admin_credentials.py · UserAdminCredentials</a> · <a data-source="app/features/auth/apps.py" data-symbol="AuthConfig" href="../../app/features/auth/apps.py">app/features/auth/apps.py · AuthConfig</a></p></section>
+<section id="startup"><h2>3. 기동 결정 흐름 — 설정에서 마운트까지</h2><p>관리 화면이 켜질지는 기동 때 한 번 정해진다. 예전 설정 이름 <code>ADMIN</code>(true=켬)은 <code>ADMIN_DISABLED</code>(true=끔)로 바뀌며 뜻이 뒤집혔다.
+설정 클래스는 모르는 키를 조용히 버리므로(<code>extra="ignore"</code>), <code>ADMIN=false</code> 로 관리 화면을 끄던 배포가 그대로 올라오면 관리 화면이 켜진다 — 그래서 이 이름만은
+<code>validate_removed_settings()</code> 가 감지해 기동을 멈춘다. 예전 무인증 승인 플래그는 남아 있어도 무시된다(로그인이 붙었으므로 뜻이 없다).</p>
+<figure class="figure"><figcaption>기동 결정 흐름 — 멈추는 지점 셋과 두 갈래</figcaption><div class="mermaid">flowchart TD
+  start[&quot;import config&quot;] --&gt; load[&quot;Settings 로드 (환경 변수 → .env → 기본값)&quot;]
+  load --&gt; removed{&quot;예전 ADMIN 이 환경·.env 에 있는가 (ENV != test)&quot;}
+  removed --&gt;|&quot;있다&quot;| stop1[&quot;ValueError — ADMIN 은 ADMIN_DISABLED 로 바뀌었다&quot;]
+  removed --&gt;|&quot;없다&quot;| safety[&quot;validate_deployment_safety (비밀키·DEBUG)&quot;]
+  safety --&gt; create[&quot;create_app()&quot;]
+  create --&gt; populate[&quot;registry.populate → AuthConfig.ready() 가 자격 확인 팩토리 등록&quot;]
+  populate --&gt; branch{&quot;ADMIN_DISABLED&quot;}
+  branch --&gt;|&quot;true&quot;| off[&quot;관리 화면 없음 — 마운트·sqladmin import·세션 미들웨어·백엔드 없음, 로그에 경로 없음&quot;]
+  branch --&gt;|&quot;false&quot;| factory{&quot;자격 확인 팩토리가 등록됐는가&quot;}
+  factory --&gt;|&quot;아니오&quot;| stop2[&quot;ImproperlyConfigured — auth 앱 설치 또는 ADMIN_DISABLED=true&quot;]
+  factory --&gt;|&quot;예&quot;| cookieName{&quot;SESSION_COOKIE_NAME == admin_session&quot;}
+  cookieName --&gt;|&quot;같다&quot;| stop3[&quot;ImproperlyConfigured — 쿠키 이름 충돌&quot;]
+  cookieName --&gt;|&quot;다르다&quot;| build[&quot;AdminAuthBackend 조립 → Admin(authentication_backend, templates_dir) → /admin 마운트&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  start[&quot;import config&quot;] --&gt; load[&quot;Settings 로드 (환경 변수 → .env → 기본값)&quot;]
+  load --&gt; removed{&quot;예전 ADMIN 이 환경·.env 에 있는가 (ENV != test)&quot;}
+  removed --&gt;|&quot;있다&quot;| stop1[&quot;ValueError — ADMIN 은 ADMIN_DISABLED 로 바뀌었다&quot;]
+  removed --&gt;|&quot;없다&quot;| safety[&quot;validate_deployment_safety (비밀키·DEBUG)&quot;]
+  safety --&gt; create[&quot;create_app()&quot;]
+  create --&gt; populate[&quot;registry.populate → AuthConfig.ready() 가 자격 확인 팩토리 등록&quot;]
+  populate --&gt; branch{&quot;ADMIN_DISABLED&quot;}
+  branch --&gt;|&quot;true&quot;| off[&quot;관리 화면 없음 — 마운트·sqladmin import·세션 미들웨어·백엔드 없음, 로그에 경로 없음&quot;]
+  branch --&gt;|&quot;false&quot;| factory{&quot;자격 확인 팩토리가 등록됐는가&quot;}
+  factory --&gt;|&quot;아니오&quot;| stop2[&quot;ImproperlyConfigured — auth 앱 설치 또는 ADMIN_DISABLED=true&quot;]
+  factory --&gt;|&quot;예&quot;| cookieName{&quot;SESSION_COOKIE_NAME == admin_session&quot;}
+  cookieName --&gt;|&quot;같다&quot;| stop3[&quot;ImproperlyConfigured — 쿠키 이름 충돌&quot;]
+  cookieName --&gt;|&quot;다르다&quot;| build[&quot;AdminAuthBackend 조립 → Admin(authentication_backend, templates_dir) → /admin 마운트&quot;]</code></pre></details></figure>
+<div class="table-wrap"><table><thead><tr><th scope="col">조건</th><th scope="col">결과</th><th scope="col">근거</th></tr></thead><tbody><tr><td>환경 변수나 <code>.env</code> 에 <code>ADMIN</code>(대소문자 무시)</td><td>설정 로드 실패 — 메시지에 바꿀 이름만</td><td><code>config.py</code> <code>validate_removed_settings()</code> · <code>tests/core/test_admin_disabled.py</code></td></tr><tr><td><code>ADMIN_DISABLED=true</code></td><td><code>/admin</code>·<code>/admin/login</code>·<code>/admin/statics/...</code> 404, OpenAPI·<code>/docs</code>·오류 본문·헤더 어디에도 경로 없음, 로그는 <code>관리 화면 비활성화 (ADMIN_DISABLED=true)</code></td><td><code>app/core/bootstrap.py:384</code> · <code>tests/core/test_admin_disabled.py</code> · <code>tests/core/test_admin_lazy_loading.py</code></td></tr><tr><td>켜짐 + auth 앱 미설치</td><td><code>ImproperlyConfigured</code> — 인증 없는 관리 화면을 여는 대신 멈춘다</td><td><code>app/core/apps/wiring.py:139</code></td></tr><tr><td>켜짐 + <code>SESSION_COOKIE_NAME=admin_session</code></td><td><code>ImproperlyConfigured</code> — 접속 로그가 관리자 쿠키를 기록하게 되므로</td><td><code>app/core/apps/wiring.py:146</code></td></tr><tr><td>켜짐 + staging/production</td><td>쿠키에 <code>Secure</code></td><td><code>app/core/apps/wiring.py:145</code></td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="config.py" data-symbol="validate_removed_settings" href="../../config.py">config.py · validate_removed_settings</a> · <a data-source="app/core/bootstrap.py" data-symbol="create_app" href="../../app/core/bootstrap.py">app/core/bootstrap.py · create_app</a> · <a data-source="app/core/apps/wiring.py" data-symbol="create_admin" href="../../app/core/apps/wiring.py">app/core/apps/wiring.py · create_admin</a></p></section>
+<section id="login"><h2>4. 로그인 시퀀스</h2><p>로그인은 sqladmin 의 <code>Admin.login</code> 라우트가 받아 백엔드 <code>login()</code> 에 넘긴다. 백엔드가 <code>False</code> 를 돌려주면 sqladmin 이 같은 로그인 화면을 400 으로 다시 그리고,
+<code>Response</code> 를 돌려주면(한도 초과) 그대로 내보내고, <code>True</code> 면 <code>/admin/</code> 으로 302 한다. 세션 쿠키는 응답이 나갈 때 <code>SessionMiddleware</code> 가 세션 dict 를 JSON → base64 → itsdangerous <code>TimestampSigner</code> 로 서명해 붙인다.</p>
+<figure class="figure"><figcaption>로그인 시퀀스 — 레이트 리밋 → 자격 확인 → 세션 재발급</figcaption><div class="mermaid">sequenceDiagram
+  autonumber
+  participant B as 브라우저
+  participant S as SessionMiddleware
+  participant A as SQLAdmin 라우트
+  participant K as AdminAuthBackend
+  participant R as Redis (RateLimiter)
+  participant C as UserAdminCredentials
+  participant D as DB users
+  B-&gt;&gt;S: GET /admin/
+  S-&gt;&gt;A: 세션 없음(빈 dict)
+  A-&gt;&gt;K: authenticate(request)
+  K--&gt;&gt;A: False (user_id 없음)
+  A--&gt;&gt;B: 302 Location /admin/login
+  B-&gt;&gt;A: GET /admin/login
+  A--&gt;&gt;B: 200 Bootstrap 로그인 화면 (login.html)
+  B-&gt;&gt;A: POST /admin/login (username, password)
+  A-&gt;&gt;K: login(request)
+  K-&gt;&gt;R: INCR admin-login:ip:IP (한도 AUTH_LOGIN_IP_MAX_ATTEMPTS)
+  K-&gt;&gt;R: INCR admin-login:user:IP:sha256(username) (한도 AUTH_LOGIN_MAX_ATTEMPTS)
+  alt 한도 초과
+    K--&gt;&gt;B: 429 + Retry-After, 로그인 화면 다시 그림
+  end
+  K-&gt;&gt;C: verify(username, password)
+  C-&gt;&gt;D: get_by_username
+  C-&gt;&gt;C: verify_credentials — Argon2 검증 (bcrypt 면 재해시 flush)
+  C-&gt;&gt;D: COMMIT (재해시가 있으면 저장)
+  C--&gt;&gt;K: user_id 또는 None (활성·슈퍼유저만 id)
+  alt None
+    K--&gt;&gt;A: False
+    A--&gt;&gt;B: 400 로그인 화면 (사유 미구분)
+  else user_id
+    K-&gt;&gt;K: session.clear() 후 session[user_id] = id
+    K-&gt;&gt;R: DEL admin-login:user:... (성공 시 카운터 초기화)
+    K--&gt;&gt;A: True
+    S--&gt;&gt;B: 302 Location /admin/ + Set-Cookie admin_session (서명)
+  end
+  B-&gt;&gt;S: GET /admin/ (쿠키 동봉)
+  S-&gt;&gt;A: 서명 검증된 세션
+  A-&gt;&gt;K: authenticate
+  K-&gt;&gt;C: is_admin(id) — DB 조회
+  A--&gt;&gt;B: 200 관리 화면</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  autonumber
+  participant B as 브라우저
+  participant S as SessionMiddleware
+  participant A as SQLAdmin 라우트
+  participant K as AdminAuthBackend
+  participant R as Redis (RateLimiter)
+  participant C as UserAdminCredentials
+  participant D as DB users
+  B-&gt;&gt;S: GET /admin/
+  S-&gt;&gt;A: 세션 없음(빈 dict)
+  A-&gt;&gt;K: authenticate(request)
+  K--&gt;&gt;A: False (user_id 없음)
+  A--&gt;&gt;B: 302 Location /admin/login
+  B-&gt;&gt;A: GET /admin/login
+  A--&gt;&gt;B: 200 Bootstrap 로그인 화면 (login.html)
+  B-&gt;&gt;A: POST /admin/login (username, password)
+  A-&gt;&gt;K: login(request)
+  K-&gt;&gt;R: INCR admin-login:ip:IP (한도 AUTH_LOGIN_IP_MAX_ATTEMPTS)
+  K-&gt;&gt;R: INCR admin-login:user:IP:sha256(username) (한도 AUTH_LOGIN_MAX_ATTEMPTS)
+  alt 한도 초과
+    K--&gt;&gt;B: 429 + Retry-After, 로그인 화면 다시 그림
+  end
+  K-&gt;&gt;C: verify(username, password)
+  C-&gt;&gt;D: get_by_username
+  C-&gt;&gt;C: verify_credentials — Argon2 검증 (bcrypt 면 재해시 flush)
+  C-&gt;&gt;D: COMMIT (재해시가 있으면 저장)
+  C--&gt;&gt;K: user_id 또는 None (활성·슈퍼유저만 id)
+  alt None
+    K--&gt;&gt;A: False
+    A--&gt;&gt;B: 400 로그인 화면 (사유 미구분)
+  else user_id
+    K-&gt;&gt;K: session.clear() 후 session[user_id] = id
+    K-&gt;&gt;R: DEL admin-login:user:... (성공 시 카운터 초기화)
+    K--&gt;&gt;A: True
+    S--&gt;&gt;B: 302 Location /admin/ + Set-Cookie admin_session (서명)
+  end
+  B-&gt;&gt;S: GET /admin/ (쿠키 동봉)
+  S-&gt;&gt;A: 서명 검증된 세션
+  A-&gt;&gt;K: authenticate
+  K-&gt;&gt;C: is_admin(id) — DB 조회
+  A--&gt;&gt;B: 200 관리 화면</code></pre></details></figure>
+<ul>
+<li>레이트 리밋이 자격 확인보다 <strong>먼저</strong>다 — 한도를 넘으면 맞는 비밀번호도 막는다(무차별 대입 비용을 올린다). 카운터 키는 API 로그인(<code>login:</code>)과 접두사가 달라 서로의 한도를 소모하지 않는다(<code>app/core/security/admin_auth.py:119</code>·<code>:168</code>).</li>
+<li>사용자명은 소문자로 접어 SHA-256 으로 키에 넣는다(키 길이 고정, 원문을 Redis 에 남기지 않는다).</li>
+<li>자격 확인은 API 로그인과 같은 <code>verify_credentials</code> 다 — 없는 사용자도 더미 Argon2 검증 비용을 치러 응답 시간으로 계정을 열거할 수 없고, bcrypt 해시는 로그인 때 Argon2 로 옮겨 저장된다(<code>app/features/auth/services/auth_service.py:27</code>).</li>
+<li>성공하면 <code>request.session.clear()</code> 뒤 사용자 id 하나만 넣는다 — 로그인 전에 쿠키로 들고 온 값은 남지 않는다(세션 고정 방지, <code>app/core/security/admin_auth.py:133</code>).</li>
+<li>로그에는 결과·IP·사용자명(64자까지, <code>repr</code>)·성공 시 사용자 id 만 남는다. 비밀번호·해시는 어떤 경로로도 로그에 싣지 않는다.</li>
+</ul>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_auth.py" data-symbol="AdminAuthBackend" href="../../app/core/security/admin_auth.py">app/core/security/admin_auth.py · AdminAuthBackend</a> · <a data-source="app/features/auth/admin_credentials.py" data-symbol="UserAdminCredentials" href="../../app/features/auth/admin_credentials.py">app/features/auth/admin_credentials.py · UserAdminCredentials</a> · <a data-source="app/features/auth/services/auth_service.py" data-symbol="verify_credentials" href="../../app/features/auth/services/auth_service.py">app/features/auth/services/auth_service.py · verify_credentials</a> · <a data-source="app/templates/admin/sqladmin/login.html" href="../../app/templates/admin/sqladmin/login.html">app/templates/admin/sqladmin/login.html</a></p></section>
+<section id="per-request"><h2>5. 요청별 인증 흐름</h2><p>모든 관리 라우트(목록·상세·생성·수정·삭제·내보내기)는 <code>login_required</code> 로 감싸져 있고, 매번 <code>AdminAuthBackend.authenticate</code> 를 부른다.
+쿠키는 신원(사용자 id)만 증명하고 <strong>권한은 매번 DB 에서</strong> 다시 읽는다 — 그래서 강등·비활성화·삭제가 다음 요청에서 바로 반영된다.
+비용은 관리 요청마다 사용자 PK 조회 한 번이다(관리 화면 트래픽에서는 무시할 수준).</p>
+<figure class="figure"><figcaption>요청별 판정 — 서명 → 만료 → id → DB</figcaption><div class="mermaid">flowchart TD
+  req[&quot;/admin 하위 요청&quot;] --&gt; cookie{&quot;admin_session 쿠키가 있는가&quot;}
+  cookie --&gt;|&quot;없음&quot;| empty[&quot;빈 세션&quot;]
+  cookie --&gt;|&quot;있음&quot;| sig{&quot;서명 검증 (SESSION_SECRET_KEY)&quot;}
+  sig --&gt;|&quot;실패 (위조·다른 키)&quot;| empty
+  sig --&gt;|&quot;성공&quot;| age{&quot;서명 타임스탬프가 8시간 이내&quot;}
+  age --&gt;|&quot;만료&quot;| empty
+  age --&gt;|&quot;유효&quot;| uid{&quot;session의 user_id 가 문자열인가&quot;}
+  empty --&gt; deny[&quot;authenticate → False&quot;]
+  uid --&gt;|&quot;아니오&quot;| deny
+  uid --&gt;|&quot;예&quot;| dbcheck{&quot;DB: 존재·활성·슈퍼유저&quot;}
+  dbcheck --&gt;|&quot;아니오&quot;| clear[&quot;session.clear() + WARNING 로그&quot;] --&gt; deny
+  dbcheck --&gt;|&quot;예&quot;| pass[&quot;통과 → 관리 화면 처리&quot;]
+  deny --&gt; redirect[&quot;302 → /admin/login&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  req[&quot;/admin 하위 요청&quot;] --&gt; cookie{&quot;admin_session 쿠키가 있는가&quot;}
+  cookie --&gt;|&quot;없음&quot;| empty[&quot;빈 세션&quot;]
+  cookie --&gt;|&quot;있음&quot;| sig{&quot;서명 검증 (SESSION_SECRET_KEY)&quot;}
+  sig --&gt;|&quot;실패 (위조·다른 키)&quot;| empty
+  sig --&gt;|&quot;성공&quot;| age{&quot;서명 타임스탬프가 8시간 이내&quot;}
+  age --&gt;|&quot;만료&quot;| empty
+  age --&gt;|&quot;유효&quot;| uid{&quot;session의 user_id 가 문자열인가&quot;}
+  empty --&gt; deny[&quot;authenticate → False&quot;]
+  uid --&gt;|&quot;아니오&quot;| deny
+  uid --&gt;|&quot;예&quot;| dbcheck{&quot;DB: 존재·활성·슈퍼유저&quot;}
+  dbcheck --&gt;|&quot;아니오&quot;| clear[&quot;session.clear() + WARNING 로그&quot;] --&gt; deny
+  dbcheck --&gt;|&quot;예&quot;| pass[&quot;통과 → 관리 화면 처리&quot;]
+  deny --&gt; redirect[&quot;302 → /admin/login&quot;]</code></pre></details></figure>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_auth.py" data-symbol="AdminAuthBackend" href="../../app/core/security/admin_auth.py">app/core/security/admin_auth.py · AdminAuthBackend</a> · <a data-source="app/features/auth/admin_credentials.py" data-symbol="UserAdminCredentials" href="../../app/features/auth/admin_credentials.py">app/features/auth/admin_credentials.py · UserAdminCredentials</a></p></section>
+<section id="failures"><h2>6. 실패 경로</h2><div class="table-wrap"><table><thead><tr><th scope="col">상황</th><th scope="col">응답</th><th scope="col">세션</th><th scope="col">로그</th><th scope="col">테스트</th></tr></thead><tbody><tr><td>틀린 비밀번호 · 없는 사용자 · 비슈퍼유저 · 비활성</td><td>400 로그인 화면, 문구 동일(<code>Invalid credentials.</code>) — 사유를 구분하지 않는다</td><td>그대로(쿠키 발급 없음)</td><td>WARNING <code>[AdminLogin] 실패 ip=… username=…</code></td><td><code>test_wrong_password_and_unknown_user_get_the_same_400</code> · <code>test_wrong_password_unknown_user_non_superuser_and_inactive_are_all_none</code></td></tr><tr><td>시도 한도 초과(ip 또는 ip+사용자명)</td><td>429 + <code>Retry-After</code>(창의 남은 초), 로그인 화면에 경고</td><td>그대로</td><td>WARNING <code>시도 한도 초과</code></td><td><code>test_rate_limit_rerenders_the_login_page_with_429_and_retry_after</code> · <code>test_per_ip_limit_applies_across_usernames</code></td></tr><tr><td>로그인 후 강등·비활성화·삭제</td><td>다음 요청에서 302 → 로그인</td><td>비운다</td><td>WARNING <code>세션 거부(더 이상 관리자가 아님)</code></td><td><code>test_demotion_after_login_is_rejected_on_the_next_request</code> · <code>test_demotion_in_the_database_ends_the_admin_session</code></td></tr><tr><td>쿠키 위조(다른 키로 서명·변조)</td><td>302 → 로그인(서명 실패는 빈 세션)</td><td>무시</td><td>—</td><td><code>test_cookie_signed_with_another_key_is_ignored</code></td></tr><tr><td>쿠키 만료(8시간)</td><td>302 → 로그인</td><td>무시</td><td>—</td><td>starlette <code>SessionMiddleware</code>(<code>max_age</code> 로 서명 나이 검사)</td></tr><tr><td>세션에 id 가 아닌 값</td><td>302 → 로그인</td><td>무시</td><td>—</td><td><code>test_session_without_a_user_id_is_not_authenticated</code></td></tr></tbody></table></div>
+<p>테스트 위치: <code>tests/core/security/test_admin_auth.py</code>(백엔드), <code>app/features/auth/tests/test_admin_credentials.py</code>(DB 판정), <code>tests/core/test_admin_login_flow.py</code>(create_superuser → 로그인 통합).</p>
+<p class="source">코드 근거: <a data-source="tests/core/security/test_admin_auth.py" href="../../tests/core/security/test_admin_auth.py">tests/core/security/test_admin_auth.py</a> · <a data-source="app/features/auth/tests/test_admin_credentials.py" href="../../app/features/auth/tests/test_admin_credentials.py">app/features/auth/tests/test_admin_credentials.py</a> · <a data-source="tests/core/test_admin_login_flow.py" href="../../tests/core/test_admin_login_flow.py">tests/core/test_admin_login_flow.py</a></p></section>
+<section id="logout"><h2>7. 로그아웃 흐름</h2><p>로그아웃은 세션을 비운다. 세션이 비면 <code>SessionMiddleware</code> 가 만료된 쿠키를 내려 브라우저에서 지운다. 서버에 세션 저장소가 없으므로 <strong>로그아웃 전에 복사해 둔 쿠키 값은 만료(8시간)까지 서명이 유효하다</strong> —
+다만 권한을 매 요청 DB 로 보므로, 그 계정을 강등·비활성화하면 그 복사본도 즉시 쓸모가 없어진다(§10 남은 위험).</p>
+<figure class="figure"><figcaption>로그아웃 — 세션 비움과 쿠키 삭제</figcaption><div class="mermaid">sequenceDiagram
+  participant B as 브라우저
+  participant S as SessionMiddleware
+  participant A as SQLAdmin logout
+  participant K as AdminAuthBackend
+  B-&gt;&gt;S: GET /admin/logout (쿠키)
+  S-&gt;&gt;A: 세션
+  A-&gt;&gt;K: logout(request)
+  K-&gt;&gt;K: session.clear()
+  K--&gt;&gt;A: True
+  S--&gt;&gt;B: 302 /admin/ + Set-Cookie admin_session=null, expires=1970 (쿠키 삭제)
+  B-&gt;&gt;A: GET /admin/
+  A--&gt;&gt;B: 302 /admin/login</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  participant B as 브라우저
+  participant S as SessionMiddleware
+  participant A as SQLAdmin logout
+  participant K as AdminAuthBackend
+  B-&gt;&gt;S: GET /admin/logout (쿠키)
+  S-&gt;&gt;A: 세션
+  A-&gt;&gt;K: logout(request)
+  K-&gt;&gt;K: session.clear()
+  K--&gt;&gt;A: True
+  S--&gt;&gt;B: 302 /admin/ + Set-Cookie admin_session=null, expires=1970 (쿠키 삭제)
+  B-&gt;&gt;A: GET /admin/
+  A--&gt;&gt;B: 302 /admin/login</code></pre></details></figure>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_auth.py" data-symbol="AdminAuthBackend" href="../../app/core/security/admin_auth.py">app/core/security/admin_auth.py · AdminAuthBackend</a></p></section>
+<section id="cookie"><h2>8. 세션 쿠키 구조와 속성</h2><div class="table-wrap"><table><thead><tr><th scope="col">속성</th><th scope="col">값</th><th scope="col">이유</th></tr></thead><tbody><tr><td>이름</td><td><code>admin_session</code></td><td>API 쪽 <code>SESSION_COOKIE_NAME</code>(기본 <code>session</code>, 접속 로그 기록용)과 달라야 한다 — 같으면 기동 실패</td></tr><tr><td>Path</td><td><code>/admin</code></td><td>관리 화면 요청에만 실린다. API 요청에는 브라우저가 보내지 않는다</td></tr><tr><td>SameSite</td><td><code>Strict</code></td><td>다른 사이트에서 시작한 요청(링크·폼·이미지)에는 실리지 않는다 — 로그인 CSRF·관리 동작 CSRF 차단</td></tr><tr><td>HttpOnly</td><td>항상</td><td>페이지 JS 가 쿠키를 읽지 못한다(XSS 로 쿠키 탈취 차단)</td></tr><tr><td>Secure</td><td><code>ENV</code> 가 staging/production 일 때만</td><td>HTTPS 로만 전송. 개발(HTTP)에서는 꺼야 로그인이 된다</td></tr><tr><td>Max-Age</td><td><code>28800</code>(8시간)</td><td>브라우저 보관 기간이자 서버의 서명 나이 상한(<code>SessionMiddleware(max_age=...)</code>)</td></tr><tr><td>서명 키</td><td><code>SESSION_SECRET_KEY</code></td><td>itsdangerous <code>TimestampSigner</code>(HMAC). 바꾸면 모든 관리 세션이 무효</td></tr><tr><td>값</td><td><code>base64(JSON)</code> + 타임스탬프 + 서명</td><td><strong>암호화가 아니다</strong> — 누구나 디코드해 내용을 볼 수 있다. 그래서 사용자 id 하나만 담는다</td></tr></tbody></table></div>
+<p>세션 dict 에 담는 값은 <code>{"user_id": "&lt;users.id&gt;"}</code> 하나다(<code>SESSION_USER_KEY</code>, sqladmin 의 <code>get_user_id</code> 기본 구현이 같은 키를 읽는다). 비밀번호·해시·권한 플래그는 담지 않는다 — 권한은 매 요청 DB 에서 본다.</p>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_auth.py" data-symbol="AdminSessionCookie" href="../../app/core/security/admin_auth.py">app/core/security/admin_auth.py · AdminSessionCookie</a> · <a data-source="app/core/apps/wiring.py" data-symbol="create_admin" href="../../app/core/apps/wiring.py">app/core/apps/wiring.py · create_admin</a> · <a data-source="config.py" data-symbol="SessionSettings" href="../../config.py">config.py · SessionSettings</a></p></section>
+<section id="lifecycle"><h2>9. 계정 수명주기 — 만들기부터 강등까지</h2><p>관리 화면 계정은 따로 없다. <code>users</code> 테이블의 <strong>활성 슈퍼유저</strong>가 곧 관리자다. 첫 계정은 <code>scripts/create_superuser.py</code> 로 만든다(대화형은 비밀번호를 두 번 묻고, 자동화는 <code>--password-stdin</code> 으로 표준 입력 첫 줄을 읽는다. 이미 있는 사용자면 승격만 하고 비밀번호는 <code>--set-password</code> 일 때만 바꾼다).</p>
+<pre><code>uv run python -m scripts.create_superuser --username admin --email admin@example.com
+printf '%s\n' "$ADMIN_PASSWORD" | uv run python -m scripts.create_superuser --username admin --email admin@example.com --password-stdin</code></pre>
+<figure class="figure"><figcaption>계정 수명주기와 두 자격 증명에 미치는 영향</figcaption><div class="mermaid">flowchart LR
+  create[&quot;scripts/create_superuser.py (생성 또는 승격)&quot;] --&gt; active[&quot;활성 슈퍼유저&quot;]
+  active --&gt;|&quot;/admin 로그인&quot;| session[&quot;admin_session 발급&quot;]
+  active --&gt;|&quot;API 로그인&quot;| tokens[&quot;access·refresh 토큰&quot;]
+  active --&gt;|&quot;API: is_superuser=false&quot;| demoted[&quot;강등&quot;]
+  active --&gt;|&quot;API: is_active=false&quot;| inactive[&quot;비활성&quot;]
+  active --&gt;|&quot;API: DELETE&quot;| deleted[&quot;삭제&quot;]
+  demoted --&gt; effect[&quot;관리 세션: 다음 요청 거부 / refresh: 즉시 폐기 / access: 만료까지 유효&quot;]
+  inactive --&gt; effect
+  deleted --&gt; effect</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
+  create[&quot;scripts/create_superuser.py (생성 또는 승격)&quot;] --&gt; active[&quot;활성 슈퍼유저&quot;]
+  active --&gt;|&quot;/admin 로그인&quot;| session[&quot;admin_session 발급&quot;]
+  active --&gt;|&quot;API 로그인&quot;| tokens[&quot;access·refresh 토큰&quot;]
+  active --&gt;|&quot;API: is_superuser=false&quot;| demoted[&quot;강등&quot;]
+  active --&gt;|&quot;API: is_active=false&quot;| inactive[&quot;비활성&quot;]
+  active --&gt;|&quot;API: DELETE&quot;| deleted[&quot;삭제&quot;]
+  demoted --&gt; effect[&quot;관리 세션: 다음 요청 거부 / refresh: 즉시 폐기 / access: 만료까지 유효&quot;]
+  inactive --&gt; effect
+  deleted --&gt; effect</code></pre></details></figure>
+<div class="table-wrap"><table><thead><tr><th scope="col">사건(API 관리자 작업)</th><th scope="col">관리 세션(<code>admin_session</code>)</th><th scope="col">API refresh 토큰</th><th scope="col">API access 토큰</th></tr></thead><tbody><tr><td>강등(<code>is_superuser=false</code>)</td><td>다음 요청에서 거부·세션 비움</td><td>모든 family 즉시 폐기(<code>revoke_user</code>)</td><td>만료(최대 15분)까지 이전 권한(<code>su</code> claim)</td></tr><tr><td>비활성화(<code>is_active=false</code>)</td><td>다음 요청에서 거부·세션 비움</td><td>즉시 폐기</td><td>만료까지 유효(<code>/me</code> 등 DB 를 읽는 곳은 401)</td></tr><tr><td>삭제</td><td>다음 요청에서 거부·세션 비움</td><td>즉시 폐기</td><td>만료까지 유효</td></tr><tr><td>비밀번호 변경(<code>--set-password</code>)</td><td>기존 세션 유지(쿠키는 비밀번호와 무관)</td><td>유지</td><td>유지</td></tr><tr><td><code>SESSION_SECRET_KEY</code> 교체</td><td>모든 관리 세션 무효</td><td>영향 없음</td><td>영향 없음</td></tr></tbody></table></div>
+<p>비밀번호를 바꿨을 때 기존 관리 세션까지 끊어야 하면 그 계정을 잠깐 비활성화했다가 되살리거나 <code>SESSION_SECRET_KEY</code> 를 교체한다(§10 남은 위험).</p>
+<p class="source">코드 근거: <a data-source="scripts/create_superuser.py" data-symbol="ensure_superuser" href="../../scripts/create_superuser.py">scripts/create_superuser.py · ensure_superuser</a> · <a data-source="app/features/user/services/user_service.py" data-symbol="UserService" href="../../app/features/user/services/user_service.py">app/features/user/services/user_service.py · UserService</a></p></section>
+<section id="security"><h2>10. 보안 설계 근거와 위협 모델</h2><div class="table-wrap"><table><thead><tr><th scope="col">위협</th><th scope="col">대응</th><th scope="col">근거</th></tr></thead><tbody><tr><td>세션 고정(로그인 전 심어 둔 세션을 피해자가 그대로 씀)</td><td>로그인 성공 시 <code>session.clear()</code> 후 id 만 새로 기록 — 서명 쿠키라 서버 측 세션 id 가 없고, 내용이 통째로 바뀐다</td><td><code>test_login_clears_values_planted_before_login</code></td></tr><tr><td>CSRF(다른 사이트가 관리 동작을 일으킴)</td><td><code>SameSite=Strict</code> — 교차 사이트 요청에 쿠키가 실리지 않는다. 쿠키 path 도 <code>/admin</code> 으로 좁혔다</td><td><code>test_session_cookie_attributes</code></td></tr><tr><td>계정 열거(어떤 사용자명이 있는지 알아냄)</td><td>실패 사유를 응답으로 구분하지 않고(같은 400·같은 본문), 없는 사용자도 더미 Argon2 검증 비용을 치른다</td><td><code>test_wrong_password_and_unknown_user_get_the_same_400</code></td></tr><tr><td>무차별 대입·크리덴셜 스터핑</td><td>Redis 고정 창 레이트 리밋(ip·ip+사용자명), 자격 확인보다 먼저. 한도는 API 로그인과 같은 설정</td><td><code>test_rate_limit_rerenders_the_login_page_with_429_and_retry_after</code></td></tr><tr><td>쿠키 탈취(XSS·평문 전송)</td><td>HttpOnly, 배포 환경 Secure, 8시간 만료, 권한은 매 요청 DB 확인. 로그인 화면은 외부 JS 를 싣지 않는다(Bootstrap CSS 만, SRI 고정)</td><td><code>test_login_page_is_the_bootstrap_screen</code></td></tr><tr><td>쿠키 위조</td><td>itsdangerous HMAC 서명 — 키(<code>SESSION_SECRET_KEY</code>)는 32자 이상·placeholder 금지(기동 검증)</td><td><code>test_cookie_signed_with_another_key_is_ignored</code></td></tr><tr><td>강등된 관리자가 계속 접근</td><td>매 요청 DB 확인으로 다음 요청에서 차단</td><td><code>test_demotion_after_login_is_rejected_on_the_next_request</code></td></tr><tr><td>관리 화면 노출 자체(공격면)</td><td><code>ADMIN_DISABLED=true</code> — 마운트·링크·세션 미들웨어·sqladmin 로드가 모두 없다. 경로가 응답·헤더·로그에 나오지 않아 위치를 알 수 없다</td><td><code>tests/core/test_admin_disabled.py</code></td></tr><tr><td>로그 유출</td><td>비밀번호·해시를 싣지 않고 사용자명은 64자로 자른다</td><td><code>test_login_logs_never_carry_the_password</code></td></tr><tr><td>API 로 세션 인증이 번짐</td><td>세션 미들웨어는 SQLAdmin 하위 앱에만 있고 API 의존성은 Bearer 만 읽는다</td><td><code>test_admin_session_cookie_does_not_authenticate_the_api</code></td></tr></tbody></table></div>
+<h3>남은 위험(의도적으로 수용)</h3>
+<ul>
+<li><strong>서버 측 세션 저장소가 없다</strong> — 로그아웃 전에 복사해 둔 쿠키는 만료(8시간)까지 서명이 유효하다. 계정이 활성 슈퍼유저로 남아 있는 한 그 복사본으로 들어올 수 있다. 끊으려면 계정을 비활성화하거나 <code>SESSION_SECRET_KEY</code> 를 교체한다. (Redis 세션 저장소로 바꾸면 해소 — CRP admin-login R-001)</li>
+<li><strong>로그인 폼에 CSRF 토큰이 없다</strong> — <code>SameSite=Strict</code> 가 교차 사이트 요청에서 쿠키를 빼므로 관리 동작 CSRF 는 막히고, 로그인 CSRF(공격자 계정으로 로그인시키기)는 공격자가 슈퍼유저 계정을 가져야 의미가 있다. 아주 오래된 브라우저(SameSite 미지원)는 대상이 아니다.</li>
+<li><strong>관리 화면 안의 세분 권한이 없다</strong> — 슈퍼유저면 모든 ModelView 에 모든 동작이 열린다(사용자 생성은 막혀 있고 비밀번호 해시는 어디에도 나오지 않는다).</li>
+<li><strong>레이트 리밋의 IP 정확도는 <code>TRUSTED_PROXY_HOPS</code> 에 달렸다</strong> — 프록시 뒤에서 0 이면 모두가 프록시 IP 하나로 세어져 한 사람이 한도를 채우면 모두가 429 를 받는다.</li>
+</ul></section>
+<section id="operations"><h2>11. 운영 — 설정·배포 체크리스트·키 교체·문제 해결</h2><h3>설정</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">설정</th><th scope="col">기본값</th><th scope="col">효과</th></tr></thead><tbody><tr><td><code>ADMIN_DISABLED</code></td><td><code>false</code></td><td>true 면 관리 화면 자체가 없다(404·링크 없음·sqladmin 미로드). 예전 <code>ADMIN</code> 이 남아 있으면 기동 실패</td></tr><tr><td><code>SESSION_SECRET_KEY</code></td><td>placeholder(기동 거부)</td><td>관리 세션 쿠키 서명 키. 32자 이상, 다른 비밀키와 다른 값. 바꾸면 모든 관리 세션 무효</td></tr><tr><td><code>SESSION_COOKIE_NAME</code></td><td><code>session</code></td><td>접속 로그가 기록하는 쿠키 이름(인증과 무관). <code>admin_session</code> 이면 기동 실패</td></tr><tr><td><code>AUTH_LOGIN_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_WINDOW_SECONDS</code></td><td><code>5</code> / <code>20</code> / <code>60</code></td><td>API 로그인과 같은 한도로 관리 로그인을 센다(카운터는 분리)</td></tr><tr><td><code>TRUSTED_PROXY_HOPS</code></td><td><code>0</code></td><td>레이트 리밋·로그의 클라이언트 IP. 프록시 뒤면 프록시 단 수</td></tr><tr><td><code>ENV</code></td><td><code>development</code></td><td>staging/production 이면 쿠키에 Secure</td></tr></tbody></table></div>
+<h3>배포 체크리스트</h3>
+<ol>
+<li>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>. 예전 <code>ADMIN</code> 줄을 <code>.env</code>·배포 환경에서 지운다(<code>ADMIN=false</code> 였다면 <code>ADMIN_DISABLED=true</code>).</li>
+<li>쓴다면 <code>scripts/create_superuser.py</code> 로 첫 관리자를 만든다(이 계정이 <code>/admin</code> 로그인 계정).</li>
+<li><code>SESSION_SECRET_KEY</code> 를 <code>secrets.token_urlsafe(48)</code> 값으로, 다른 두 비밀키와 다르게.</li>
+<li>HTTPS 로만 접근한다(staging/production 쿠키는 Secure). 내부망 전용이면 프록시에서 <code>/admin</code> 을 제한한다.</li>
+<li>프록시 뒤면 <code>TRUSTED_PROXY_HOPS</code> 를 프록시 단 수로.</li>
+<li>배포 후 확인: <code>curl -s -o /dev/null -w '%{http_code}' https://&lt;host&gt;/admin/</code> → 302(켜짐) 또는 404(<code>ADMIN_DISABLED=true</code>).</li>
+</ol>
+<h3>키 교체</h3>
+<p><code>SESSION_SECRET_KEY</code> 를 바꾸고 재기동하면 기존 쿠키의 서명이 모두 실패해 <strong>모든 관리자가 다시 로그인</strong>해야 한다. API 토큰(JWT)은 다른 키를 쓰므로 영향이 없다. 여러 인스턴스는 같은 키를 써야 한다(인스턴스마다 다르면 로그인이 번갈아 풀린다).</p>
+<h3>문제 해결</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">증상</th><th scope="col">원인</th><th scope="col">조치</th></tr></thead><tbody><tr><td>로그인해도 다시 로그인 화면</td><td>staging/production 을 HTTP 로 접속 — Secure 쿠키가 저장되지 않는다 / 계정이 슈퍼유저·활성이 아니다 / 인스턴스마다 <code>SESSION_SECRET_KEY</code> 가 다르다</td><td>HTTPS(프록시 TLS 종단 포함), <code>create_superuser</code> 로 승격, 키 통일</td></tr><tr><td>로그인이 429</td><td>ip 또는 ip+사용자명 한도 초과. 프록시 뒤 <code>TRUSTED_PROXY_HOPS=0</code> 이면 전원이 한 IP</td><td><code>Retry-After</code> 초만큼 대기, 프록시 홉 수 설정</td></tr><tr><td>쿠키가 안 붙음(개발)</td><td>개발에서 <code>ENV=production</code> 으로 HTTP 접속</td><td>개발은 <code>ENV=development</code></td></tr><tr><td>기동 실패 <code>ADMIN 은 ADMIN_DISABLED 로 바뀌었다</code></td><td>환경 변수나 <code>.env</code> 에 예전 <code>ADMIN</code></td><td>줄을 <code>ADMIN_DISABLED</code> 로 옮긴다</td></tr><tr><td>기동 실패 <code>자격 확인을 등록한 설치 앱이 없습니다</code></td><td>관리 화면이 켜졌는데 auth 앱이 <code>INSTALLED_APPS</code> 에 없다</td><td>auth 앱 설치 또는 <code>ADMIN_DISABLED=true</code></td></tr><tr><td>기동 실패 <code>SESSION_COOKIE_NAME 이 … 같습니다</code></td><td><code>SESSION_COOKIE_NAME=admin_session</code></td><td>다른 이름으로</td></tr><tr><td>로그인 화면에 스타일이 없음</td><td>CDN(jsDelivr) 차단 또는 SRI 불일치</td><td>네트워크 확인. 템플릿의 버전·integrity 를 함께 바꿨는지 확인</td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="config.py" data-symbol="SessionSettings" href="../../config.py">config.py · SessionSettings</a> · <a data-source=".env.example" href="../../.env.example">.env.example</a></p></section>
+<section id="extending"><h2>12. 확장할 때 주의</h2><ul>
+<li><strong>새 관리 뷰</strong>: 기능 폴더의 <code>admin.py</code> 에 ModelView 를 만들고 <code>admin_views</code> 에 넣는다(<code>uv run python -m scripts.new_app &lt;name&gt; --with-admin</code>). 인증을 따로 붙이지 않는다 — <code>/admin</code> 전체가 백엔드 뒤에 있다. 비밀 컬럼(해시·토큰)은 목록·상세·폼·내보내기에서 모두 빼고 <code>tests/core/test_admin_views.py</code> 같은 검사로 고정한다.</li>
+<li><strong>로그인 화면 템플릿</strong>: <code>app/templates/admin/sqladmin/login.html</code>(유지 대상). sqladmin 0.32 는 <code>templates_dir</code> 의 <code>FileSystemLoader</code> 를 패키지 템플릿보다 먼저 보므로 같은 이름으로 덮어쓴다. 지킬 것: 독립 문서(base 를 확장하지 않는다), 필드 이름 <code>username</code>·<code>password</code>, <code>autocomplete</code>·<code>required</code>·레이블 연결, 폼 <code>action="{{ url_for('admin:login') }}"</code> POST, <code>error</code> 는 자동 이스케이프(<code>|safe</code> 금지), 외부 JS 를 넣지 않는다. Bootstrap 버전을 바꾸면 <code>integrity</code> 를 실제 파일로 다시 계산한다(현재 5.3.8, <code>sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB</code>). 화면 계약은 <code>tests/core/test_admin_login_flow.py</code>·<code>tests/browser/test_admin_login.py</code> 가 본다.</li>
+<li><strong>API 에 세션 인증을 섞지 않는다</strong>: 메인 앱에 <code>SessionMiddleware</code> 를 붙이거나 API 의존성이 <code>admin_session</code> 을 읽게 하면, 브라우저가 자동으로 붙이는 쿠키로 API 가 인증되어 CSRF 면이 API 전체로 넓어지고, 토큰의 짧은 수명·refresh 폐기 모델과 세션 모델이 한 경로에서 섞여 폐기 규칙이 모호해진다. API 는 Bearer 만, 관리 화면은 세션만 — <code>test_session_middleware_lives_only_in_the_admin_sub_app</code> 이 이 경계를 지킨다.</li>
+<li><strong>권한을 세분하려면</strong>: sqladmin <code>ModelView.is_accessible</code>·<code>is_visible</code> 과 <code>get_current_user_id</code> 로 뷰별 판정을 붙인다. 판정은 DB 를 읽어야 한다(세션 값은 신원만 증명한다).</li>
+<li><strong>자격 확인을 바꾸려면</strong>: <code>AdminCredentials</code> 계약(<code>verify</code>·<code>is_admin</code>)을 구현해 설치 앱의 <code>ready()</code> 에서 <code>register_admin_credentials()</code> 로 팩토리를 등록한다. core 를 고치지 않는다.</li>
+</ul>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_credentials.py" data-symbol="AdminCredentials" href="../../app/core/security/admin_credentials.py">app/core/security/admin_credentials.py · AdminCredentials</a> · <a data-source="app/templates/admin/sqladmin/login.html" href="../../app/templates/admin/sqladmin/login.html">app/templates/admin/sqladmin/login.html</a> · <a data-source="scripts/new_app.py" href="../../scripts/new_app.py">scripts/new_app.py</a></p></section>
+</main>
+</div>
+<footer><p>코드와 문서가 어긋나면 코드가 정답이다. 줄 번호는 2026-10-12 기준이며, 바뀌면 심볼 이름(코드 근거 링크)으로 찾는다. 이 문서는 관리 화면을 실행하지 않는다.</p></footer>
+
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 단계별 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

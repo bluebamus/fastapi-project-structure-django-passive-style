@@ -201,7 +201,7 @@ def test_create_app_accepts_an_isolated_registry():
     """NFR-05: 주입한 registry 를 쓰고 전역 상태를 건드리지 않는다."""
     isolated = Apps()
 
-    app = bootstrap.create_app(registry=isolated, enable_admin=False)
+    app = bootstrap.create_app(registry=isolated, admin_disabled=True)
 
     assert app.state.app_registry is isolated
     assert isolated.ready is True
@@ -219,7 +219,7 @@ def test_create_app_accepts_an_isolated_registry():
 
 def test_create_app_installs_health_and_baseline_middleware():
     """BC-03: health · CORS · user-info 가 보존된다."""
-    app = bootstrap.create_app(registry=Apps(), enable_admin=False)
+    app = bootstrap.create_app(registry=Apps(), admin_disabled=True)
 
     assert "/health" in app.openapi()["paths"]
     middleware = {m.cls.__name__ for m in app.user_middleware}
@@ -230,7 +230,7 @@ def test_create_app_can_run_a_subset_of_apps():
     """FR-01: 주입한 목록만 설치된다 — 전역 설정과 무관하게."""
     subset = [entry for entry in INSTALLED_APPS if "blog" not in entry]
 
-    app = bootstrap.create_app(installed_apps=subset, registry=Apps(), enable_admin=False)
+    app = bootstrap.create_app(installed_apps=subset, registry=Apps(), admin_disabled=True)
 
     paths = set(app.openapi()["paths"])
     assert not any("/blog/" in path for path in paths)
@@ -265,7 +265,7 @@ async def test_lifespan_creates_only_the_injected_registrys_tables(monkeypatch, 
 
     subset = [e for e in INSTALLED_APPS if e.split(".")[2] in {"home", "catalog"}]
     registry = Apps()
-    app = bootstrap.create_app(installed_apps=subset, registry=registry, enable_admin=False)
+    app = bootstrap.create_app(installed_apps=subset, registry=registry, admin_disabled=True)
     expected = {model.__table__.name for model in registry.get_models()}
 
     try:
@@ -286,7 +286,7 @@ def _app_exception_log_records(status_code: int) -> list[logging.LogRecord]:
 
     from app.core.exception import AppException
 
-    app = bootstrap.create_app(registry=Apps(), enable_admin=False)
+    app = bootstrap.create_app(registry=Apps(), admin_disabled=True)
 
     @app.get("/raise")
     async def _raise() -> None:

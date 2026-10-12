@@ -62,10 +62,10 @@
 - INV-9: 커밋은 쓰기 핸들러가 응답 DTO 검증 후 1회 (C-5)
 - INV-10: 민감 값은 로그·접속 로그·응답에 원문으로 남지 않는다 (C-12)
 - INV-11: Celery 워커는 `INSTALLED_APPS` 밖의 기능을 import 하지 않는다 (C-14)
-- INV-12: SQLAdmin 정책은 바뀌지 않는다 (C-13)
+- INV-12: SQLAdmin 정책은 바뀌지 않는다 (C-13) — **이 그룹 종료 후 admin-login 그룹이 대체했다(2026-10-12, 관리 화면 슈퍼유저 로그인)**
 
 ### 2-4. 비목표 (Non-goals)
-- SQLAdmin 인증 백엔드(영구 비목표, ADR-020), OAuth 소셜 로그인, 이메일 인증·비밀번호 재설정 메일, 2FA
+- SQLAdmin 인증 백엔드(영구 비목표, ADR-020 — 2026-10-12 admin-login 그룹이 대체), OAuth 소셜 로그인, 이메일 인증·비밀번호 재설정 메일, 2FA
 - access 토큰 즉시 폐기(짧은 만료 + refresh 폐기로 대신), 다중 테넌시, 슈퍼유저/일반 2단계를 넘는 RBAC
 - 이 목록의 시나리오에서의 실패는 "결함"이 아니다
 
@@ -89,3 +89,4 @@
 - v0.1 (2026-10-12): 최초 작성.
 - v0.2 (2026-10-12): 단계 D — 인수 기준 D 항목 구체화. 마이그레이션 head 는 `e5a7c2d9f310`(시각 UTC·`DATETIME(6)`), 인벤토리 `app/core/models/types.py` 추가.
 - v0.3 (2026-10-12): 단계 F2 완료로 §3 인수 기준을 모두 닫았다 — 전 단계(A~F2) 테스트·fail-on-revert 기록은 run-log Round 1~7, `review_gate --fast` 7단계 통과(pip-audit 포함), 질의 수준 보통(사용자 확정 갈림길: Redis 필수·UTC 저장·SQLAdmin 정책 유지).
+- v0.4 (2026-10-12): admin-login 그룹이 `/admin` 슈퍼유저 로그인을 붙여 INV-12·비목표(SQLAdmin 인증 백엔드)·R-001 을 대체·해소했다. 이 그룹의 판정(CONVERGED)은 바뀌지 않는다.
