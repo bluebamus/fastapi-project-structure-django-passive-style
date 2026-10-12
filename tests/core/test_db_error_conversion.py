@@ -14,13 +14,20 @@ from __future__ import annotations
 import ast
 import io
 import logging
+import sqlite3
 from pathlib import Path
 
 import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.db.errors import MYSQL_DUPLICATE_ENTRY, convert_db_error, driver_error_code
-from app.core.exception import DatabaseException, DuplicateException
+from app.core.exception import (
+    ConflictException,
+    DatabaseException,
+    DuplicateException,
+    ValidationException,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -53,22 +60,97 @@ def test_mysql_duplicate_becomes_conflict():
     assert converted.detail == {"model": "User"}
 
 
-def test_other_integrity_violation_is_not_a_duplicate():
-    """FK·NOT NULL 위반을 "이미 존재합니다"로 답하면 호출자가 잘못된 조치를 한다."""
-    converted = convert_db_error(_integrity_error(code=1452), operation="CREATE", model="Reply")
+def _sqlite_integrity_error(errorname: str) -> IntegrityError:
+    """SQLite 모양의 IntegrityError — 숫자 코드 없이 ``sqlite_errorname`` 만 준다."""
+    orig = sqlite3.IntegrityError(f"constraint failed: users.token ({SECRET_CANARY})")
+    orig.sqlite_errorname = errorname
+    return IntegrityError(statement="INSERT ...", params={"token": SECRET_CANARY}, orig=orig)
 
-    assert isinstance(converted, DatabaseException)
+
+@pytest.mark.parametrize(
+    ("code", "expected_type", "status"),
+    [
+        (1048, ValidationException, 422),  # 명시적 NULL — PATCH {"title": null}
+        (1364, ValidationException, 422),  # NOT NULL 컬럼에 값 없음
+        (1452, ValidationException, 422),  # 참조 대상 없음
+        (1451, ConflictException, 409),  # 다른 행이 참조 중
+        (1213, DatabaseException, 500),  # 모르는 코드는 서버 오류
+    ],
+)
+def test_mysql_integrity_codes_map_to_client_or_server_errors(code, expected_type, status):
+    """클라이언트가 고칠 수 있는 위반은 4xx 다 — 1048 이 500 이던 것이 F-009 였다."""
+    converted = convert_db_error(_integrity_error(code=code), operation="UPDATE", model="Post")
+
+    assert type(converted) is expected_type
+    assert converted.status_code == status
     assert not isinstance(converted, DuplicateException)
+    assert SECRET_CANARY not in converted.message
+    assert SECRET_CANARY not in str(converted.detail)
 
 
-def test_dialect_without_error_code_falls_back_to_duplicate():
-    """SQLite 는 코드를 주지 않는다 — 기존 동작(409)을 유지한다.
+@pytest.mark.parametrize(
+    ("errorname", "expected_type", "status"),
+    [
+        ("SQLITE_CONSTRAINT_UNIQUE", DuplicateException, 409),
+        ("SQLITE_CONSTRAINT_PRIMARYKEY", DuplicateException, 409),
+        ("SQLITE_CONSTRAINT_NOTNULL", ValidationException, 422),
+        ("SQLITE_CONSTRAINT_FOREIGNKEY", ValidationException, 422),
+        ("SQLITE_CONSTRAINT_CHECK", DatabaseException, 500),
+    ],
+)
+def test_sqlite_constraint_names_map_like_mysql(errorname, expected_type, status):
+    """SQLite 도 종류별로 가른다 — 예전에는 모든 위반을 중복(409)으로 봐서 NOT NULL 이 가려졌다."""
+    converted = convert_db_error(
+        _sqlite_integrity_error(errorname), operation="CREATE", model="User"
+    )
 
-    정확한 구분은 MySQL 통합 테스트가 맡는다(ADR-004).
-    """
+    assert type(converted) is expected_type
+    assert converted.status_code == status
+    assert SECRET_CANARY not in converted.message
+
+
+async def test_real_sqlite_not_null_violation_becomes_422():
+    """실제 aiosqlite 드라이버가 주는 예외로 확인한다 — 가짜 예외 모양에 기대지 않는다."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)")
+            with pytest.raises(IntegrityError) as caught:
+                await conn.exec_driver_sql("INSERT INTO t (id, v) VALUES (1, NULL)")
+    finally:
+        await engine.dispose()
+
+    converted = convert_db_error(caught.value, operation="CREATE", model="T")
+    assert converted.status_code == 422
+
+
+def test_integrity_error_without_any_code_is_a_server_error():
+    """코드도 SQLite 이름도 없으면 종류를 알 수 없다 — 중복이라고 추측하지 않는다."""
     converted = convert_db_error(_integrity_error(code=None), operation="CREATE", model="User")
 
-    assert isinstance(converted, DuplicateException)
+    assert type(converted) is DatabaseException
+    assert converted.status_code == 500
+
+
+def test_client_side_violations_are_logged_as_warning():
+    """4xx 로 바뀌는 위반은 WARNING, 서버 쪽 문제는 ERROR 로 남는다."""
+    from app.core.db import errors as errors_module
+
+    levels: list[int] = []
+
+    class _Recorder(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            levels.append(record.levelno)
+
+    handler = _Recorder(logging.DEBUG)
+    errors_module.logger.addHandler(handler)
+    try:
+        convert_db_error(_integrity_error(code=1048), operation="UPDATE", model="Post")
+        convert_db_error(_integrity_error(code=1213), operation="UPDATE", model="Post")
+    finally:
+        errors_module.logger.removeHandler(handler)
+
+    assert levels == [logging.WARNING, logging.ERROR]
 
 
 def test_non_integrity_errors_become_database_errors():

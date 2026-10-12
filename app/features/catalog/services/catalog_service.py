@@ -41,12 +41,13 @@ class CatalogService(BaseService):
         limit: int = 50,
         active_only: bool = False,
     ) -> tuple[Sequence[Product], int]:
-        """상품 목록과 전체 개수를 조회한다."""
+        """상품 목록과 전체 개수를 조회한다. 개수는 목록과 같은 조건으로 센다."""
         if active_only:
             products = await self.repository.get_active(skip=skip, limit=limit)
+            total = await self.repository.count(is_active=True)
         else:
             products = await self.repository.get_all(skip=skip, limit=limit)
-        total = await self.repository.count()
+            total = await self.repository.count()
         return products, total
 
     async def update_product(self, product_id: str, data: ProductUpdate) -> Product:

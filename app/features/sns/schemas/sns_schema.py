@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
+
 
 class SnsPostBase(BaseModel):
     """피드 게시물 공통 필드."""
@@ -16,8 +18,10 @@ class SnsPostCreate(SnsPostBase):
     """피드 게시물 생성 요청."""
 
 
-class SnsPostUpdate(BaseModel):
+class SnsPostUpdate(PatchSchema):
     """피드 게시물 수정 요청 — 전달된 필드만 부분 수정한다."""
+
+    nullable_fields = frozenset({"author"})
 
     content: str | None = Field(None, min_length=1, max_length=500, description="본문")
     author: str | None = Field(None, max_length=100, description="작성자")

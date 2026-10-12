@@ -298,7 +298,7 @@ POST /api/v1/catalog/products
 ```text
 GET /api/v1/reports/daily-sales?start_date=2026-08-01&end_date=2026-08-07
  → get_report_service_readonly: get_read_only_db_session → ReportService
- → 기간 검증(종료 ≥ 시작, 최대 366일) → end_exclusive = end_date + 1일
+ → 기간 검증(1970-01-01 ≤ 시작 ≤ 종료 ≤ 9998-12-31, 최대 366일 — 넘으면 422) → end_exclusive = end_date + 1일
  → SalesReportRawRepository.daily_sales(...)  fetch_all  query_name="sales_report.daily_sales"
    SalesReportRawRepository.order_count(...)  fetch_scalar query_name="sales_report.order_count"
  → [DailySalesItem.model_validate(dict(row)) ...] → DailySalesReportResponse (커밋 없음)
@@ -347,7 +347,10 @@ HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여�
   (전 기능의 생성·수정 핸들러에서 DTO 검증을 실패시켜 500·커밋 0회·DB 불변을 확인). 커밋을 Dependency teardown 에 두지 않는다.
 - DTO 가 접근할 관계·컬럼은 Repository 에서 명시적으로 로드한다. 커밋 이후나 DTO 검증 중 lazy load 가 암묵 I/O 를 일으키지 않게 한다
   (`expire_on_commit=False` 가 모든 관계 로딩을 해결하지는 않는다).
-- PATCH 스키마의 `None` 은 "미전달"과 다르다. `exclude_unset=True` 는 안 보낸 필드만 뺀다 — 명시적 null 을 허용할지 거부할지 정하고 테스트한다.
+- PATCH 스키마의 `None` 은 "미전달"과 다르다. `exclude_unset=True` 는 안 보낸 필드만 뺀다. 그래서 수정 스키마는
+  `app/core/schemas.py` 의 `PatchSchema` 를 상속한다 — 보낸 필드의 null 은 `nullable_fields`(모델 컬럼이 `nullable=True`
+  인 것만 적는다) 밖이면 422 다. 예: `PostUpdate.nullable_fields = frozenset({"author"})` 라 `{"title": null}` 은 422,
+  `{"author": null}` 은 작성자를 지운다.
 - 상태 전환·재고 차감처럼 동시성이 있는 변경은 "조회 후 UPDATE" 만으로 안전하지 않다. 조건부 UPDATE·잠금·DB 제약을 설계한다.
 - 커밋 성공 뒤 응답이 유실될 수 있다. 중요한 생성 업무는 멱등 키·중복 처리 정책을 정한다.
 

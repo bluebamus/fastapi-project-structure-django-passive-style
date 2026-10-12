@@ -94,3 +94,36 @@ async def test_time_ordered_queries_break_ties_by_id(session):
         assert pages == expected, name
 
     assert [log.id for log in await repo.get_recent_logs(limit=4)] == expected
+
+
+@pytest.mark.asyncio
+async def test_long_strings_are_cut_to_the_column_length(session):
+    """클라이언트가 정한 긴 헤더·쿠키는 컬럼 길이로 잘려 저장된다(service-hardening F-006).
+
+    SQLite 는 길이를 강제하지 않으므로 저장된 값의 길이로 확인한다. MySQL strict 에서는
+    자르지 않으면 1406 으로 INSERT 가 거부돼 기록이 빠진다. 길이는 모델에서 읽는다.
+    """
+    columns = UserAccessLog.__table__.c
+    service = UserAccessLogService(session)
+    long_value = "가" * 5000
+
+    created = await service.create_access_log(
+        {
+            "ip_address": "1.1.1.1",
+            "request_path": "/" + long_value,
+            "request_method": "GET",
+            "forwarded_for": long_value,
+            "accept_language": long_value,
+            "session_id": long_value,
+            "browser_name": long_value,
+            "user_agent": long_value,  # Text — 길이 제한 없음
+        }
+    )
+    await session.commit()
+
+    assert len(created.request_path) == columns["request_path"].type.length
+    assert len(created.forwarded_for) == columns["forwarded_for"].type.length
+    assert len(created.accept_language) == columns["accept_language"].type.length
+    assert len(created.session_id) == columns["session_id"].type.length
+    assert len(created.browser_name) == columns["browser_name"].type.length
+    assert created.user_agent == long_value

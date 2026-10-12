@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
+
 
 class PostBase(BaseModel):
     """게시글 공통 필드."""
@@ -17,8 +19,10 @@ class PostCreate(PostBase):
     """게시글 생성 요청."""
 
 
-class PostUpdate(BaseModel):
+class PostUpdate(PatchSchema):
     """게시글 수정 요청 — 전달된 필드만 부분 수정한다."""
+
+    nullable_fields = frozenset({"author"})
 
     title: str | None = Field(None, min_length=1, max_length=200, description="제목")
     content: str | None = Field(None, min_length=1, description="본문")

@@ -10,6 +10,7 @@ import threading
 import pytest
 
 from app.core.apps import Apps
+from app.core.apps.exceptions import ImproperlyConfigured
 
 PKG = "tests.core.apps._fixtures"
 TWO_APPS = [f"{PKG}.alpha", f"{PKG}.beta"]
@@ -24,6 +25,30 @@ def test_second_populate_is_a_noop(registry: Apps, events: list[str]):
 
     assert events == before
     assert events.count("ready:alpha") == 1
+
+
+@pytest.mark.parametrize(
+    "other",
+    [[f"{PKG}.alpha"], list(reversed(TWO_APPS)), [*TWO_APPS, f"{PKG}.plain"]],
+    ids=["subset", "reordered", "superset"],
+)
+def test_populate_with_a_different_list_is_rejected(
+    registry: Apps, events: list[str], other: list[str]
+):
+    """다른 목록으로 다시 채우면 조용히 돌아가지 않는다(service-hardening F-012).
+
+    조용히 돌아가면 호출자는 자기가 준 목록이 설치됐다고 믿고, 실제로는 처음 목록이 쓰인다.
+    """
+    registry.populate(TWO_APPS)
+
+    with pytest.raises(ImproperlyConfigured, match="다른 INSTALLED_APPS"):
+        registry.populate(other)
+    with pytest.raises(ImproperlyConfigured):
+        registry.populate(other, run_ready=False)
+
+    # 기존 상태는 그대로다 — 거부가 registry 를 망가뜨리지 않는다.
+    assert registry.ready is True
+    assert [c.label for c in registry.get_app_configs()] == ["alpha", "beta"]
 
 
 def test_reentrant_populate_during_ready_is_rejected(events: list[str]):

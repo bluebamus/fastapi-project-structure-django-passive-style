@@ -16,7 +16,7 @@ SQLAlchemy 예외의 ``str()`` 에는 **실행된 SQL 과 바인딩된 값**이 
 무엇이 "안전한가":
 
 * 예외 클래스 이름 (``IntegrityError``, ``OperationalError`` …)
-* 드라이버 에러 코드 (MySQL 1062 = 중복 키, 1452 = FK 위반 …)
+* 드라이버 에러 코드 (MySQL 1062 = 중복 키, 1452 = FK 위반 …, SQLite 는 ``sqlite_errorname``)
 * 어떤 모델·어떤 연산이었는지
 
 이 셋이면 로그에서 원인을 좁히기에 충분하다. 값이 필요하면 요청 로그와 대조한다.
@@ -27,17 +27,49 @@ SQLAlchemy 예외의 ``str()`` 에는 **실행된 SQL 과 바인딩된 값**이 
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.core.exception import AppException, DatabaseException, DuplicateException
+from app.core.exception import (
+    AppException,
+    ConflictException,
+    DatabaseException,
+    DuplicateException,
+    ValidationException,
+)
 from app.utils.logs import get_logger
 
 logger = get_logger("db.errors")
 
 #: MySQL 중복 키 에러 코드.
 MYSQL_DUPLICATE_ENTRY = 1062
+
+#: 무결성 위반의 종류. 클라이언트가 고칠 수 있는 오류라 4xx 로 답한다(service-hardening ADR-007).
+_DUPLICATE = "duplicate"  # 409 — 같은 값이 이미 있다
+_MISSING_VALUE = "missing_value"  # 422 — NOT NULL 컬럼에 값이 없다
+_MISSING_REFERENCE = "missing_reference"  # 422 — 참조할 행이 없다
+_REFERENCED = "referenced"  # 409 — 다른 행이 참조하고 있어 지우거나 바꿀 수 없다
+
+#: MySQL 드라이버 코드 → 종류.
+_MYSQL_INTEGRITY_KINDS: dict[int, str] = {
+    MYSQL_DUPLICATE_ENTRY: _DUPLICATE,
+    1048: _MISSING_VALUE,  # ER_BAD_NULL_ERROR — 명시적 NULL
+    1364: _MISSING_VALUE,  # ER_NO_DEFAULT_FOR_FIELD — 값을 빠뜨린 NOT NULL
+    1452: _MISSING_REFERENCE,  # ER_NO_REFERENCED_ROW_2 — 자식 INSERT/UPDATE
+    1451: _REFERENCED,  # ER_ROW_IS_REFERENCED_2 — 부모 DELETE/UPDATE
+}
+
+#: SQLite 확장 결과 코드 이름 → 종류. SQLite 는 숫자 코드를 ``args`` 에 주지 않지만
+#: 파이썬 ``sqlite3`` 예외가 ``sqlite_errorname`` 을 준다 — 메시지를 파싱하지 않는다.
+#: 외래 키 위반은 부모·자식 방향을 구분하지 않으므로 "참조 대상 없음"(422)으로 본다.
+_SQLITE_INTEGRITY_KINDS: dict[str, str] = {
+    "SQLITE_CONSTRAINT_UNIQUE": _DUPLICATE,
+    "SQLITE_CONSTRAINT_PRIMARYKEY": _DUPLICATE,
+    "SQLITE_CONSTRAINT_NOTNULL": _MISSING_VALUE,
+    "SQLITE_CONSTRAINT_FOREIGNKEY": _MISSING_REFERENCE,
+}
 
 
 def driver_error_code(exc: BaseException) -> int | None:
@@ -80,34 +112,46 @@ def convert_db_error(
     :func:`tests.core.test_db_error_conversion` 이 그 누락을 잡는다.
     """
     code = driver_error_code(exc)
-    logger.error(
+    payload: dict[str, Any] = {"model": model, **detail}
+    converted = _convert(exc, payload)
+
+    # 클라이언트가 고칠 수 있는 위반(4xx)은 WARNING, 서버 쪽 문제(5xx)는 ERROR.
+    logger.log(
+        logging.WARNING if converted.status_code < 500 else logging.ERROR,
         "[%s] %s (model=%s, driver_code=%s)",
         operation,
         type(exc).__name__,
         model,
         code,
     )
+    return converted
 
-    payload: dict[str, Any] = {"model": model, **detail}
 
-    if isinstance(exc, IntegrityError):
-        # 중복 키와 FK/NOT NULL 위반은 사용자에게 다른 의미다(409 vs 500). 코드로만
-        # 가른다 — 메시지를 파싱하면 그 순간 값이 딸려 온다.
-        #
-        # 코드를 주지 않는 방언(SQLite)에서는 **중복으로 본다**. 이 프로젝트의 단위
-        # 테스트가 SQLite 이고 거기서 나는 IntegrityError 는 사실상 unique 위반이다.
-        # 정확한 구분은 MySQL 통합 테스트가 담당한다(ADR-004: SQLite 는 방언 정확성의
-        # 근거가 아니다).
-        if code is None or code == MYSQL_DUPLICATE_ENTRY:
-            return DuplicateException(
-                message="이미 존재하는 데이터입니다.",
-                detail=payload,
-            )
-        return DatabaseException(
-            message="데이터 제약 조건을 만족하지 않습니다.",
-            detail=payload,
+def _integrity_kind(exc: IntegrityError) -> str | None:
+    """무결성 위반의 종류. 모르는 위반이면 ``None``(→ 500)."""
+    code = driver_error_code(exc)
+    if code is not None:
+        return _MYSQL_INTEGRITY_KINDS.get(code)
+    sqlite_name = getattr(getattr(exc, "orig", None), "sqlite_errorname", None)
+    return _SQLITE_INTEGRITY_KINDS.get(sqlite_name) if isinstance(sqlite_name, str) else None
+
+
+def _convert(exc: SQLAlchemyError, payload: dict[str, Any]) -> AppException:
+    """종류별 응답 예외. 메시지는 고정 문구라 원문·SQL·값이 실리지 않는다."""
+    # 종류는 코드로만 가른다 — 메시지를 파싱하면 그 순간 값이 딸려 온다.
+    kind = _integrity_kind(exc) if isinstance(exc, IntegrityError) else None
+    if kind == _DUPLICATE:
+        return DuplicateException(message="이미 존재하는 데이터입니다.", detail=payload)
+    if kind == _MISSING_VALUE:
+        return ValidationException(message="필수 값이 비어 있습니다.", detail=payload)
+    if kind == _MISSING_REFERENCE:
+        return ValidationException(message="참조하는 데이터가 존재하지 않습니다.", detail=payload)
+    if kind == _REFERENCED:
+        return ConflictException(
+            message="다른 데이터가 참조하고 있어 처리할 수 없습니다.", detail=payload
         )
-
+    if isinstance(exc, IntegrityError):
+        return DatabaseException(message="데이터 제약 조건을 만족하지 않습니다.", detail=payload)
     return DatabaseException(
         message="데이터베이스 처리 중 오류가 발생했습니다.",
         detail=payload,

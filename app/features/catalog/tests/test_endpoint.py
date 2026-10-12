@@ -134,6 +134,20 @@ async def test_active_only_filter_uses_the_domain_query(client):
     assert skus == ["SKU-ON"]
 
 
+async def test_active_only_total_counts_only_active_products(client):
+    """total 은 items 와 같은 조건으로 센다 — 전체 개수를 주면 페이지 수가 틀린다(F-005)."""
+    await client.post("/api/v1/catalog/products", json={**_NEW, "sku": "SKU-ON"})
+    await client.post(
+        "/api/v1/catalog/products", json={**_NEW, "sku": "SKU-OFF", "is_active": False}
+    )
+
+    active = (await client.get("/api/v1/catalog/products", params={"active_only": True})).json()
+    every = (await client.get("/api/v1/catalog/products")).json()
+
+    assert active["total"] == 1
+    assert every["total"] == 2
+
+
 async def test_partial_update_touches_only_the_given_fields(client):
     created = (await client.post("/api/v1/catalog/products", json=_NEW)).json()
 
@@ -167,6 +181,29 @@ async def test_invalid_payload_is_422(client):
     bad = await client.post("/api/v1/catalog/products", json={**_NEW, "price": "-1"})
 
     assert bad.status_code == 422
+
+
+async def test_explicit_null_on_a_not_null_column_is_422(client):
+    """PATCH 의 명시적 null 은 NOT NULL 컬럼이면 422 다 — MySQL 에서 1048 → 500 이던 경로(F-009)."""
+    created = (await client.post("/api/v1/catalog/products", json=_NEW)).json()
+
+    resp = await client.patch(f"/api/v1/catalog/products/{created['id']}", json={"name": None})
+
+    assert resp.status_code == 422, resp.text
+    assert (await client.get(f"/api/v1/catalog/products/{created['id']}")).json()["name"] == _NEW[
+        "name"
+    ]
+
+
+async def test_explicit_null_on_a_nullable_column_clears_it(client):
+    created = (await client.post("/api/v1/catalog/products", json=_NEW)).json()
+
+    resp = await client.patch(
+        f"/api/v1/catalog/products/{created['id']}", json={"description": None}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["description"] is None
 
 
 async def test_error_response_carries_no_sql(client):

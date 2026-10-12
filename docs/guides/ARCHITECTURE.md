@@ -190,7 +190,8 @@ Apps.populate(INSTALLED_APPS)
 - 단계는 **앱별이 아니라 phase 단위**다. 모든 앱의 1단계가 끝난 뒤 2단계로 간다 — 어떤 `ready()` 든 모든 앱의 모델을 볼 수 있다.
 - 중복 항목, 중복 `name`, 중복 `label`, 잘못된 label, 해석할 수 없는 항목, `AppConfig` 가 아닌 class,
   기본 config 를 고를 수 없는 경우(복수 후보에 `default=True` 가 하나가 아님)는 `ImproperlyConfigured`.
-- `populate()` 는 thread-safe(RLock)하고 멱등이다. 완료 후 재호출은 no-op, 진행 중 재진입은 `RuntimeError`
+- `populate()` 는 thread-safe(RLock)하고 멱등이다. 같은 목록으로 완료 후 재호출은 no-op, **다른 목록**이면
+  `ImproperlyConfigured`(다른 구성은 새 `Apps()` 로 만든다), 진행 중 재진입은 `RuntimeError`
   (`ready()` 안에서 `populate()` 를 부르지 않는다). 실패하면 registry 상태를 되돌린 뒤 원래 예외를 전파한다 —
   단, 이미 import 된 Python 모듈과 전역 metadata 까지 되돌리지는 않는다.
 - `populate(..., run_ready=False)` 는 1·2단계만 수행한다. Alembic 과 startup DDL 준비가 쓴다. 이후 같은 registry 에
@@ -239,7 +240,7 @@ Alembic 은 `run_ready=False` 로 hook 자체를 건너뛴다. 회귀 가드는
 | 준비 상태 | `apps_ready`·`models_ready`·`ready` | 동일 |
 | 고유성 | `name`·`label` 각각 유일 | 동일 |
 | 조회 API | `get_app_configs`·`get_app_config`·`is_installed`·`get_models`·`get_model` | 동일(`get_model` 대소문자 무시) |
-| 재진입 / 중복 populate | 금지 / no-op | `RuntimeError` / no-op |
+| 재진입 / 중복 populate | 금지 / no-op | `RuntimeError` / 같은 목록 no-op, 다른 목록 `ImproperlyConfigured` |
 
 | Django 예외 | 이 프로젝트 (`app.core.apps.exceptions`) |
 |---|---|
@@ -380,10 +381,11 @@ flowchart TD
 | `DatabaseSettings` (`db_settings`) | DSN·라우팅·풀, `session.py`, Alembic URL |
 | `CORSSettings` (`cors_settings`) | `CustomCORSMiddleware` |
 | `LogSettings` (`log_settings`) | `build_dictconfig()` |
-| `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙 |
+| `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
 | `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
-| `ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
+| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 만 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록). 나머지 필드는 소비처가 없다 |
+| `ApiSettings`·`SMTPSettings`·`UploadSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` 도 현재 로깅 구성에서 읽지 않는다(§5).
 
@@ -451,21 +453,20 @@ async with AsyncExitStack() as cleanup:
 `DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다. 성공한 client 는 `app.state.redis` 에 보관되지만, 이를 주입하는
 공통 Dependency 나 캐시 구현은 없다. ping 성공은 기동 순간의 도달 가능성일 뿐이고 `/ready` 는 Redis 를 다시 보지 않는다.
 
-**개발용 테이블 생성** — `_prepare_database()` 는 전역 `apps` 를 `populate(INSTALLED_APPS, run_ready=False)`
-(기본 경로에서는 이미 완료돼 no-op)한 뒤 `owned_tables()` 로 **registry 가 소유한 테이블만** 센다.
+**개발용 테이블 생성** — `_prepare_database()` 는 `create_app()` 이 조립에 쓴 registry(`app.state.app_registry`)를
+받아 `owned_tables(registry)` 로 **그 registry 가 소유한 테이블만** 센다. 전역 `apps` 를 따로 읽거나 다시 채우지 않는다.
 
 | 조건 | 동작 |
 |---|---|
 | 소유 테이블 0개 | DB 에 접속하지 않는다 |
 | `DEBUG=false` | 생성하지 않는다(Alembic 사용) |
-| `DEBUG=true` | `create_db_tables(populate=False)` — writer `engine.begin()` 안에서 `Base.metadata.create_all(tables=소유 테이블)`, 30초 timeout |
+| `DEBUG=true` | `create_db_tables(registry=registry, populate=False)` — writer `engine.begin()` 안에서 `Base.metadata.create_all(tables=소유 테이블)`, 30초 timeout |
 
 `create_all` 은 없는 테이블만 만든다. 컬럼 변경·삭제·데이터 이동은 하지 않으며 DB 자체와 계정 권한은 미리 있어야 한다.
 여러 worker 가 `DEBUG=true` 로 동시에 DDL 을 시도할 수 있으므로 운영은 `DEBUG=false` + 별도 migration 주체가 원칙이다.
 
-> **custom factory 주의** — `create_app(installed_apps, registry)` 로 조립해도 현재 `_prepare_database()`·`owned_tables()`
-> 는 주입된 registry 가 아니라 전역 `apps`·`config.INSTALLED_APPS` 를 본다. 격리 factory 의 route 집합과 startup DDL 집합이
-> 자동으로 일치한다고 가정하지 않는다.
+> **custom factory** — `create_app(installed_apps, registry)` 로 조립하면 route 집합과 startup DDL 집합이 같은 registry 에서
+> 나온다(`tests/core/test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables`, service-hardening F-012).
 
 **종료** — background task drain → Redis `aclose()` → DB engine dispose.
 
@@ -496,7 +497,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 
 | 예외 | 처리 |
 |---|---|
-| `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`) |
+| `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`). 로그는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR |
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록 |
 | Starlette `HTTPException` | `HTTP_<status>` error code |
 | 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
@@ -676,9 +677,15 @@ SQLAlchemy 예외의 문자열에는 실행 SQL·바인딩 값·때로 DSN 이 �
 
 | 원본 | 결과 |
 |---|---|
-| `IntegrityError` + MySQL 1062 또는 코드 없음(SQLite) | `DuplicateException` (409) |
-| 그 밖의 `IntegrityError` | `DatabaseException` "제약 조건 불만족" (500) |
+| `IntegrityError` + MySQL 1062 / SQLite UNIQUE·PRIMARY KEY 위반 | `DuplicateException` (409) |
+| `IntegrityError` + MySQL 1048·1364 / SQLite NOT NULL 위반 | `ValidationException` "필수 값이 비어 있습니다" (422) |
+| `IntegrityError` + MySQL 1452 / SQLite FOREIGN KEY 위반 | `ValidationException` "참조하는 데이터가 존재하지 않습니다" (422) |
+| `IntegrityError` + MySQL 1451 | `ConflictException` "다른 데이터가 참조하고 있어…" (409) |
+| 그 밖의 `IntegrityError`(코드를 알 수 없는 경우 포함) | `DatabaseException` "제약 조건 불만족" (500) |
 | 그 밖의 `SQLAlchemyError` | `DatabaseException` (500) |
+
+SQLite 는 숫자 코드를 주지 않으므로 파이썬 `sqlite3` 예외의 `sqlite_errorname` 으로 가른다 — 메시지는 파싱하지 않는다.
+4xx 로 바뀌는 위반은 WARNING, 나머지는 ERROR 로 남는다(service-hardening ADR-007).
 
 ### 4.8 모델과 기능 카탈로그
 
@@ -751,7 +758,7 @@ UserInfoMiddleware (app/core/middlewares/user_info_middleware.py)
 ```
 
 - sink 가 등록되지 않았으면(home 미설치) 저장을 건너뛴다. home 을 목록에서 빼면 Router·Model 과 함께 접속 로그 영속화 결선도 빠진다.
-- 저장 실패는 로그만 남기고 응답에 영향을 주지 않는다. 태스크 제출은 `call_next` 가 응답을 돌려준 뒤이며, 클라이언트가 모든 바이트를 받았다는 보증은 아니다. `call_next` 가 예외로 끝나면 로그를 남기지 않는다.
+- 저장 실패는 로그만 남기고 응답에 영향을 주지 않는다. 태스크 제출은 `call_next` 가 응답을 돌려준 뒤이며, 클라이언트가 모든 바이트를 받았다는 보증은 아니다. `call_next` 가 처리되지 않은 예외로 끝나면 `response_status=500` 으로 기록한 뒤 예외를 그대로 다시 던진다.
 - best-effort 다. 감사 목적의 필수 데이터라면 durable queue 로 바꿔야 한다. 중요한 업무 저장을 이 runner 에 넣지 않는다.
 
 | 설정 | 기본값 |
@@ -759,10 +766,25 @@ UserInfoMiddleware (app/core/middlewares/user_info_middleware.py)
 | `ACCESS_LOG_ENABLED` | `true` |
 | `ACCESS_LOG_EXCLUDE_PATHS` | `["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]` (정확 일치) |
 | `ACCESS_LOG_EXCLUDE_EXTENSIONS` | `[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]` (접미사 일치) |
+| `TRUSTED_PROXY_HOPS` | `0` — 앞단 신뢰 프록시 수. 0 이면 프록시 헤더를 보지 않는다 |
+| `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]` (대소문자 무시) |
+| `SESSION_COOKIE_NAME` | `session` — 이 이름의 쿠키 값을 `session_id` 로 기록 |
 
-**수집 필드** (`user_access_logs`): `ip_address`(X-Forwarded-For 첫 값 → X-Real-IP → 소켓 주소), `forwarded_for`, `real_ip`,
+**클라이언트 IP** (`app/core/middlewares/client_ip.py` 의 `ClientIPResolver`, `setup_user_info_middleware()` 가
+설정으로 한 번 만들어 미들웨어에 주입): `TRUSTED_PROXY_HOPS=0` 이면 소켓 주소(`request.client.host`)만 쓴다.
+N 이면 `X-Forwarded-For` 목록 끝에 소켓 주소를 붙이고, 소켓 주소를 0번째로 센 **오른쪽 N번째**(= XFF 의 오른쪽
+N번째, 가장 바깥 신뢰 프록시가 본 주소)를 쓴다. 그보다 왼쪽은 클라이언트가 쓴 값이라 믿지 않는다. 체인이 N보다
+짧거나 값이 IP 가 아니면(`ipaddress.ip_address` 실패) 소켓 주소로 돌아간다. `X-Real-IP` 는 N>0 이고 XFF 가
+없을 때만 본다. **기본값 0 은 이전 동작(XFF 첫 값을 무조건 신뢰)을 바꾼 것이다** — 프록시 뒤에 배포하면 홉 수를
+설정해야 실제 클라이언트 IP 가 기록된다(service-hardening ADR-005).
+
+**저장 전 정리**: query string 의 민감 키 값은 `***` 로 바뀐다. 문자열은 home 기능의
+`UserAccessLogService.create_access_log` 가 모델 컬럼 길이(`UserAccessLog.__table__` 의 `String(n)`)로 자른다 —
+긴 헤더·쿠키 하나로 MySQL strict 모드의 1406 이 나서 기록이 빠지던 경로를 막는다(service-hardening ADR-006).
+
+**수집 필드** (`user_access_logs`): `ip_address`(위 `ClientIPResolver`), `forwarded_for`, `real_ip`(헤더 원문 — 위조 가능),
 `user_agent` 와 파싱 결과(`os_name`·`os_version`·`browser_name`·`browser_version`·`device_type`·`device_brand`·`device_model`·`is_bot`),
-`request_path`, `request_method`, `query_string`, `referer`, `accept_language`, `session_id`(쿠키 `session_id` 원문), `user_id`(`request.state`),
+`request_path`, `request_method`, `query_string`(민감 키 값 `***`), `referer`, `accept_language`, `session_id`(`SESSION_COOKIE_NAME` 쿠키 원문), `user_id`(`request.state`),
 `response_status`, `response_time_ms`. 인덱스: created_at·ip_address·os_name·browser_name·device_type·country·session_id·user_id.
 
 조회 API(`/api/v1/home/access-logs` 외 4개)는 모두 read-only 세션을 쓰며 인증이 없다(§11.3).
@@ -888,12 +910,13 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 - **API 인증·인가**: `/api/v1/auth/me` 외 모든 endpoint(사용자 CRUD, 접속 로그 조회 포함)에 인증이 없다. 관리자 권한 Dependency 도 없다.
 - **Admin 인증**: 영구 비목표(§8).
 - **JWT 즉시 폐기**: 블랙리스트·refresh 저장소·강제 로그아웃 없음.
-- **접속 로그 신뢰 경계**: `X-Forwarded-For`·`X-Real-IP` 를 신뢰 프록시 확인 없이 쓴다 — 프록시가 헤더를 재작성하지 않으면 IP 를 위조할 수 있다.
-  query string·Referer·User-Agent·`session_id` 쿠키 원문이 저장되고, 보존 기간·자동 삭제 정책이 없다. 개인정보 정책을 배포 측에서 정한다.
+- **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
+  `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장되고,
+  보존 기간·자동 삭제 정책이 없다. 개인정보 정책을 배포 측에서 정한다.
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
 - **레이트 리밋**: 없음(2026-08-13 제거).
 - **자동 앱 탐색**: 없음(설계 원칙).
-- **미사용 설정**: `ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings` 와 일부 로그 설정(§3.2).
+- **미사용 설정**: `ApiSettings`·`SMTPSettings`·`UploadSettings`, `SessionSettings` 의 쿠키 이름 밖의 필드, 일부 로그 설정(§3.2).
 - **검증하지 않은 것**: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.
 
 ---

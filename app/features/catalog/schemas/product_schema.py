@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
+
 
 class ProductBase(BaseModel):
     """상품 공통 필드."""
@@ -31,12 +33,14 @@ class ProductCreate(ProductBase):
     """상품 생성 요청."""
 
 
-class ProductUpdate(BaseModel):
+class ProductUpdate(PatchSchema):
     """상품 수정 요청 — 전달된 필드만 부분 수정한다.
 
     예시가 **일부 필드만** 담고 있는 것이 의도다. 전체를 보내는 모양을 예시로 두면
     PATCH 를 PUT 처럼 쓰게 되고, 빠뜨린 필드가 덮어써진다고 오해하게 된다.
     """
+
+    nullable_fields = frozenset({"description"})
 
     model_config = ConfigDict(json_schema_extra={"examples": [{"price": "119000.00", "stock": 12}]})
 

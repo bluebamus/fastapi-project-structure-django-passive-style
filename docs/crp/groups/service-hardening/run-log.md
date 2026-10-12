@@ -49,8 +49,61 @@
 - **수렴 판정:** 단계 A `CONVERGED` (F-001~F-004 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 21)
 - **잔여 위험 변화:** 없음 (R-004 는 이번 라운드 결정의 한계로 Round 0 에 이미 등록)
 
+### Round 2 — 2026-10-12 (base SHA: `c49f24c`) · 단계 B
+- **트리거:** REQ-001 단계 B (제안 4·5) — ADR-005~ADR-008, 신규 ADR-023~ADR-025
+- **검수 범위:** F-005 ~ F-013 (`c49f24c` 이후 단계 B 커밋)
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 ■ (단계 B 한정)
+- **변경:**
+  - B1: `app/core/middlewares/client_ip.py` `ClientIPResolver`(신뢰 홉 수, `ipaddress` 검증, 짧은 체인·잘못된 값은 직접 피어).
+    `config.MiddlewareSettings.TRUSTED_PROXY_HOPS`(기본 0, `ge=0`). `UserInfoMiddleware.__init__(app, ip_resolver)` —
+    `setup_user_info_middleware()` 가 설정으로 한 번 만들어 주입한다. 기본값이 기존 동작(XFF 맨 왼쪽 신뢰)을 바꾼다 → ADR-023.
+  - B2: `dispatch` 가 `call_next` 를 try 로 감싸 예외 시 500 으로 기록 후 재전파(`_record`). `_mask_query_string` 이
+    `ACCESS_LOG_SENSITIVE_QUERY_KEYS`(대소문자 무시) 값을 `***` 로. 세션 쿠키는 `session_settings.SESSION_COOKIE_NAME`.
+  - B3: home `user_access_log_service.truncate_to_columns` — `UserAccessLog.__table__` 의 `String(n)` 길이(Text 제외)로 자른다.
+    core 는 모델을 모른다(계층 규칙 유지).
+  - B4: `app/core/schemas.py` `PatchSchema`(`model_fields_set` 의 None 을 `nullable_fields` 밖이면 422). blog·catalog·reply·sns·user
+    Update 스키마가 상속(`nullable_fields`: author / description / author / author / 없음). OpenAPI 스키마 출력은 바뀌지 않는다.
+  - B5: `app/core/db/errors.py` — 1062/UNIQUE·PRIMARYKEY → 409, 1048·1364/NOTNULL → 422, 1452/FOREIGNKEY → 422, 1451 → 409, 그 외 500.
+    SQLite 는 `sqlite_errorname` 으로 가른다(메시지 비파싱). 4xx 변환은 WARNING → ADR-024.
+  - B6: `report_service.MIN_DATE/MAX_DATE`(1970-01-01..9998-12-31) — 넘으면 `InvalidDateRangeException`(422). 366일 상한은 기존.
+  - B7: catalog `active_only` total = `count(is_active=True)`. `resources._prepare_database(resources, registry)` 가
+    `app.state.app_registry` 로 `owned_tables(registry)`·`create_db_tables(registry=..., populate=False)`. `Apps.populate()` 가 다른
+    목록이면 `ImproperlyConfigured`. `AppException` 핸들러 4xx WARNING(detail 제외)/5xx ERROR → ADR-025.
+  - 문서: `.env.example`(새 키 2개, 세션 쿠키 소비처), `config.SessionSettings` docstring, `ARCHITECTURE.md`(설정 소비처 표, §6 접속 로그
+    IP·마스킹·자르기, registry 멱등 규칙, lifespan DDL registry, 예외 로그 수준, §4.7 오류 변환 표, §11.3 알려진 제한),
+    `DEVELOPMENT.md`(reports 기간, PATCH null 규칙), `server-lifecycle-guide.html`(설정 부록·소비처 표·_prepare_database),
+    `README.md`(reports 기간), `app/core/tags_metadata.py`(Home 태그 설명 — OpenAPI 태그 설명 문구만 바뀜, 스냅샷 기준선 없음).
+- **새 테스트와 fail-on-revert(대상 파일을 HEAD 내용으로 바꿔 실행 후 복원):**
+  - `tests/core/test_access_log_collection.py` 14건 — 미들웨어를 HEAD 로(생성자에 `ip_resolver` 인자만 허용) 되돌리면
+    `test_unhandled_exception_is_recorded_as_500`·`test_sensitive_query_values_are_masked`·`test_session_cookie_name_comes_from_settings`·
+    `test_injected_resolver_decides_the_recorded_ip` 4건 실패 확인. `ClientIPResolver` 단위 9건과 재전파 가드 1건은 새 모듈·기존 동작을
+    고정하는 테스트라 되돌림 대상이 없다(모듈이 없으면 수집 단계에서 실패).
+  - `home/tests/test_access_log_service.py::test_long_strings_are_cut_to_the_column_length` — 실패 확인
+  - `tests/core/test_patch_schema.py` 10건 — 스키마 5개를 되돌리면 7건 실패 확인(나머지 3건은 기반 클래스 자체 단위 테스트).
+    catalog `test_explicit_null_on_a_not_null_column_is_422` 는 스키마만 되돌려도 B5 변환이 SQLite NOT NULL 을 422 로 답해 통과한다
+    (이중 방어). B5 까지 되돌린 HEAD 에서는 409 였다.
+  - `tests/core/test_db_error_conversion.py` 새 매핑 13건 — `errors.py` 를 되돌리면 10건 실패 확인(UNIQUE·PRIMARYKEY → 409,
+    1213 → 500 3건은 기존 동작 고정). 기존 `test_other_integrity_violation_is_not_a_duplicate`(1452 → 500)·
+    `test_dialect_without_error_code_falls_back_to_duplicate`(코드 없음 → 409)는 ADR-024 로 계약이 바뀌어 새 테스트로 대체했다.
+  - reports `test_dates_outside_the_supported_range_are_rejected` 2건 — 실패 확인(9999-12-31 은 `OverflowError` → 500)
+  - catalog `test_active_only_total_counts_only_active_products` — 실패 확인
+  - `test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables` — `resources.py`·`session.py` 를 되돌리면 실패 확인
+    (SQLite 파일에 실제 DDL 실행, 전역 registry 의 8개 앱 테이블이 생겼다)
+  - `test_registry_lifecycle.py::test_populate_with_a_different_list_is_rejected` 3건 — 실패 확인
+  - `test_bootstrap.py::test_client_error_app_exception_is_logged_as_warning_without_detail` — 실패 확인(5xx ERROR 가드는 통과)
+  - 기존 `test_bootstrap.py` lifespan 테스트 8건은 새 시그니처(`owned_tables(registry)`, `app.state.app_registry`)에 맞춰 대역만 고쳤다
+- **검사:** ruff check 통과 · ruff format --check 331 파일 · mypy 206 파일 이슈 0
+  (로컬 정책이 컴파일된 mypy `.pyd` 를 차단해 같은 버전 1.20.2 의 순수 Python 빌드로 실행) ·
+  `pytest -m "not mysql and not browser"` **777 passed · 22 deselected · skip 0** · `--cov=app` **94.96%** ·
+  bandit MEDIUM 이상 0(238 파일) · OpenAPI revert check 20/20 감지 · `mysql`/`browser` 22건 수집 확인(실행은 CI) ·
+  pip-audit 는 네트워크 단계라 생략(의존성 변경 없음)
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0
+- **수렴 판정:** 단계 B `CONVERGED` (F-005~F-013 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 12)
+- **잔여 위험 변화:** R-007(신뢰 홉 수 설정 의존)·R-008(SQLite FK 방향 미구분) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
 | 0 | 0 | 1 | 16 | 8 | 25 | NOT CONVERGED (계획) |
 | 1 | 0 | 0 | 0 | 0 | 0 (Fixed 4: F-001~F-004) | 단계 A CONVERGED · 그룹 Open 21 |
+| 2 | 0 | 0 | 0 | 0 | 0 (Fixed 9: F-005~F-013) | 단계 B CONVERGED · 그룹 Open 12 |

@@ -7,8 +7,9 @@ Django 의 app registry lifecycle 을 그대로 옮긴다. 앱은 ``INSTALLED_AP
 
 lifecycle 보호가 정확성의 핵심이다:
 
-* **idempotent** — 두 번째 ``populate()`` 는 no-op. ``ready()`` 가 두 번 돌면 sink 나
-  signal 이 중복 등록된다.
+* **idempotent** — 같은 목록으로 부른 두 번째 ``populate()`` 는 no-op. ``ready()`` 가 두 번
+  돌면 sink 나 signal 이 중복 등록된다. **다른** 목록이면 ``ImproperlyConfigured`` — 조용히
+  돌아가면 호출자는 자기가 준 목록이 설치됐다고 믿는다.
 * **non-reentrant** — population 도중의 재호출은 ``RuntimeError``. 반쯤 채워진
   registry 를 읽는 코드가 조용히 잘못된 답을 얻는 것보다 낫다.
 * **thread-safe** — ``RLock`` 으로 직렬화한다. 늦게 온 스레드는 완성된 registry 를 본다.
@@ -62,9 +63,16 @@ class Apps:
 
         Raises:
             RuntimeError: population 도중 재진입했다.
-            ImproperlyConfigured: 등록 항목이 잘못됐다.
+            ImproperlyConfigured: 등록 항목이 잘못됐거나, 이미 채운 registry 를 다른 목록으로
+                다시 채우려 했다.
         """
         with self._lock:
+            if self._populated and list(installed_apps) != self._entries:
+                raise ImproperlyConfigured(
+                    "app registry 가 이미 다른 INSTALLED_APPS 로 채워졌습니다 "
+                    f"(기존 {self._entries}, 요청 {list(installed_apps)}). "
+                    "다른 앱 구성이 필요하면 새 Apps() 인스턴스를 쓰세요."
+                )
             if self._populated and (self.ready or not run_ready):
                 return
             if self.loading:

@@ -15,15 +15,15 @@
 | F-002 | MED | C-8 (결정적 목록 순서) | Fix | Fixed | Round 1 · `app/core/repositories/repository_base.py` · `app/features/home/repositories/user_access_log_repository.py` · `tests/core/test_repository_base.py` · `app/features/home/tests/test_access_log_service.py` | 출처 R-10(앞부분). `BaseRepository.get_all` 에 ORDER BY 가 없고, 접속 로그 조회는 `created_at desc` 단일 키라 동률에서 페이지가 겹친다 |
 | F-003 | LOW | C-6 (DSN 은 URL 로 조립) | Fix | Fixed | Round 1 · `config.py` · `migrations/env.py` · `app/core/db/session.py` · `tests/core/test_dsn.py` | 출처 리뷰 Low "DSN 의 비밀번호를 URL 인코딩하지 않음". `@ : / # ?` 가 든 비밀번호가 다른 호스트·계정으로 해석되고 `%` 는 Alembic 보간 오류 |
 | F-004 | LOW | C-15 (CI 락 검사) | Fix | Fixed | Round 1 · `.github/workflows/ci.yml` · `tests/core/test_security_hardening.py::test_ci_installs_dependencies_with_locked` | 출처 제안 1. `uv sync --frozen` 은 락을 검사하지 않는데 주석은 "어긋나면 실패" 라고 적었다 |
-| F-005 | MED | 계약: 목록 응답의 total 은 items 와 같은 조건이다 | Fix | Open | 단계 B7 | 출처 R-10(뒷부분). catalog `active_only=true` 의 total 이 전체 개수 |
-| F-006 | MED | C-12 · 접속 로그 무결성 | Fix | Open | 단계 B3 | 출처 R-03. 긴 헤더·쿠키 하나로 MySQL strict 1406 → 미들웨어가 삼켜 기록이 빠진다 |
-| F-007 | MED | 위협 모델: 헤더 위조 | Fix | Open | 단계 B1 | 출처 R-04. `X-Forwarded-For`/`X-Real-IP` 를 무조건 믿어 기록 IP 가 위조된다 |
-| F-008 | MED | 접속 로그 무결성 | Fix | Open | 단계 B2 | 출처 R-05. 처리되지 않은 예외로 끝난 요청(500)이 기록되지 않는다 |
-| F-009 | MED | 계약: 클라이언트 입력 오류는 4xx | Fix | Open | 단계 B4·B5 | 출처 R-06. PATCH 의 명시적 null 이 MySQL 1048 → 500 |
-| F-010 | LOW | 계약: 클라이언트 입력 오류는 4xx | Fix | Open | 단계 B6 | 출처 리뷰 Low. `end_date=9999-12-31` 이 `OverflowError` → 500 |
-| F-011 | LOW | C-12 (민감 값 비저장) | Fix | Open | 단계 B2 | 출처 리뷰 Low. 원본 query_string(토큰 등)을 그대로 저장 |
-| F-012 | MED | orm-raw-repository C-2·C-3 (registry 단일 출처) | Fix | Open | 단계 B7 | 출처 R-15. lifespan 이 주입된 registry 를 무시하고 `populate()` 가 다른 목록에도 조용히 반환 |
-| F-013 | LOW | 운영 로그 품질 | Fix | Open | 단계 B7 | 출처 리뷰 Info. 4xx 를 ERROR 로 기록 |
+| F-005 | MED | 계약: 목록 응답의 total 은 items 와 같은 조건이다 | Fix | Fixed | Round 2 · `app/features/catalog/services/catalog_service.py` · `app/features/catalog/tests/test_endpoint.py::test_active_only_total_counts_only_active_products` | 출처 R-10(뒷부분). catalog `active_only=true` 의 total 이 전체 개수 |
+| F-006 | MED | C-12 · 접속 로그 무결성 | Fix | Fixed | Round 2 · `app/features/home/services/user_access_log_service.py` · `app/features/home/tests/test_access_log_service.py::test_long_strings_are_cut_to_the_column_length` | 출처 R-03. 긴 헤더·쿠키 하나로 MySQL strict 1406 → 미들웨어가 삼켜 기록이 빠진다 |
+| F-007 | MED | 위협 모델: 헤더 위조 | Fix | Fixed | Round 2 · `app/core/middlewares/client_ip.py` · `tests/core/test_access_log_collection.py` (resolver 9건·`test_injected_resolver_decides_the_recorded_ip`) · ADR-023 | 출처 R-04. `X-Forwarded-For`/`X-Real-IP` 를 무조건 믿어 기록 IP 가 위조된다 |
+| F-008 | MED | 접속 로그 무결성 | Fix | Fixed | Round 2 · `app/core/middlewares/user_info_middleware.py` · `tests/core/test_access_log_collection.py::test_unhandled_exception_is_recorded_as_500` | 출처 R-05. 처리되지 않은 예외로 끝난 요청(500)이 기록되지 않는다 |
+| F-009 | MED | 계약: 클라이언트 입력 오류는 4xx | Fix | Fixed | Round 2 · `app/core/schemas.py` · `app/core/db/errors.py` · `tests/core/test_patch_schema.py` · `tests/core/test_db_error_conversion.py` · catalog `test_explicit_null_on_a_not_null_column_is_422` · ADR-024 | 출처 R-06. PATCH 의 명시적 null 이 MySQL 1048 → 500 |
+| F-010 | LOW | 계약: 클라이언트 입력 오류는 4xx | Fix | Fixed | Round 2 · `app/features/reports/services/report_service.py` · `app/features/reports/tests/test_endpoint.py::test_dates_outside_the_supported_range_are_rejected` | 출처 리뷰 Low. `end_date=9999-12-31` 이 `OverflowError` → 500 |
+| F-011 | LOW | C-12 (민감 값 비저장) | Fix | Fixed | Round 2 · `app/core/middlewares/user_info_middleware.py` · `tests/core/test_access_log_collection.py::test_sensitive_query_values_are_masked` | 출처 리뷰 Low. 원본 query_string(토큰 등)을 그대로 저장 |
+| F-012 | MED | orm-raw-repository C-2·C-3 (registry 단일 출처) | Fix | Fixed | Round 2 · `app/core/resources.py` · `app/core/db/session.py` · `app/core/apps/registry.py` · `tests/core/test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables` · `tests/core/apps/test_registry_lifecycle.py::test_populate_with_a_different_list_is_rejected` · ADR-025 | 출처 R-15. lifespan 이 주입된 registry 를 무시하고 `populate()` 가 다른 목록에도 조용히 반환 |
+| F-013 | LOW | 운영 로그 품질 | Fix | Fixed | Round 2 · `app/core/bootstrap.py` · `tests/core/test_bootstrap.py::test_client_error_app_exception_is_logged_as_warning_without_detail` · ADR-025 | 출처 리뷰 Info. 4xx 를 ERROR 로 기록 |
 | F-014 | MED | C-1 · orm-raw-repository C-1 | Fix | Open | 단계 C1 | 출처 R-19. 엔드포인트 테스트 override 가 `mark_read_only` 를 우회 |
 | F-015 | MED | C-1 | Fix | Open | 단계 C2 | 출처 R-20. tz·마이크로초·strict·collation 의 MySQL 방언 검증 0건 |
 | F-016 | MED | C-1 (테스트 신뢰성) | Fix | Open | 단계 C3 | 출처 R-21. import 시점 설정 객체 patch 가 `importlib.reload` 순서에 의존 |

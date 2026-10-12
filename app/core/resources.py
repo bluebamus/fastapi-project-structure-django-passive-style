@@ -18,7 +18,8 @@ logging 은 여기서 다루지 않는다. 이 저장소는 ADR-019(console + Ro
 를 유지하고 queue listener 를 두지 않기로 했다(ADR-003) — 닫을 자원이 없다.
 
 테이블 자동 생성은 파일 존재 여부가 아니라 **App Registry 가 소유한 테이블 수**로
-판정한다. 소유 테이블이 0개면 DB 에 접속조차 하지 않는다.
+판정한다. 소유 테이블이 0개면 DB 에 접속조차 하지 않는다. 그 registry 는 ``create_app`` 이
+조립에 쓴 것(``app.state.app_registry``)이다 — 전역 registry 를 따로 읽지 않는다.
 
 자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. startup 검증용 Redis client는
 여기서 닫지만, Celery worker의 event loop와 별도 broker/backend 연결은 worker가 소유한다
@@ -36,6 +37,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.core.apps import Apps
 from app.core.db.session import create_db_tables, dispose_engine, owned_tables
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.utils.logs import get_logger
@@ -128,14 +130,14 @@ async def _redis(app: FastAPI) -> AsyncIterator[None]:
         await _run_cleanup("Redis client", client.aclose, REDIS_TIMEOUT_SECONDS)
 
 
-async def _prepare_database(resources: ApplicationResources) -> None:
-    """registry 를 채우고, 소유 테이블 수를 근거로 자동 생성 여부를 판정한다."""
-    from app.core.apps import apps
-    from config import INSTALLED_APPS
+async def _prepare_database(resources: ApplicationResources, registry: Apps) -> None:
+    """소유 테이블 수를 근거로 자동 생성 여부를 판정한다.
 
-    # ready() 는 wiring adapter 가 별도로 실행한다. 여기서는 모델만 확보한다.
-    apps.populate(INSTALLED_APPS, run_ready=False)
-    resources.table_count = len(owned_tables())
+    ``registry`` 는 ``create_app`` 이 이미 채운 그 인스턴스다. 여기서 전역 registry 를
+    ``config.INSTALLED_APPS`` 로 다시 채우면 ``create_app(installed_apps=..., registry=...)``
+    로 조립한 앱이 설치하지 않은 앱의 테이블까지 만든다(service-hardening F-012).
+    """
+    resources.table_count = len(owned_tables(registry))
     logger.info("[startup] registry 소유 테이블 %d개", resources.table_count)
 
     if resources.table_count == 0:
@@ -146,9 +148,9 @@ async def _prepare_database(resources: ApplicationResources) -> None:
         logger.info("[startup] 테이블 자동 생성 건너뜀 (운영 정책 — Alembic 사용)")
         return
 
-    # registry 는 위에서 이미 채웠다. 다시 populate 하면 같은 startup 에서
+    # registry 는 create_app 이 이미 채웠다. 다시 populate 하면 같은 startup 에서
     # discovery 가 두 번 도는 셈이라 로그와 소요 시간이 어긋난다.
-    await create_db_tables(populate=False)
+    await create_db_tables(registry=registry, populate=False)
     resources.tables_created = True
     logger.info("[startup] 테이블 자동 생성 완료 (개발 정책)")
 
@@ -172,7 +174,7 @@ async def manage_application_resources(
             await cleanup.enter_async_context(_redis(app))
             cleanup.push_async_callback(_drain_background_tasks)  # 1번째로 실행
 
-            await _prepare_database(resources)
+            await _prepare_database(resources, app.state.app_registry)
 
             elapsed = (time.perf_counter() - started) * 1000
             logger.info("[startup] 자원 초기화 완료 (%.1fms)", elapsed)

@@ -48,7 +48,7 @@ import asyncio
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import URL, Table, text
 from sqlalchemy.ext.asyncio import (
@@ -68,6 +68,9 @@ from app.core.db.router import (
 from app.core.models.models_base import Base  # noqa: F401 - re-export
 from app.utils.logs import get_logger
 from config import db_settings
+
+if TYPE_CHECKING:
+    from app.core.apps import Apps
 
 logger = get_logger("database")
 
@@ -214,29 +217,33 @@ async def background_session() -> AsyncGenerator[AsyncSession]:
             raise
 
 
-def owned_tables() -> list[Table]:
+def owned_tables(registry: "Apps") -> list[Table]:
     """App Registry 가 소유한 모델의 테이블만 돌려준다.
 
     ``Base.metadata`` 는 전역이라, 한 번이라도 import 된 모델은 registry 에 없어도
     거기 남는다 — 테스트가 정의한 임시 모델까지 섞인다. 그 전체를 create_all 에
     넘기면 **설치하지 않은 앱의 테이블이 개발 DB 에 생긴다**. 그래서 registry 가
     실제로 소유한 것만 골라 ``tables=`` 로 명시한다 (C-3).
-    """
-    from app.core.apps import apps
 
+    Args:
+        registry: 테이블을 소유한 registry. 앱을 조립한 **그** registry 를 넘긴다 —
+            전역 registry 를 몰래 읽으면 ``create_app(registry=...)`` 로 주입한 앱 구성이
+            무시된다(service-hardening F-012).
+    """
     # registry 는 매핑 클래스를 ``type`` 으로 돌려준다(프레임워크 중립). 여기서
     # 우리 Base 하위임을 아는 지점이므로 좁혀 쓴다.
-    models = cast(list[type[Base]], apps.get_models())
+    models = cast(list[type[Base]], registry.get_models())
     return [cast(Table, model.__table__) for model in models]
 
 
-async def create_db_tables(*, populate: bool = True) -> int:
+async def create_db_tables(*, registry: "Apps | None" = None, populate: bool = True) -> int:
     """등록 앱이 소유한 테이블을 생성한다.
 
     Args:
-        populate: registry 를 여기서 채울지 여부. 조립부(resources)가 이미 채웠으면
-            ``False`` 로 넘긴다 — 같은 startup 에서 discovery 가 두 번 돌면 로그와
-            소요 시간이 어긋난다.
+        registry: 테이블을 소유한 registry. ``None`` 이면 프로세스 전역 registry.
+        populate: registry 를 여기서 ``config.INSTALLED_APPS`` 로 채울지 여부. 조립부
+            (resources)는 ``create_app`` 이 이미 채운 registry 를 넘기므로 ``False`` 다 —
+            같은 startup 에서 discovery 가 두 번 돌면 로그와 소요 시간이 어긋난다.
 
     Returns:
         생성 대상 테이블 수. 0이면 **DB 에 접속하지 않는다**.
@@ -245,14 +252,18 @@ async def create_db_tables(*, populate: bool = True) -> int:
         모델 수집 대상은 ``config.INSTALLED_APPS`` 다. 디렉터리를 훑지 않는다 —
         등록하지 않은 앱의 테이블이 개발 DB 에만 생겨 운영과 어긋나는 일을 막는다.
     """
-    if populate:
+    if registry is None:
         from app.core.apps import apps
+
+        registry = apps
+
+    if populate:
         from config import INSTALLED_APPS
 
         # ready() 는 실행하지 않는다 — 테이블 생성은 앱 결선을 필요로 하지 않는다.
-        apps.populate(INSTALLED_APPS, run_ready=False)
+        registry.populate(INSTALLED_APPS, run_ready=False)
 
-    tables = owned_tables()
+    tables = owned_tables(registry)
     logger.info("[database] 모델 등록: %d개 %s", len(tables), [t.name for t in tables])
 
     if not tables:

@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -179,6 +180,28 @@ async def test_excessive_range_is_rejected(client):
     )
 
     assert resp.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("start_date", "end_date"),
+    [
+        ("9999-12-01", "9999-12-31"),  # end_date + 1일 이 OverflowError → 500 이던 경로(F-010)
+        ("1969-12-31", "1970-01-05"),  # 하한 밖
+    ],
+)
+async def test_dates_outside_the_supported_range_are_rejected(client, start_date, end_date):
+    resp = await client.get(_ENDPOINT, params={"start_date": start_date, "end_date": end_date})
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "REPORTS_INVALID_DATE_RANGE"
+
+
+async def test_the_last_supported_date_is_accepted(client):
+    resp = await client.get(
+        _ENDPOINT, params={"start_date": "9998-12-01", "end_date": "9998-12-31"}
+    )
+
+    assert resp.status_code == 200, resp.text
 
 
 async def test_malformed_date_is_rejected_before_the_query(client):

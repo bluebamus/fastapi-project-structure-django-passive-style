@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
 from app.utils.validators import EMAIL_PATTERN
 
 
@@ -18,7 +19,7 @@ class UserCreate(UserBase):
     """사용자 생성 요청."""
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(PatchSchema):
     """사용자 수정 요청 — 전달된 필드만 부분 수정한다."""
 
     email: str | None = Field(None, max_length=255, pattern=EMAIL_PATTERN, description="이메일")

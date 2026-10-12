@@ -25,6 +25,11 @@ from app.features.reports.schemas.report_schema import (
 #: 한 번에 조회할 수 있는 최대 기간(일). 무제한 집계는 replica 를 통째로 묶는다.
 MAX_RANGE_DAYS = 366
 
+#: 조회할 수 있는 날짜의 하한·상한. 상한을 ``date.max`` 보다 하루 이상 앞에 두어야 배타 상한
+#: (``end_date + 1일``)이 ``OverflowError`` 로 500 이 되지 않는다(service-hardening ADR-008).
+MIN_DATE = date(1970, 1, 1)
+MAX_DATE = date(9998, 12, 31)
+
 
 class ReportService(BaseService):
     """매출 리포트 비즈니스 로직 (세션 기반)."""
@@ -54,6 +59,11 @@ class ReportService(BaseService):
 
     @staticmethod
     def _validate_range(start_date: date, end_date: date) -> None:
+        if not (MIN_DATE <= start_date and end_date <= MAX_DATE):
+            raise InvalidDateRangeException(
+                message=f"조회 날짜는 {MIN_DATE}부터 {MAX_DATE}까지입니다.",
+                detail={"min_date": str(MIN_DATE), "max_date": str(MAX_DATE)},
+            )
         if end_date < start_date:
             raise InvalidDateRangeException(
                 message="종료일이 시작일보다 앞섭니다.",
