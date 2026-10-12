@@ -118,6 +118,16 @@ async def test_write_intent_text_is_blocked(read_only):
         await read_only.execute(write_intent(text("SELECT name FROM guard_widgets")))
 
 
+async def test_locking_select_is_blocked(read_only):
+    """ORM ``with_for_update()`` 는 잠금을 잡는 쓰기다(service-hardening F-001).
+
+    Raw 경로는 ``for_update=True`` 가 이미 쓰기 의도로 바뀐다. ORM 경로도 같아야 한다 —
+    읽기 전용 세션에서 행 잠금을 잡게 두면 안 된다. 라우터 on/off 모두에서 막힌다.
+    """
+    with pytest.raises(ReadOnlyRoutingError):
+        await read_only.execute(select(Widget).where(Widget.id == 1).with_for_update())
+
+
 # =============================================================================
 # 과차단도 결함이다 — 읽기는 통과해야 한다
 # =============================================================================

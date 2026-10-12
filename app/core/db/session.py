@@ -50,7 +50,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
-from sqlalchemy import Table, text
+from sqlalchemy import URL, Table, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -105,7 +105,7 @@ writer_engine = engine
 # =============================================================================
 # replica 엔진 (읽기 전용) — 복제 활성 시에만 생성
 # =============================================================================
-def _create_read_engine(url: str) -> AsyncEngine:
+def _create_read_engine(url: URL) -> AsyncEngine:
     """replica 용 엔진을 만든다.
 
     읽기는 보통 쓰기보다 트래픽이 많고 트랜잭션이 짧으므로 풀을 primary 와

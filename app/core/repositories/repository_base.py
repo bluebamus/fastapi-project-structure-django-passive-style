@@ -6,7 +6,9 @@
 get_all · count · exists · update · delete. 커밋하지 않는다(flush 까지).
 
 Eager loading·정렬 목록·집계 같은 도메인 쿼리는 Base 를 넓히지 않고 기능 Repository 에
-명시적 메서드로 둔다(예: ``ProductRepository.get_active``). ``get_all`` 은 정렬을 지정하지 않는다.
+명시적 메서드로 둔다(예: ``ProductRepository.get_active``). ``get_all`` 은 기본 정렬
+``created_at DESC, <PK> DESC`` 를 갖는다(``created_at`` 이 없는 모델은 PK 역순만) — 정렬 없는
+``OFFSET/LIMIT`` 은 페이지 사이 중복·누락을 만든다. 다른 정렬은 기능 Repository 메서드로 둔다.
 
 사용법:
     class UserRepository(BaseRepository[User]):
@@ -22,6 +24,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 from sqlalchemy import CursorResult, delete, func, select, update
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,7 +145,10 @@ class BaseRepository(CRUDBase[ModelType, PrimaryKeyT]):
         limit: int = 100,
     ) -> Sequence[ModelType]:
         """
-        모든 레코드를 조회합니다.
+        모든 레코드를 최신순으로 조회합니다.
+
+        정렬은 ``created_at DESC, <PK> DESC`` 다. ``created_at`` 은 동률이 생기므로 유일한 PK 를
+        보조 키로 붙여 offset 페이지가 겹치지 않게 한다. ``created_at`` 이 없는 모델은 PK 역순.
 
         Args:
             skip: 건너뛸 레코드 수
@@ -154,7 +160,10 @@ class BaseRepository(CRUDBase[ModelType, PrimaryKeyT]):
         Example:
             users = await repo.get_all(skip=0, limit=100)
         """
-        stmt = select(self.model).offset(skip).limit(limit)
+        mapper = sa_inspect(self.model)
+        created = [mapper.columns["created_at"]] if "created_at" in mapper.columns else []
+        keys = [*created, *mapper.primary_key]
+        stmt = select(self.model).order_by(*(key.desc() for key in keys)).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

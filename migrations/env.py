@@ -39,8 +39,14 @@ target_metadata = Base.metadata
 # 환경변수를 직접 읽지 않는다 — 설정은 config.py 가 단독으로 로드한다.
 # db_settings.ALEMBIC_URL 이 ALEMBIC_DATABASE_URL 오버라이드(로컬/CI 의 SQLite 등)와
 # primary DSN 의 동기 드라이버 치환(aiomysql → pymysql)을 모두 처리한다.
+# ALEMBIC_URL 은 ``sqlalchemy.engine.URL`` 이다. set_main_option 은 ConfigParser 보간을
+# 거치므로 ``%``(퍼센트 인코딩된 비밀번호 등)를 ``%%`` 로 넘겨야 한다 — 그대로 넘기면
+# "invalid interpolation syntax" 로 마이그레이션이 시작도 못 한다.
 # ---------------------------------------------------------------------------
-config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace("%", "%%"),
+)
 
 
 def run_migrations_offline() -> None:
@@ -81,9 +87,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

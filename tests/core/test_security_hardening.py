@@ -466,3 +466,17 @@ def test_ci_pipes_into_tee_only_with_pipefail():
     assert piped, "tee 로 파이프하는 단계를 찾지 못했다 — 검사가 아무것도 보지 않는다"
     missing = [step.splitlines()[0].strip() for step in piped if "set -o pipefail" not in step]
     assert not missing, f"pipefail 없이 tee 로 파이프하는 단계: {missing}"
+
+
+def test_ci_installs_dependencies_with_locked():
+    """CI 의 의존성 설치는 락이 `pyproject.toml` 과 어긋나면 실패해야 한다(service-hardening F-004).
+
+    `uv sync --frozen` 은 락을 **검사하지 않고** 그대로 설치한다 — 의존성을 고치고 락 갱신을
+    잊어도 CI 가 초록이다. 그 검사를 하는 플래그는 `--locked` 다.
+    """
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    syncs = [line.strip() for line in workflow.splitlines() if "uv sync" in line]
+    assert syncs, "uv sync 단계를 찾지 못했다 — 검사가 아무것도 보지 않는다"
+    assert "--frozen" not in workflow
+    unlocked = [line for line in syncs if "uv sync --locked" not in line]
+    assert not unlocked, f"--locked 없이 설치하는 줄: {unlocked}"
