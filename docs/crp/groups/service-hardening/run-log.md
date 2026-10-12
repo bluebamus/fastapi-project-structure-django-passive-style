@@ -143,6 +143,61 @@
   그룹 전체는 `NOT CONVERGED` (Open Fix 10)
 - **잔여 위험 변화:** R-009(review_gate 의 커버리지 문구 오인) 등록
 
+### Round 4 — 2026-10-12 (base SHA: `302a028`) · 단계 D
+- **트리거:** REQ-001 단계 D (제안 7) — ADR-010, 신규 ADR-027
+- **검수 범위:** F-017, F-015 의 시각 왕복 부분 (`302a028` 이후 단계 D 커밋)
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 □ (F-015 는 CI mysql job 판정 대기)
+- **변경:**
+  - D1: `app/core/models/types.py` `UTCDateTime`(impl `DateTime`, MySQL `DATETIME(fsp=6)` 은 `load_dialect_impl`, `cache_ok=True`;
+    bind aware → UTC naive, naive → `ValueError`, None 통과; result tzinfo=UTC)와 Alembic 렌더 훅 `render_item`.
+    `models_base.py` 의 `type_annotation_map`·`CreatedAtMixin`·`UpdatedAtMixin`(default/onupdate `timezone_settings.utc_now`, `sort_order` 그대로),
+    reports `ordered_at` 은 명시 `DateTime(timezone=True)` 를 지워 `Mapped[datetime]` 으로. `config.py` `TimezoneSettings.utc_now()`·`local_midnight_utc()`
+    (`now()` 는 로그 파일명 등 표시용으로 유지). `migrations/env.py` 가 온라인·오프라인 모두 `render_item` 을 건다.
+  - D2: `migrations/versions/e5a7c2d9f310_store_datetimes_as_utc.py`(down `d1f8c4a70b93`) — MySQL 에서만 14개 시각 컬럼을
+    `DATETIME(6) NOT NULL` 로 넓힌 뒤 `CONVERT_TZ(col,'+09:00','+00:00')`, downgrade 는 역변환 후 `DATETIME`. SQLite no-op.
+    head 참조: `docs/guides/ARCHITECTURE.md` revision 체인. CI 는 revision 번호를 적지 않아 바꿀 곳이 없다.
+  - D3: `ReportService(session, timezone)` — 경계는 `local_midnight_utc(start)`·`local_midnight_utc(end+1)`, 오프셋은 시작일 0시의 값.
+    `SalesReportRawRepository.daily_sales(start_at, end_exclusive, utc_offset)` 가 방언으로 SQL 을 고른다(MySQL `CONVERT_TZ`, SQLite
+    `DATE(col,'+540 minutes')`), 경계는 `bindparam(type_=UTCDateTime())`, `GROUP BY sales_date`, 각 SQL 에 `ponytail:` 주석.
+    접속 로그: `UserAccessLogService.get_logs_by_date_range(date, date)` 가 지역 일자를 UTC 반열린 구간으로 바꾸고, Repository
+    `get_by_date_range(start_at, end_exclusive)` 는 `<` 상한. provider 두 곳이 `timezone_settings` 를 넘긴다.
+  - D4: `app/celery/app.py` `enable_utc=True`. 응답 스키마 6개(blog·catalog·reply·sns·user·access_log)의 `created_at`/`updated_at`
+    설명 "(UTC, 오프셋 포함 ISO 8601)", catalog 목록 예시 `Z`. `tests/test_response_serialization.py` 는 aware UTC → `Z` 를 이미 고정하고
+    있어 바꾸지 않았다. 살아 있는 OpenAPI 스냅샷 비교는 없고 orm-raw-repository `baseline/openapi.json` 은 Phase 0 기록이라 두었다.
+  - 테스트 조정(이유 기록): `test_mysql_migration_roundtrip.py::test_new_revisions_have_a_working_downgrade` 의 첫 `-1` 이 이제 시각
+    revision 이다 — 테이블이 남고 정밀도가 0 으로 돌아오는지 보는 단계를 더했다(검사를 줄이지 않았다). `test_mysql_sales_report.py`·
+    `test_raw_dml_workflow.py` 는 새 시그니처(UTC 순간·오프셋)와 Raw 시각 bind 를 `UTCDateTime` 으로. `test_access_log_service.py` 의
+    동률 페이지 테스트는 반열린 상한(`same + 1µs`)으로. `test_mysql_orm_smoke.py` docstring 의 "DATETIME 은 초 단위" 서술 정정.
+  - 문서: `ARCHITECTURE.md` §4.8(시각 규칙)·§9(Celery)·revision 체인, `DEVELOPMENT.md` §3.5(영업일 경계·방언별 버킷),
+    `feature-development-guide.html`(reports 문단), `.env.example` `TIME_ZONE` 설명.
+- **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 수정 전 내용 또는 변이를 넣어 실행 후 복원):**
+  - `tests/core/test_utc_datetime.py` 13건 — naive 검사 제거 → `test_naive_datetime_is_rejected_at_bind`·`test_naive_value_never_reaches_the_database`
+    실패, UTC 변환 제거 → `test_aware_kst_is_bound_as_naive_utc`·SQLite 왕복 실패, UTC 부착 제거 → result·SQLite 왕복·모델 기본값 3건 실패,
+    fsp 제거 → `test_mysql_column_is_datetime_with_microseconds` 실패, 렌더 훅 무력화 → 렌더 2건 실패, `models_base.py` 를 main 으로 →
+    `test_every_model_datetime_column_uses_utc_datetime`·`test_model_default_timestamps_are_aware_utc`·catalog 오프셋 테스트 실패,
+    reports `models.py` 를 main 으로 → 컬럼 타입 테스트 실패. `utc_now`·`local_midnight_utc` 2건은 새 메서드라 수정 전 코드에서 AttributeError.
+  - `app/features/catalog/tests/test_endpoint.py::test_timestamps_are_utc_with_an_offset` — `models_base.py` main 에서 실패 확인. 기본값만
+    `now()`(KST aware)로 바꾸는 변이는 통과한다 — 같은 순간이 저장 경계에서 UTC 로 바뀌므로 결함이 아니다
+  - `app/features/reports/tests/test_business_day.py` 7건 — Service 경계를 UTC 0시로 바꾸면 경계 2건(단위·자정 경계) 실패, SQLite 버킷의
+    오프셋 이동을 지우면 엔드포인트 2건 실패. `mysql_offset` 4건은 새 함수
+  - `app/features/home/tests/test_access_log_service.py::test_date_range_is_read_as_local_days` — Service 를 main 으로 또는 UTC 일자 경계로
+    바꾸면 실패
+  - `tests/core/test_celery_app.py::test_celery_keeps_internal_times_in_utc` — `app/celery/app.py` main 에서 실패
+  - MySQL(`mysql` 마커, CI 판정): `tests/integration/test_mysql_time_policy.py` 3건(전 시각 컬럼 `DATETIME_PRECISION` 6, KST aware →
+    UTC 벽시계·마이크로초 왕복, 2026-01-01T15:30Z 주문이 1월 2일 버킷), `test_mysql_migration_roundtrip.py::test_utc_revision_converts_existing_kst_values`
+    (이전 head 에서 Raw SQL 로 KST 값을 심고 revision 만 올려 UTC·정밀도 6 확인, downgrade 로 원값·정밀도 0 복귀 — `mysql_empty_schema` 가
+    전후로 비워 남는 테이블 0 불변식 유지). 로컬은 `--collect-only` 31건 수집과 `alembic upgrade d1f8c4a70b93:e5a7c2d9f310 --sql`(MySQL
+    오프라인 렌더, 접속 없음)로 DDL·UPDATE 문을 확인했다
+- **검사:** ruff check 통과 · ruff format --check 338 파일 · mypy 207 파일 이슈 0
+  (로컬 정책이 컴파일된 mypy `.pyd` 를 차단해 같은 버전 1.20.2 의 순수 Python 빌드로 실행) ·
+  `pytest -m "not mysql and not browser"` **805 passed · 31 deselected · skip 0** · `--cov=app` **95.12%** ·
+  `-m "mysql or browser" --collect-only` 31건 · `python -m alembic heads` 단일 head `e5a7c2d9f310` · SQLite `upgrade head` + `alembic check`
+  "No new upgrade operations detected" · downgrade `d1f8c4a70b93` → 재-upgrade 통과 · bandit MEDIUM 이상 0(240 파일) ·
+  OpenAPI revert check 20/20 감지 · `scripts.review_gate --fast`: ruff·bandit·pip-audit·pytest·OpenAPI 통과, mypy 는 로컬 `.pyd` 차단(위 순수 빌드로 대체)
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0
+- **수렴 판정:** 단계 D `CONVERGED` (F-017 Fixed) — MySQL 방언 판정은 F-015 와 함께 CI mysql job. 그룹 전체는 `NOT CONVERGED` (Open Fix 9)
+- **잔여 위험 변화:** R-010(고정 오프셋·기존 값 오프셋·`CONVERT_TZ` 범위) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -150,3 +205,4 @@
 | 1 | 0 | 0 | 0 | 0 | 0 (Fixed 4: F-001~F-004) | 단계 A CONVERGED · 그룹 Open 21 |
 | 2 | 0 | 0 | 0 | 0 | 0 (Fixed 9: F-005~F-013) | 단계 B CONVERGED · 그룹 Open 12 |
 | 3 | 0 | 0 | 0 | 1 | 0 (Fixed 2: F-014·F-016, F-026 Accepted) | 단계 C: F-015 CI 판정 대기 · 그룹 Open 10 |
+| 4 | 0 | 0 | 0 | 0 | 0 (Fixed 1: F-017) | 단계 D CONVERGED · F-015 CI 판정 대기 · 그룹 Open 9 |

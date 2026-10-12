@@ -12,12 +12,13 @@ float 로 돌아오는 합계는 돈 계산에서 조용히 틀어진다. 그래
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import DateTime, Numeric, String, bindparam, text
+from sqlalchemy import Numeric, String, bindparam, text
 
+from app.core.models.types import UTCDateTime
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
 )
@@ -37,9 +38,21 @@ _INSERT = text(
 ).bindparams(
     bindparam("id", type_=String(36)),
     bindparam("total_amount", type_=Numeric(12, 2)),
-    bindparam("ordered_at", type_=DateTime(timezone=True)),
-    bindparam("now", type_=DateTime(timezone=True)),
+    bindparam("ordered_at", type_=UTCDateTime()),
+    bindparam("now", type_=UTCDateTime()),
 )
+
+#: 일자 버킷의 오프셋(Asia/Seoul). 시드는 10:30Z(= 19:30 KST)라 UTC 일자와 KST 일자가 같다.
+KST = timedelta(hours=9)
+
+
+def _window(first_day: int, end_day: int) -> dict[str, datetime]:
+    """8월 ``first_day`` 0시(UTC) ~ ``end_day`` 0시(UTC, 배타)."""
+    return {
+        "start_at": datetime(2026, 8, first_day, tzinfo=UTC),
+        "end_exclusive": datetime(2026, 8, end_day, tzinfo=UTC),
+    }
+
 
 _SEED = [
     ("ORD-M1", 1, "1000.00", "paid"),
@@ -74,9 +87,7 @@ async def test_daily_sales_returns_mysql_native_types(mysql_session_maker):
     """MySQL 이 돌려주는 타입을 그대로 확인한다 — 여기가 SQLite 와 갈리는 지점이다."""
     async with mysql_session_maker() as session:
         await _seed(session)
-        rows = await SalesReportRawRepository(session).daily_sales(
-            start_at=datetime(2026, 8, 1).date(), end_exclusive=datetime(2026, 8, 4).date()
-        )
+        rows = await SalesReportRawRepository(session).daily_sales(**_window(1, 4), utc_offset=KST)
 
     assert [str(row["sales_date"]) for row in rows] == ["2026-08-01", "2026-08-02"]
     first = rows[0]
@@ -92,9 +103,7 @@ async def test_daily_sales_returns_mysql_native_types(mysql_session_maker):
 async def test_cancelled_orders_are_excluded_on_mysql(mysql_session_maker):
     async with mysql_session_maker() as session:
         await _seed(session)
-        total = await SalesReportRawRepository(session).order_count(
-            start_at=datetime(2026, 8, 1).date(), end_exclusive=datetime(2026, 8, 4).date()
-        )
+        total = await SalesReportRawRepository(session).order_count(**_window(1, 4))
 
     assert total == 3, "cancelled 주문이 MySQL 집계에 섞였다"
 
@@ -104,9 +113,7 @@ async def test_rows_validate_against_the_response_dto(mysql_session_maker):
     """MySQL 결과가 DTO 검증을 통과한다 — 컬럼 alias 와 필드가 1:1 이어야 한다."""
     async with mysql_session_maker() as session:
         await _seed(session)
-        rows = await SalesReportRawRepository(session).daily_sales(
-            start_at=datetime(2026, 8, 1).date(), end_exclusive=datetime(2026, 8, 4).date()
-        )
+        rows = await SalesReportRawRepository(session).daily_sales(**_window(1, 4), utc_offset=KST)
 
     items = [DailySalesItem.model_validate(dict(row)) for row in rows]
 
@@ -119,9 +126,7 @@ async def test_end_bound_is_exclusive_on_mysql(mysql_session_maker):
     """배타 상한이 MySQL 에서도 같은 의미다 — ``DATE_ADD`` 를 쓰지 않는 근거."""
     async with mysql_session_maker() as session:
         await _seed(session)
-        rows = await SalesReportRawRepository(session).daily_sales(
-            start_at=datetime(2026, 8, 1).date(), end_exclusive=datetime(2026, 8, 2).date()
-        )
+        rows = await SalesReportRawRepository(session).daily_sales(**_window(1, 2), utc_offset=KST)
 
     assert [str(row["sales_date"]) for row in rows] == ["2026-08-01"]
 

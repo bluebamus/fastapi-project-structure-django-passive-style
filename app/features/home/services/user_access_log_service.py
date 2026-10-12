@@ -6,7 +6,7 @@ UserAccessLog Service
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import String
@@ -23,6 +23,7 @@ from app.features.home.schemas.user_access_log_schema import (
     OSStats,
     UserAccessLogCreate,
 )
+from config import TimezoneSettings, timezone_settings
 
 #: 문자열 컬럼의 최대 길이 — 모델 선언에서 읽는다(숫자를 두 번 적지 않는다, ADR-006).
 #: 길이가 없는 ``Text`` 는 빠진다.
@@ -50,9 +51,12 @@ def truncate_to_columns(data: dict[str, Any]) -> dict[str, Any]:
 class UserAccessLogService(BaseService):
     """접속 로그 비즈니스 로직 (세션 기반)."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self, session: AsyncSession, timezone: TimezoneSettings = timezone_settings
+    ) -> None:
         super().__init__(session)
         self.repository = UserAccessLogRepository(session)
+        self.timezone = timezone
 
     async def create_access_log(
         self,
@@ -103,12 +107,16 @@ class UserAccessLogService(BaseService):
 
     async def get_logs_by_date_range(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: date,
+        end_date: date,
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[UserAccessLog]:
-        """날짜 범위로 접속 로그를 조회한다."""
+        """날짜 범위(설정 시간대의 지역 일자, 양끝 포함)로 접속 로그를 조회한다.
+
+        DB 는 UTC 로 저장하므로 지역 0시를 UTC 순간으로 바꿔 ``[시작일 0시, 종료일+1 0시)`` 로
+        조회한다 — Asia/Seoul 의 10월 12일은 ``[10-11T15:00Z, 10-12T15:00Z)`` 다.
+        """
         if start_date > end_date:
             self.log.warning("잘못된 날짜 범위: start=%s end=%s", start_date, end_date)
             raise InvalidDateRangeException(
@@ -116,7 +124,10 @@ class UserAccessLogService(BaseService):
             )
         self.log.debug("날짜 범위 접속 로그 조회: %s ~ %s", start_date, end_date)
         return await self.repository.get_by_date_range(
-            start_date=start_date, end_date=end_date, skip=skip, limit=limit
+            start_at=self.timezone.local_midnight_utc(start_date),
+            end_exclusive=self.timezone.local_midnight_utc(end_date + timedelta(days=1)),
+            skip=skip,
+            limit=limit,
         )
 
     async def get_stats(self) -> AccessLogStats:

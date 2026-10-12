@@ -21,7 +21,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Numeric, String
+from sqlalchemy import Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.session import Base
@@ -50,9 +50,8 @@ class SalesOrder(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="paid")
     # 집계 기준 컬럼. 인덱스가 없으면 리포트가 전체 스캔이 된다 — 기간 조회가
     # 이 컬럼의 범위 조건 하나로 결정되기 때문이다.
-    ordered_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
-    )
+    # 타입은 ``Mapped[datetime]`` 이 정한다 — Base 의 ``UTCDateTime``(UTC·마이크로초).
+    ordered_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
 
     def __repr__(self) -> str:
         return f"<SalesOrder(id={self.id}, order_no={self.order_no!r})>"

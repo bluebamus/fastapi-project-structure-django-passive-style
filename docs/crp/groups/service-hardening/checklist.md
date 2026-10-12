@@ -37,8 +37,16 @@
 - [x] run-log·residual-risk 갱신 (R-009)
 - [ ] (F-015) CI mysql job 그린 확인 — 감독자 푸시 후
 
-## Round 4 — 단계 D (UTC 저장)
-- [ ] (F-017) D1~D4 — `UTCDateTime`, `utc_now`, Alembic 리비전, 리포트 영업일 집계, Celery `enable_utc`
+## Round 4 — 2026-10-12 · 단계 D (UTC 저장)
+- [x] (F-017) D1 — `UTCDateTime`(`app/core/models/types.py`, MySQL `DATETIME(6)`, naive 거부, 결과 UTC 부착), `type_annotation_map`·reports `ordered_at`, `TimezoneSettings.utc_now()`·`local_midnight_utc()`, 모델 default/onupdate, Alembic 렌더 훅(`render_item`) · fail-on-revert
+- [x] (F-017) D2 — 리비전 `e5a7c2d9f310`(MySQL `DATETIME(6)` + `CONVERT_TZ` KST→UTC, SQLite no-op, downgrade 역변환), head 참조(ARCHITECTURE 체인) 갱신, SQLite `upgrade head`·`alembic check` 드리프트 없음, MySQL 오프라인 SQL 확인
+- [x] (F-017) D3 — 리포트 영업일 경계(지역 0시 → UTC 순간)·방언별 일자 버킷(`ponytail:` 고정 오프셋), 접속 로그 날짜 범위를 지역 일자로 · fail-on-revert
+- [x] (F-017) D4 — Celery `enable_utc=True`, 응답 스키마 시각 설명 "(UTC, 오프셋 포함 ISO 8601)", catalog 예시 `Z`, API 응답 오프셋 테스트 · fail-on-revert
+- [x] (F-015 시각 부분) MySQL 테스트 작성 — `tests/integration/test_mysql_time_policy.py`(DATETIME(6) 정밀도·KST→UTC 마이크로초 왕복·자정 경계 리포트), `test_mysql_migration_roundtrip.py::test_utc_revision_converts_existing_kst_values` · `--collect-only` 31건
+- [x] GATE 3 인수기준(단계 D 분) — 805 passed · skip 0 · coverage 95.12%
+- [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-9 충족, core→features 0, 기능 간 import 0)
+- [x] run-log·residual-risk 갱신 (R-010)
+- [ ] (F-015) CI mysql job 그린 확인 — 감독자 푸시 후(단계 C·D 테스트 함께)
 
 ## Round 5 — 단계 E (Redis 필수 · /ready · Celery 자동 발견)
 - [ ] (F-019) E1 — `get_redis`, `/ready` DB·Redis ping

@@ -4,7 +4,7 @@ SQLite 단위 테스트는 같은 코드를 빠르게 돌리지만, 아래 다�
 
 1. 대표 ORM 기능(catalog)의 CRUD 가 실제 Service/Repository 로 MySQL 에서 돈다.
 2. ``created_at`` 이 같은 행들의 목록 순서가 결정적이고 offset 페이지가 겹치지 않는다
-   (``DATETIME`` 은 초 단위라 MySQL 에서 동률이 더 흔하다).
+   (같은 시각으로 일괄 삽입하면 마이크로초 저장에서도 동률이 생긴다).
 3. username 중복은 ``utf8mb4_unicode_ci`` 로 판정된다 — "Kim" 다음 "kim" 은 **중복**이다.
    SQLite(BINARY 비교)에서는 두 행이 다 들어가므로 여기서만 고정할 수 있다.
 4. NOT NULL 컬럼을 ``None`` 으로 UPDATE 하면 strict 모드가 1048 로 거부하고, 변환기가

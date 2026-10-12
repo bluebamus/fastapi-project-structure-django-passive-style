@@ -62,7 +62,7 @@ async def test_time_ordered_queries_break_ties_by_id(session):
     동률이면 페이지마다 다른 행이 나와 offset 페이지가 겹치거나 빠진다. ``id desc`` 보조 키로
     순서를 고정한다 — 같은 시각의 행은 id 역순으로 나와야 하고 페이지가 겹치지 않아야 한다.
     """
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from app.features.home.repositories.user_access_log_repository import (
         UserAccessLogRepository,
@@ -87,7 +87,9 @@ async def test_time_ordered_queries_break_ties_by_id(session):
     queries = {
         "by_ip": lambda skip, limit: repo.get_by_ip("9.9.9.9", skip=skip, limit=limit),
         "by_user": lambda skip, limit: repo.get_by_user_id("u1", skip=skip, limit=limit),
-        "by_range": lambda skip, limit: repo.get_by_date_range(same, same, skip=skip, limit=limit),
+        "by_range": lambda skip, limit: repo.get_by_date_range(
+            same, same + timedelta(microseconds=1), skip=skip, limit=limit
+        ),
     }
     for name, query in queries.items():
         pages = [log.id for skip in (0, 2) for log in await query(skip, 2)]
@@ -127,3 +129,36 @@ async def test_long_strings_are_cut_to_the_column_length(session):
     assert len(created.session_id) == columns["session_id"].type.length
     assert len(created.browser_name) == columns["browser_name"].type.length
     assert created.user_agent == long_value
+
+
+@pytest.mark.asyncio
+async def test_date_range_is_read_as_local_days(session):
+    """날짜 범위는 설정 시간대의 지역 일자(양끝 포함)다 — UTC 저장값을 지역 0시 경계로 고른다.
+
+    Asia/Seoul 의 10월 12일은 ``[10-11T15:00Z, 10-12T15:00Z)`` 다(service-hardening D3).
+    """
+    from datetime import UTC, date, datetime
+
+    from config import TimezoneSettings
+
+    service = UserAccessLogService(session, TimezoneSettings(TIME_ZONE="Asia/Seoul"))
+    for log_id, created_at in (
+        ("oct11-late", datetime(2026, 10, 11, 14, 59, 59, 999999, tzinfo=UTC)),
+        ("oct12-first", datetime(2026, 10, 11, 15, 0, tzinfo=UTC)),
+        ("oct12-last", datetime(2026, 10, 12, 14, 59, 59, 999999, tzinfo=UTC)),
+        ("oct13-first", datetime(2026, 10, 12, 15, 0, tzinfo=UTC)),
+    ):
+        await service.repository.create(
+            {
+                "id": log_id,
+                "ip_address": "9.9.9.9",
+                "request_path": "/t",
+                "request_method": "GET",
+                "created_at": created_at,
+            }
+        )
+    await session.flush()
+
+    logs = await service.get_logs_by_date_range(date(2026, 10, 12), date(2026, 10, 12))
+
+    assert [log.id for log in logs] == ["oct12-last", "oct12-first"]
