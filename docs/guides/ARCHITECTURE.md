@@ -170,6 +170,7 @@ class <Name>Config(AppConfig):
 | `router_module` / `router_attribute` | `api.routers.router` / `<label>_router` | Router 결선 |
 | `models_module` | `models` | 이 module 에 **노출된** 매핑 클래스 중 `__module__` 이 앱 하위인 것을 수집 — `models/__init__.py` 에서 재노출해야 한다 |
 | `admin_module` | `admin` | 공개 이름 `admin_views` |
+| `tasks_module` | `tasks` | Celery 태스크 module(선택). 워커 `include` 에 들어간다(§9) |
 | `router_prefix` | `/api` | 마운트 prefix, 앱별 재정의 가능 |
 
 | 구성요소 | module 이 없으면 | module 은 있는데 공개 이름이 없거나 내부 import 가 깨지면 |
@@ -177,6 +178,7 @@ class <Name>Config(AppConfig):
 | Router | route 없는 앱(정상) | 기동 실패 (`ImproperlyConfigured` / 원래 `ModuleNotFoundError`) |
 | Models | 테이블 없는 앱(정상, 예: `auth`) | 기동 실패 |
 | Admin | 관리 화면 없는 앱(정상) | 기동 실패 |
+| Tasks | 태스크 없는 앱(정상) | 워커가 include 를 import 할 때 실패 — 발견은 `find_spec` 으로 존재만 본다(§9) |
 
 ### 2.3 3단계 population
 
@@ -194,7 +196,7 @@ Apps.populate(INSTALLED_APPS)
   `ImproperlyConfigured`(다른 구성은 새 `Apps()` 로 만든다), 진행 중 재진입은 `RuntimeError`
   (`ready()` 안에서 `populate()` 를 부르지 않는다). 실패하면 registry 상태를 되돌린 뒤 원래 예외를 전파한다 —
   단, 이미 import 된 Python 모듈과 전역 metadata 까지 되돌리지는 않는다.
-- `populate(..., run_ready=False)` 는 1·2단계만 수행한다. Alembic 과 startup DDL 준비가 쓴다. 이후 같은 registry 에
+- `populate(..., run_ready=False)` 는 1·2단계만 수행한다. Alembic·Celery 워커(`app/celery/app.py`)와 startup DDL 준비가 쓴다. 이후 같은 registry 에
   `run_ready=True` 로 다시 부르면 3단계만 실행된다.
 - 조회 API: `get_app_configs()`, `get_app_config(label)`, `is_installed(name)`, `get_models()`,
   `get_model(app_label, model_name)`(대소문자 무시). 준비 전 조회는 `AppRegistryNotReady`, 없는 대상은 `AppLookupError`.
@@ -278,7 +280,7 @@ Alembic 은 `run_ready=False` 로 hook 자체를 건너뛴다. 회귀 가드는
 
 ### 2.7 앱 비활성화·제거 시 주의
 
-**목록에서 빼도 테이블은 지워지지 않는다.** 앱을 목록에서 빼면 route·Admin view·`ready()` 는 즉시 사라지고,
+**목록에서 빼도 테이블은 지워지지 않는다.** 앱을 목록에서 빼면 route·Admin view·`ready()`·Celery 태스크(워커 `include`)는 즉시 사라지고,
 깨끗한 migration 프로세스에서 그 앱의 모델이 수집 대상에서 빠진다 → `alembic revision --autogenerate` 가
 DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성된 migration 을 그대로 적용하지 않는다.
 
@@ -450,8 +452,9 @@ async with AsyncExitStack() as cleanup:
 
 **Redis 검증** — `Redis.from_url(redis_settings.REDIS_URL, socket_connect_timeout=5, socket_timeout=5)` 후 `ping()`.
 실패하면 오류 타입만 ERROR 로 남기고 다시 raise 한다 → yield 에 도달하지 않아 서버가 시작되지 않는다.
-`DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다. 성공한 client 는 `app.state.redis` 에 보관되지만, 이를 주입하는
-공통 Dependency 나 캐시 구현은 없다. ping 성공은 기동 순간의 도달 가능성일 뿐이고 `/ready` 는 Redis 를 다시 보지 않는다.
+`DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 `app.state.redis` 에 보관되고,
+요청 코드는 주입 provider `get_redis(request) -> Redis`(`app/core/redis.py`) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
+`ServiceUnavailableException`(503). 기능이 `Redis.from_url` 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 `/ready` 가 다시 본다(§3.5).
 
 **개발용 테이블 생성** — `_prepare_database()` 는 `create_app()` 이 조립에 쓴 registry(`app.state.app_registry`)를
 받아 `owned_tables(registry)` 로 **그 registry 가 소유한 테이블만** 센다. 전역 `apps` 를 따로 읽거나 다시 채우지 않는다.
@@ -486,7 +489,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | 경로 / 오류 | 의미 |
 |---|---|
 | `GET /health` | liveness. `{"status": "healthy", "version": VERSION}`. DB·Redis 를 보지 않는다 — liveness 가 DB 에 의존하면 DB 가 흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽인다 |
-| `GET /ready` | readiness. `ping_writer_db()` 가 writer 에 `SELECT 1` 을 2초 안에 실행. 실패·timeout 은 원인을 숨긴 503(원인 타입만 서버 로그). 준비 안 된 인스턴스는 재시작이 아니라 LB 에서 뺀다 |
+| `GET /ready` | readiness. `ping_writer_db()`(writer 에 `SELECT 1`)와 `ping_redis()`(`get_redis` 로 주입한 client 에 `ping()`)를 `asyncio.gather` 로 동시에, 각각 2초 안에 실행. 하나라도 실패·timeout 이면 원인을 숨긴 503(대상과 원인 타입만 서버 WARNING — 예: `[Readiness] Redis 준비 확인 실패: TimeoutError`). 준비 안 된 인스턴스는 재시작이 아니라 LB 에서 뺀다 |
 | `/docs`, `/openapi.json` | `DEBUG=true` 일 때만. Swagger UI·ReDoc 은 끔 |
 | 설정·registry 오류 | lifespan 이전 조립 실패 |
 | Redis ping·개발 DDL 오류 | startup 실패 |
@@ -836,12 +839,24 @@ OAuth2 **password flow** + JWT access/refresh. 자격증명은 `user` 기능의 
 ## 9. Celery
 
 ```python
+def discover_task_modules(installed_apps):          # 새 Apps() 를 run_ready=False 로 채운다
+    registry = Apps()
+    registry.populate(installed_apps, run_ready=False)
+    return registry.task_modules()                   # 앱별 <앱>.tasks 중 존재하는 것
+
 celery_app = Celery("project", broker=redis_settings.REDIS_URL, backend=redis_settings.REDIS_URL,
-                    include=["app.celery.tasks"])
+                    include=discover_task_modules(INSTALLED_APPS))
 # JSON serializer 만 허용, task_track_started, enable_utc=True, timezone=TIME_ZONE(일정 해석용), beat_schedule={}
 ```
 
-- 태스크는 기능별 `worker/` 가 아니라 **중앙 `app/celery/tasks.py`** 에 `@celery_app.task` 로 정의한다. 예: `home.aggregate_access_stats`(background 세션으로 접속 통계 total 반환).
+- 태스크는 **기능 폴더의 `tasks.py`**(선택, `AppConfig.tasks_module`)에 `@celery_app.task` 로 정의한다. 예: `app/features/home/tasks.py` 의
+  `home.aggregate_access_stats` — `background_session()` 으로 세션을 열고, 서비스는 HTTP 경로와 같은 home provider
+  `build_user_access_log_service(session)` 로 조립한다(service-hardening ADR-012).
+- 워커 `include` 는 `config.INSTALLED_APPS` 로 만든다. `app/celery` 는 어떤 기능도 import 하지 않는다(`tests/test_layering_and_openapi.py::test_celery_does_not_depend_on_features`).
+  목록에서 앱을 빼면 그 앱의 태스크·모델도 워커에서 빠진다. 같은 registry 가 2단계(models)까지 돌므로 워커에서도 모든 설치 앱의 mapper 가 등록된다.
+  `ready()` 는 돌리지 않는다 — 접속 로그 sink 결선은 API 프로세스 전용이다.
+- 발견은 `importlib.util.find_spec` 으로 **존재만** 본다. 태스크 module 은 `celery_app` 을 import 하므로, 발견 단계에서 import 하면 순환 import 다.
+  태스크 module 내부의 import 오류는 워커가 include 를 import 할 때 드러난다.
 - 동기 태스크 안의 코루틴은 `app/celery/task.py` 의 `run_async()` 가 **worker 프로세스당 영속 event loop** 에서 실행한다.
 - worker 종료: `app/celery/lifecycle.py` 가 `worker_process_shutdown` 신호에서 살아 있는 loop 로 `dispose_engine()` → `shutdown_asyncgens()` → loop close → 전역 참조 해제.
 - API 기동은 worker·beat 를 띄우지 않고, API lifespan 은 worker 의 broker 연결·loop 를 정리하지 않는다(소유권이 다른 프로세스).

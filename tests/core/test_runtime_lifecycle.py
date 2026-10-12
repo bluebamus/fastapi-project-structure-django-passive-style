@@ -138,6 +138,13 @@ def test_write_dependencies_use_the_writer_session():
 # =============================================================================
 # /ready — liveness 와 분리
 # =============================================================================
+class _HealthyRedis:
+    """``PING`` 에 답하는 가짜 Redis — lifespan 없이 ``app.state.redis`` 에 넣는다."""
+
+    async def ping(self) -> bool:
+        return True
+
+
 def test_readiness_returns_503_when_db_is_unavailable(monkeypatch: pytest.MonkeyPatch):
     """DB 를 못 쓰면 503 — 그리고 실패 원인을 응답에 싣지 않는다."""
     from app.core import bootstrap
@@ -148,6 +155,7 @@ def test_readiness_returns_503_when_db_is_unavailable(monkeypatch: pytest.Monkey
     monkeypatch.setattr(bootstrap, "ping_writer_db", boom)
 
     app = bootstrap.create_app()
+    app.state.redis = _HealthyRedis()  # Redis 는 정상 — DB 실패만으로 503 이어야 한다
     client = TestClient(app, raise_server_exceptions=False)
     response = client.get("/ready")
 
@@ -165,6 +173,7 @@ def test_readiness_returns_200_when_db_answers(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bootstrap, "ping_writer_db", ok)
 
     app = bootstrap.create_app()
+    app.state.redis = _HealthyRedis()
     client = TestClient(app)
     response = client.get("/ready")
 

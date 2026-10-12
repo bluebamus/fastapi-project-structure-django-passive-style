@@ -58,8 +58,9 @@ class Apps:
             installed_apps: ``config.INSTALLED_APPS`` — package 경로 또는 config
                 class 경로의 목록.
             run_ready: ``False`` 면 config·models 단계까지만 수행하고 ``ready()`` hook 을
-                건너뛴다. **Alembic adapter 전용** 이다 — migration 이 앱의 runtime
-                부수효과를 실행하지 않게 한다(§6.7). 애플리케이션 조립부는 쓰지 않는다.
+                건너뛴다. **Alembic adapter 와 Celery 워커 전용** 이다 — migration·워커가
+                앱의 API runtime 부수효과(접속 로그 sink 결선 등)를 실행하지 않게 한다
+                (§6.7). 애플리케이션 조립부는 쓰지 않는다.
 
         Raises:
             RuntimeError: population 도중 재진입했다.
@@ -182,6 +183,19 @@ class Apps:
         """전체 package 경로로 설치 여부를 확인한다."""
         self.check_apps_ready()
         return any(config.name == app_name for config in self.app_configs.values())
+
+    def task_modules(self) -> list[str]:
+        """설치 앱의 Celery 태스크 module 경로를 ``INSTALLED_APPS`` 순서로 돌려준다.
+
+        Celery 워커의 ``include`` 가 이 목록이다 — 목록에서 앱을 빼면 그 앱의 태스크도
+        워커에서 빠진다(service-hardening C-14).
+        """
+        self.check_apps_ready()
+        return [
+            dotted
+            for config in self.app_configs.values()
+            if (dotted := config.tasks_module_path()) is not None
+        ]
 
     def get_models(self) -> list[type]:
         """설치 앱의 모든 매핑 model 을 등록 순서로 돌려준다."""

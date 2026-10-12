@@ -198,6 +198,44 @@
 - **수렴 판정:** 단계 D `CONVERGED` (F-017 Fixed) — MySQL 방언 판정은 F-015 와 함께 CI mysql job. 그룹 전체는 `NOT CONVERGED` (Open Fix 9)
 - **잔여 위험 변화:** R-010(고정 오프셋·기존 값 오프셋·`CONVERT_TZ` 범위) 등록
 
+### Round 5 — 2026-10-12 (base SHA: `5dbcdc3`) · 단계 E
+- **트리거:** REQ-001 단계 E (제안 8, Redis 필수) — ADR-011·ADR-012, 새 ADR-028
+- **검수 범위:** F-018 · F-019 + F-015 CI 판정 반영
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 ■ (단계 E 한정)
+- **변경:**
+  - E1: `app/core/redis.py` — `get_redis(request) -> Redis`(lifespan 이 둔 `app.state.redis`, 없으면 `ServiceUnavailableException` 503),
+    `ping_redis(client, timeout)`. `app/core/bootstrap.py` `/ready` 가 `Depends(get_redis)` 로 client 를 받아 `ping_writer_db()`·`ping_redis(…, 2초)` 를
+    `asyncio.gather(return_exceptions=True)` 로 동시에 보내고, 실패마다 `[Readiness] <DB|Redis> 준비 확인 실패: <예외 타입>` WARNING 후 원문 없는 503.
+    OpenAPI 설명·503 응답 설명·`tags_metadata` Health 표 갱신. `compose.test.yaml` 의 `redis-test` 는 이미 있어 바꾸지 않았다.
+  - E2: `AppConfig.tasks_module = "tasks"` + `tasks_module_path()`(`importlib.util.find_spec`, import 안 함 — 순환 import 방지, ADR-028 ②),
+    `Apps.task_modules()`(설치 순서, `check_apps_ready`). `app/celery/app.py` `discover_task_modules(installed_apps)` 가 새 `Apps()` 를
+    `run_ready=False` 로 채워 include 를 만든다. 태스크를 `app/features/home/tasks.py` 로 옮기고(이름 `home.aggregate_access_stats` 유지)
+    본문은 `background_session()` + home provider `build_user_access_log_service(session)`. HTTP provider `get_access_log_service` 도 같은 함수를 부른다.
+    `app/celery/tasks.py` 삭제. `populate(run_ready=False)` docstring 에 워커 용도 추가.
+  - 테스트 조정(이유 기록): `tests/core/test_runtime_lifecycle.py` 의 `/ready` 2건은 lifespan 없이 앱을 만들어 `app.state.redis` 가 없다 —
+    가짜 정상 Redis 를 넣었다(DB 실패 테스트가 Redis 부재 503 으로 헛통과하지 않게). `tests/core/test_celery_app.py` 의 `"app.celery.tasks" in include`
+    단언은 반대(없어야 한다)로 바꿨다. `app/features/home/tests/test_home_tasks.py` 는 새 module 경로로.
+  - 문서: README(기술 스택 Redis·트리·`/ready` 표 2곳), ARCHITECTURE §2.2(`tasks_module` 행·Tasks 실패 행)·§2.3·§2.7(태스크도 빠진다)·§3.4(`get_redis`)·§3.5(`/ready`)·§9(Celery),
+    DEVELOPMENT §2.6(`tasks.py` 선택 행·이름 표)·§3(태스크·Redis 주입), `server-lifecycle-guide.html`·`feature-development-guide.html`(코드 근거 링크 포함),
+    `scripts/new_app.py` docstring(선택 `tasks.py` 는 만들지 않는다).
+- **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 수정 전 내용 또는 변이를 넣어 실행 후 복원):**
+  - `tests/core/test_redis_readiness.py` 9건 — `bootstrap.py` 를 main 으로 → 200(Redis ping 0회)·Redis 실패 503·Redis timeout 503·둘 다 실패 로그·client 없음 503
+    5건 실패. DB 실패 503 은 기존 동작 유지라 통과(의도). `get_redis` 3건은 새 module.
+  - `tests/core/apps/test_task_modules.py` 8건 + fixture `tests/core/apps/_fixtures/alpha/tasks.py`(import 되면 이벤트 기록) — `config.py`·`registry.py` 를
+    main 으로 → 8건 실패(같은 판에 `test_celery_app.py` 5건도 실패). `find_spec` 을 `import_optional` 로 바꾸는 변이 → 순환 위험 단언 2건 실패.
+  - `tests/core/test_celery_app.py` — `app/celery/app.py`·`tasks.py` 를 main 으로 → include 2건 실패, `test_celery_does_not_depend_on_features` 실패.
+    `test_including_the_task_modules_registers_the_tasks` 는 옛 중앙 태스크도 등록하므로 통과(이름 유지 확인용).
+  - `app/features/home/tests/test_home_tasks.py::test_task_builds_the_service_through_the_provider` — 태스크가 `UserAccessLogService(session)` 을
+    직접 만드는 변이에서 실패. provider 재사용 2건(HTTP provider·조립 결과)
+- **검사:** ruff check 통과 · ruff format --check 342 파일 · mypy 208 파일 이슈 0(순수 Python 빌드 1.20.2) ·
+  `pytest -m "not mysql and not browser"` **829 passed · 31 deselected · skip 0** · `--cov=app` **95.41%** ·
+  `-m "mysql or browser" --collect-only` 31건 · bandit MEDIUM 이상 0(241 파일) · OpenAPI revert check 20/20 감지 ·
+  `scripts.review_gate --fast`: ruff·bandit·pip-audit·pytest·OpenAPI 통과, mypy 는 로컬 `.pyd` 차단(위 순수 빌드로 대체)
+- **F-015 판정:** CI run 38210910082 의 mysql job **24 passed**(ORM 스모크 5건·시각 정책 포함, skip·xfail 0) → Fixed
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0
+- **수렴 판정:** 단계 E `CONVERGED` (F-018·F-019 Fixed, F-015 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 6: F-020~F-025)
+- **잔여 위험 변화:** R-011(태스크 module 내부 import 오류는 워커 기동 시 드러남) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -206,3 +244,4 @@
 | 2 | 0 | 0 | 0 | 0 | 0 (Fixed 9: F-005~F-013) | 단계 B CONVERGED · 그룹 Open 12 |
 | 3 | 0 | 0 | 0 | 1 | 0 (Fixed 2: F-014·F-016, F-026 Accepted) | 단계 C: F-015 CI 판정 대기 · 그룹 Open 10 |
 | 4 | 0 | 0 | 0 | 0 | 0 (Fixed 1: F-017) | 단계 D CONVERGED · F-015 CI 판정 대기 · 그룹 Open 9 |
+| 5 | 0 | 0 | 0 | 0 | 0 (Fixed 3: F-015·F-018·F-019) | 단계 E CONVERGED · 그룹 Open 6 |

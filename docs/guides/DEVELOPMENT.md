@@ -107,6 +107,7 @@ uv run python -m pytest app/features/orders
 | `schemas/` `services/` `repositories/` `dependencies/` | 기능에 따라 | 데이터·로직 계층. 의존성 파일은 `dependencies/<name>_dependencies.py` |
 | `admin.py` | 조건부 | 있으면 `admin_views` 를 공개. **모델이 있는 앱은 필수**(`tests/core/test_admin_wiring.py`) |
 | `exceptions.py` | 선택 | 기능 예외(`AppException` 계열 상속) |
+| `tasks.py` | 선택 | Celery 태스크(`AppConfig.tasks_module`). 있으면 워커 `include` 에 자동으로 들어간다. 생성기는 만들지 않는다 |
 | `tests/` | 컨벤션 | registry 가 강제하지 않지만 생성기가 만든다 |
 
 | 용도 | 이름 | 쓰지 말 것 |
@@ -114,7 +115,7 @@ uv run python -m pytest app/features/orders
 | 기능 예외 | `exceptions.py` | `<name>_exception.py` |
 | SQLAdmin 뷰 | 기능 루트 `admin.py` | `api/<name>_admin.py`, 중앙 취합 파일 |
 | FastAPI 의존성 | `dependencies/` 패키지 | `dependency.py` |
-| Celery 태스크 | 중앙 `app/celery/tasks.py` | 기능별 `worker/` |
+| Celery 태스크 | 기능 루트 `tasks.py` | 중앙 태스크 파일, 기능별 `worker/` |
 
 ### 2.7 URL 합성
 
@@ -393,9 +394,12 @@ async with background_session() as session:     # 요청 밖 — 커밋은 직�
     await session.commit()
 ```
 
-- Celery 태스크는 `app/celery/tasks.py` 에 두고 `run_async()` 로 코루틴을 돌린다. 인자는 JSON 직렬화 가능한 값만. 재시도·중복·커밋과 enqueue 사이 실패를 테스트한다.
+- Celery 태스크는 기능 루트 `tasks.py` 에 두고(`INSTALLED_APPS` 에 있으면 워커가 자동으로 include 한다) `run_async()` 로 코루틴을 돌린다.
+  세션은 `background_session()` 으로 열고, 서비스는 그 기능의 provider 함수(세션을 받는 일반 함수 — 예: home `build_user_access_log_service(session)`)로
+  조립한다 — HTTP 의존성도 같은 함수를 부른다. 인자는 JSON 직렬화 가능한 값만. 재시도·중복·커밋과 enqueue 사이 실패를 테스트한다.
 - 접속 로그 runner(`access_log_tasks`)는 drop 가능한 비핵심 작업 전용이다. 업무 저장·결제·발송을 넣지 않는다.
-- `app.state.redis` 는 기동 검증용 client 다. 새 기능이 Redis 를 쓰려면 lifecycle 상태를 확인하는 작은 Dependency 를 만들고 장애 시 오류 계약을 정한다.
+- Redis 는 필수다. 새 기능은 `redis: Redis = Depends(get_redis)`(`app/core/redis.py`)로 lifespan 이 소유한 client 를 주입받는다 —
+  `Redis.from_url` 을 직접 만들지 않는다. client 가 없으면(lifespan 밖) 503. 테스트는 `app.state.redis` 에 fakeredis 를 넣거나 `dependency_overrides[get_redis]` 를 쓴다.
 
 ---
 

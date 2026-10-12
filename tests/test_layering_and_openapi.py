@@ -71,6 +71,23 @@ def test_core_does_not_depend_on_features():
     assert not violations, f"core 가 features 를 import 한다: {violations}"
 
 
+def test_celery_does_not_depend_on_features():
+    """``app/celery`` 는 기능을 모른다 — 태스크는 기능의 ``tasks`` module 에 있고, 워커는
+    ``INSTALLED_APPS`` 로 그 module 을 찾는다(service-hardening ADR-012·C-14).
+
+    중앙 파일이 기능을 import 하면 ``INSTALLED_APPS`` 에서 앱을 빼도 워커가 그 앱을 계속
+    끌어온다(F-018).
+    """
+    violations = [
+        f"{path.relative_to(REPO_ROOT)} → {module}"
+        for path in _source_files()
+        if path.relative_to(APP_ROOT).parts[0] == "celery"
+        for module in _imported_modules(path)
+        if module.startswith("app.features")
+    ]
+    assert not violations, f"celery 가 features 를 import 한다: {violations}"
+
+
 def test_features_do_not_import_each_other():
     """기능 간 직접 의존은 문서화된 예외만 허용한다."""
     violations: list[str] = []

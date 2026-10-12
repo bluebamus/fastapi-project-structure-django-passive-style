@@ -17,7 +17,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 
 ## 주요 특징
 
-- **수동 앱 설치**: `config.INSTALLED_APPS` 에 `AppConfig` 경로를 넣어야 route·모델·Admin·`ready()` 가 켜진다. Django 의 3단계 app loading(config → models → ready)을 그대로 따른다.
+- **수동 앱 설치**: `config.INSTALLED_APPS` 에 `AppConfig` 경로를 넣어야 route·모델·Admin·`ready()`·Celery 태스크가 켜진다. Django 의 3단계 app loading(config → models → ready)을 그대로 따른다.
 - **계층 분리**: Router → Dependency → Service → Repository → DB. 기능마다 `app/features/<name>/` 에 모은다.
 - **명시적 트랜잭션 경계**: 쓰기 핸들러 본문이 응답 전에 `await service.commit()`. 조회는 `get_read_only_db_session`, 쓰기는 `get_writer_db_session`.
 - **ORM·Raw SQL 두 Repository 계열**과 나란히 비교할 수 있는 예제 기능 2개.
@@ -37,7 +37,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | ORM / Migration | SQLAlchemy 2.0 async, Alembic |
 | Database | MySQL (aiomysql / 마이그레이션은 PyMySQL) |
 | Validation / Settings | Pydantic v2, pydantic-settings |
-| Redis | startup 연결 검증 + Celery broker·result backend |
+| Redis | **필수** — startup 연결 검증, `get_redis` 주입, `/ready` 확인, Celery broker·result backend |
 | Task Queue | Celery 5 |
 | Auth | OAuth2 Password + PyJWT + bcrypt |
 | Admin / Docs | SQLAdmin / Scalar |
@@ -70,7 +70,7 @@ fastapi-project-structure-django-passive-style/
 │   │   │   ├── admin.py         # ModelView + admin_views (모델이 있으면 필수)
 │   │   │   ├── exceptions.py    # 기능 예외
 │   │   │   └── tests/
-│   │   ├── home/                # 접속 로그 조회·통계, ready() 에서 로그 sink 결선
+│   │   ├── home/                # 접속 로그 조회·통계, ready() 에서 로그 sink 결선, tasks.py(Celery 예시)
 │   │   ├── blog/ reply/ sns/ user/   # 기본 CRUD
 │   │   ├── auth/                # 가입·로그인·토큰 (자체 모델 없음, user 의 User 사용)
 │   │   ├── catalog/             # ORM 참조 예제 — BaseRepository 로 상품 CRUD
@@ -86,7 +86,7 @@ fastapi-project-structure-django-passive-style/
 │   │   ├── middlewares/         # CORS · UserInfo · AccessLogSink · BackgroundTaskRunner
 │   │   ├── exception.py         # AppException 계층 + ErrorResponse
 │   │   └── tags_metadata.py     # OpenAPI 태그 선언
-│   ├── celery/                  # 중앙 Celery 앱 · tasks.py · run_async 브릿지 · worker 종료 정리
+│   ├── celery/                  # Celery 앱(include 는 INSTALLED_APPS 의 앱별 tasks.py) · run_async 브릿지 · worker 종료 정리
 │   └── utils/                   # logs · authenticator(JWT·bcrypt) · pagination · validators
 │
 ├── migrations/                  # Alembic — env.py 가 App Registry 로 설치 앱 모델만 수집
@@ -153,7 +153,7 @@ Remove-Item Env:DEBUG      # 끝난 뒤 개발 기본값으로 복원
 | 이 상태에서 | 결과 | 이유 |
 |---|---|---|
 | `GET /health` | 200 | DB 를 보지 않는다 |
-| `GET /ready` | 503 | writer DB 의 SELECT 1 이 실패한다 |
+| `GET /ready` | 503 | writer DB 의 SELECT 1 이 실패한다(Redis 는 기동 조건이라 이미 응답한다) |
 | 기능 API (`GET /api/v1/blog/posts` 등) | 500 | MySQL 이 필요하다 |
 | `/docs`, `/openapi.json` | 404 | `DEBUG=false` 가 문서를 끈다 |
 
@@ -267,7 +267,7 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 
 | 앱 | 메서드 · 경로 | 인증 |
 |---|---|---|
-| — | GET `/health` (liveness) · GET `/ready` (writer DB readiness, 실패 시 503) | — |
+| — | GET `/health` (liveness) · GET `/ready` (writer DB·Redis readiness, 하나라도 실패 시 503) | — |
 | home | GET `/api/v1/home/access-logs` · `/recent` · `/by-ip/{ip_address}` · `/by-user/{user_id}` · `/stats` | 없음 |
 | blog | GET·POST `/api/v1/blog/posts` · GET·PATCH·DELETE `/api/v1/blog/posts/{post_id}` | 없음 |
 | reply | GET·POST `/api/v1/reply/replies` · GET·PATCH·DELETE `/api/v1/reply/replies/{reply_id}` | 없음 |

@@ -35,7 +35,7 @@
 - [x] GATE 3 인수기준(단계 C 분) — 782 passed · skip 0 · coverage 94.96% · 정순(`-p no:randomly`)·파일 역순 모두 그린
 - [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(앱 코드 변경 없음, 테스트 하네스만)
 - [x] run-log·residual-risk 갱신 (R-009)
-- [ ] (F-015) CI mysql job 그린 확인 — 감독자 푸시 후
+- [x] (F-015) CI mysql job 그린 확인 — CI run 38210910082 mysql job 24 passed
 
 ## Round 4 — 2026-10-12 · 단계 D (UTC 저장)
 - [x] (F-017) D1 — `UTCDateTime`(`app/core/models/types.py`, MySQL `DATETIME(6)`, naive 거부, 결과 UTC 부착), `type_annotation_map`·reports `ordered_at`, `TimezoneSettings.utc_now()`·`local_midnight_utc()`, 모델 default/onupdate, Alembic 렌더 훅(`render_item`) · fail-on-revert
@@ -46,11 +46,16 @@
 - [x] GATE 3 인수기준(단계 D 분) — 805 passed · skip 0 · coverage 95.12%
 - [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-9 충족, core→features 0, 기능 간 import 0)
 - [x] run-log·residual-risk 갱신 (R-010)
-- [ ] (F-015) CI mysql job 그린 확인 — 감독자 푸시 후(단계 C·D 테스트 함께)
+- [x] (F-015) CI mysql job 그린 확인 — CI run 38210910082 mysql job 24 passed(단계 C·D 테스트 함께)
 
-## Round 5 — 단계 E (Redis 필수 · /ready · Celery 자동 발견)
-- [ ] (F-019) E1 — `get_redis`, `/ready` DB·Redis ping
-- [ ] (F-018) E2 — `AppConfig.tasks_module`, 워커 include 를 `INSTALLED_APPS` 에서
+## Round 5 — 2026-10-12 · 단계 E (Redis 필수 · /ready · Celery 자동 발견)
+- [x] (F-019) E1 — `app/core/redis.py` `get_redis`(없으면 503)·`ping_redis`, `/ready` 가 DB·Redis 를 `gather` 로 각 2초, 실패 대상·예외 타입만 WARNING, 원문 없는 503 · fail-on-revert
+- [x] (F-018) E2 — `AppConfig.tasks_module`·`tasks_module_path()`(`find_spec`, import 안 함), `Apps.task_modules()`, `discover_task_modules(INSTALLED_APPS)`(격리 registry, `run_ready=False`), 태스크를 `app/features/home/tasks.py` 로(이름 유지), home provider `build_user_access_log_service(session)` 재사용, 중앙 `app/celery/tasks.py` 삭제 · fail-on-revert
+- [x] E3 — `app/celery` → `app.features` import 금지 AST 계약, home 을 뺀 include, 태스크가 provider 를 거치는지
+- [x] 문서 — README·ARCHITECTURE(§2.2·§2.3·§2.7·§3.4·§3.5·§9)·DEVELOPMENT(§2.6·§3)·HTML 안내서 2편·`scripts/new_app.py` docstring(선택 `tasks.py`). `compose.test.yaml` 의 `redis-test` 는 이미 있어 변경 없음
+- [x] GATE 3 인수기준(단계 E 분) — 829 passed · skip 0 · coverage 95.41%
+- [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-10·C-14 충족, core→features 0, celery→features 0, 기능 간 import 0)
+- [x] run-log·residual-risk 갱신 (R-011)
 
 ## Round 6 — 단계 F1 (인증 코어)
 - [ ] (F-020·F-021) `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`AuthService`, 엔드포인트, 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`)

@@ -1,8 +1,8 @@
-"""중앙 Celery 태스크 모듈.
+"""Home 기능의 Celery 태스크.
 
-앱별 worker/ 를 대체하는 단일 태스크 모듈. 도메인 백그라운드 작업을 여기 정의한다.
-celery_app.conf.include = ["app.celery.tasks"] 로 등록된다.
-요청 밖 세션은 background_session 컨텍스트로 관리한다(UnitOfWork 제거).
+워커는 ``AppConfig.tasks_module``(기본 ``"tasks"``)로 이 module 을 찾아 include 한다
+(service-hardening ADR-012). 요청 밖이므로 세션은 ``background_session()`` 이 열고,
+서비스 조립은 HTTP 경로와 같은 provider 함수에 맡긴다 — 조립 규칙이 한 곳에 있다.
 """
 
 from typing import Any
@@ -10,7 +10,9 @@ from typing import Any
 from app.celery.app import celery_app
 from app.celery.task import run_async
 from app.core.db.session import background_session
-from app.features.home.services.user_access_log_service import UserAccessLogService
+from app.features.home.dependencies.access_log_dependencies import (
+    build_user_access_log_service,
+)
 
 
 @celery_app.task(name="home.aggregate_access_stats")
@@ -19,7 +21,7 @@ def aggregate_access_stats() -> dict[str, Any]:
 
     async def _run() -> dict[str, Any]:
         async with background_session() as session:
-            stats = await UserAccessLogService(session).get_stats()
+            stats = await build_user_access_log_service(session).get_stats()
             return {"total": stats.total_count}
 
     result: dict[str, Any] = run_async(_run())

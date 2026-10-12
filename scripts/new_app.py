@@ -3,7 +3,9 @@
     uv run python -m scripts.new_app orders
     uv run python -m scripts.new_app orders --with-models --with-admin
 
-생성물은 ``app/features/<name>/`` 아래의 표준 계층 골격과 ``apps.py`` 다.
+생성물은 ``app/features/<name>/`` 아래의 표준 계층 골격과 ``apps.py`` 다. Celery 태스크
+module(``tasks.py``)은 선택이라 만들지 않는다 — 필요할 때 기능 루트에 두면 워커가
+``AppConfig.tasks_module`` 로 찾아 include 한다.
 
 **설정 파일은 건드리지 않는다.** 생성 직후 앱은 *미설치* 상태이고, 사용자가
 ``config.INSTALLED_APPS`` 에 출력된 config class 경로를 붙여 넣어야 Router·Models·
