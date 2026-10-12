@@ -6,7 +6,7 @@
 1. **downgrade 가 실제로 되는가** — 새 revision 의 `downgrade()` 는 대개 아무도
    실행하지 않는다. 배포를 되돌려야 하는 날에 처음 돌려보게 되는데, 그날은 이미
    장애 중이다.
-2. **MySQL 이 그 DDL 을 받는가** — `Numeric(12, 2)`·`DateTime(timezone=True)`·
+2. **MySQL 이 그 DDL 을 받는가** — `Numeric(12, 2)`·`DATETIME(6)`·
    `UniqueConstraint` 는 방언마다 결과가 다르다. SQLite 는 타입을 거의 무시한다.
 
 그래서 `alembic_version` 까지 **완전히 빈 스키마**에서 head → base → head 를 돌린다.
@@ -79,14 +79,19 @@ def test_head_to_base_to_head_round_trip(alembic_on_mysql):
 
 
 def test_new_revisions_have_a_working_downgrade(alembic_on_mysql):
-    """새 revision 두 개를 **하나씩** 되돌린다.
+    """새 revision 들을 **하나씩** 되돌린다.
 
     `base` 까지 한 번에 내리면 중간 revision 의 downgrade 가 깨져 있어도 뒤따르는
-    drop 에 묻힐 수 있다. 한 단계씩 내려 각각을 실제로 실행한다.
+    drop 에 묻힐 수 있다. 한 단계씩 내려 각각을 실제로 실행한다. 맨 위는 시각 정책
+    revision(테이블을 지우지 않는다, service-hardening D2)이고, 그 아래가 두 테이블이다.
     """
     engine = sa.create_engine(SYNC_URL)
     try:
         command.upgrade(alembic_on_mysql, "head")
+
+        command.downgrade(alembic_on_mysql, "-1")  # DATETIME(6) → DATETIME, UTC → KST
+        assert set(NEW_TABLES) <= _table_names(engine), "시각 revision 이 테이블을 지웠다"
+        assert _datetime_precisions(engine) == {0}
 
         command.downgrade(alembic_on_mysql, "-1")  # sales_orders 제거
         assert "sales_orders" not in _table_names(engine)
@@ -97,6 +102,66 @@ def test_new_revisions_have_a_working_downgrade(alembic_on_mysql):
 
         command.upgrade(alembic_on_mysql, "head")
         assert set(NEW_TABLES) <= _table_names(engine)
+    finally:
+        engine.dispose()
+
+
+def _datetime_precisions(engine: sa.Engine) -> set[int]:
+    with engine.connect() as connection:
+        return set(
+            connection.execute(
+                sa.text(
+                    "SELECT DATETIME_PRECISION FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE = 'datetime'"
+                )
+            ).scalars()
+        )
+
+
+_KST_ROW = sa.text(
+    "INSERT INTO sales_orders "
+    "(id, order_no, customer, total_amount, status, ordered_at, created_at, updated_at) "
+    "VALUES ('id-kst', 'ORD-KST', 'c', 100.00, 'paid', "
+    "'2026-01-02 00:30:00', '2026-01-02 00:30:00', '2026-01-02 09:00:00')"
+)
+_KST_ROW_TIMES = sa.text(
+    "SELECT ordered_at, created_at, updated_at FROM sales_orders WHERE id = 'id-kst'"
+)
+
+
+def test_utc_revision_converts_existing_kst_values(alembic_on_mysql):
+    """시각 revision 이 이전 코드가 쓴 KST 벽시계를 UTC 로 옮기고, downgrade 가 되돌린다.
+
+    이전 head 에서 Raw SQL 로 KST 값을 심고(이전 코드가 저장하던 모양) 그 revision 만
+    올린다. 2026-01-02 00:30 KST = 2026-01-01 15:30 UTC (service-hardening D2 · ADR-010).
+    """
+    from datetime import datetime
+
+    engine = sa.create_engine(SYNC_URL)
+    try:
+        command.upgrade(alembic_on_mysql, "d1f8c4a70b93")
+        with engine.begin() as connection:
+            connection.execute(_KST_ROW)
+
+        command.upgrade(alembic_on_mysql, "e5a7c2d9f310")
+        with engine.connect() as connection:
+            upgraded = tuple(connection.execute(_KST_ROW_TIMES).one())
+        assert upgraded == (
+            datetime(2026, 1, 1, 15, 30),
+            datetime(2026, 1, 1, 15, 30),
+            datetime(2026, 1, 2, 0, 0),
+        )
+        assert _datetime_precisions(engine) == {6}
+
+        command.downgrade(alembic_on_mysql, "d1f8c4a70b93")
+        with engine.connect() as connection:
+            downgraded = tuple(connection.execute(_KST_ROW_TIMES).one())
+        assert downgraded == (
+            datetime(2026, 1, 2, 0, 30),
+            datetime(2026, 1, 2, 0, 30),
+            datetime(2026, 1, 2, 9, 0),
+        )
+        assert _datetime_precisions(engine) == {0}
     finally:
         engine.dispose()
 

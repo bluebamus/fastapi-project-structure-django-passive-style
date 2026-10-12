@@ -298,24 +298,27 @@ POST /api/v1/catalog/products
 ```text
 GET /api/v1/reports/daily-sales?start_date=2026-08-01&end_date=2026-08-07
  → get_report_service_readonly: get_read_only_db_session → ReportService
- → 기간 검증(1970-01-01 ≤ 시작 ≤ 종료 ≤ 9998-12-31, 최대 366일 — 넘으면 422) → end_exclusive = end_date + 1일
+ → 기간 검증(1970-01-01 ≤ 시작 ≤ 종료 ≤ 9998-12-31, 최대 366일 — 넘으면 422)
+ → start_at = 시작일 0시(TIME_ZONE)의 UTC 순간, end_exclusive = (종료일 + 1일) 0시의 UTC 순간
  → SalesReportRawRepository.daily_sales(...)  fetch_all  query_name="sales_report.daily_sales"
    SalesReportRawRepository.order_count(...)  fetch_scalar query_name="sales_report.order_count"
  → [DailySalesItem.model_validate(dict(row)) ...] → DailySalesReportResponse (커밋 없음)
 ```
 
 ```python
-_DAILY_SALES_SQL = text("""
-    SELECT DATE(o.ordered_at) AS sales_date, COUNT(*) AS order_count,
+_DAILY_SALES_MYSQL_SQL = text("""
+    SELECT DATE(CONVERT_TZ(o.ordered_at, '+00:00', :tz_offset)) AS sales_date, COUNT(*) AS order_count,
            COALESCE(SUM(o.total_amount), 0) AS gross_amount
     FROM sales_orders AS o
     WHERE o.ordered_at >= :start_at AND o.ordered_at < :end_exclusive AND o.status = :status
-    GROUP BY DATE(o.ordered_at) ORDER BY sales_date ASC
-""")
+    GROUP BY sales_date ORDER BY sales_date ASC
+""").bindparams(bindparam("start_at", type_=UTCDateTime()), bindparam("end_exclusive", type_=UTCDateTime()))
+# SQLite 판은 버킷만 DATE(o.ordered_at, :tz_modifier) ('+540 minutes') 로 다르다.
 ```
 
 - ORM 조회 흐름과 다른 곳은 Repository 한 줄뿐이다.
-- API 의 `end_date` 는 **포함**, SQL 은 `< :end_exclusive` **미포함**. 변환을 Python 에서 하므로 같은 SQL 이 SQLite 와 MySQL 에서 그대로 돈다 — 경계 조건을 SQL 밖으로 빼면 방언에서 자유로워진다.
+- API 의 `end_date` 는 **포함**, SQL 은 `< :end_exclusive` **미포함**. 경계 변환을 Python 에서 하므로 기간 조건은 SQLite 와 MySQL 에서 같다 — 경계 조건을 SQL 밖으로 빼면 방언에서 자유로워진다.
+- 날짜는 `TIME_ZONE` 의 **영업일**이다. DB 는 UTC 라 2026-01-01T15:30Z 주문은 Asia/Seoul 로 1월 2일 매출이다. 일자 버킷의 오프셋 이동만 방언 함수가 달라 일별 SQL 이 둘이고, 세션 방언으로 고른다. 오프셋은 조회 시작일의 값 하나로 고정한다(DST 없는 시간대 전제 — 코드의 `ponytail:` 주석).
 - 집계 대상 상태(`paid`)는 요청값이 아니라 코드 상수다.
 - `SalesOrder` 모델은 있지만 Repository 는 import 하지 않는다. 모델의 역할은 **스키마 소유권**(registry·Alembic 이 `sales_orders` 를 이 앱의 것으로 인식)이다. Raw 기능도 테이블을 소유하면 모델을 두고, 남의 테이블을 읽기만 하면 두지 않는다(그 경우 drift 제외 정책을 먼저 설계한다).
 - read-only 세션에서의 Raw DML 거부는 `app/features/reports/tests/test_raw_dml_workflow.py` 가 고정한다.

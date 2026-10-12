@@ -10,6 +10,8 @@ Raw 예제의 대응 파일은 `app/features/reports/tests/test_endpoint.py` 다
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
@@ -74,6 +76,18 @@ async def test_create_and_get_product(client):
     fetched = await client.get(f"/api/v1/catalog/products/{body['id']}")
     assert fetched.status_code == 200
     assert fetched.json()["id"] == body["id"]
+
+
+async def test_timestamps_are_utc_with_an_offset(client):
+    """응답 시각은 오프셋을 가진 UTC 다(service-hardening ADR-010) — 생성 응답과 DB 에서 다시 읽은 값 모두."""
+    created = await client.post("/api/v1/catalog/products", json=_NEW)
+    fetched = await client.get(f"/api/v1/catalog/products/{created.json()['id']}")
+
+    for body in (created.json(), fetched.json()):
+        for field in ("created_at", "updated_at"):
+            value = body[field]
+            assert value.endswith(("Z", "+00:00")), f"{field}={value} 에 UTC 오프셋이 없다"
+            assert datetime.fromisoformat(value).utcoffset() == timedelta(0)
 
 
 async def test_duplicate_sku_is_a_conflict(client):

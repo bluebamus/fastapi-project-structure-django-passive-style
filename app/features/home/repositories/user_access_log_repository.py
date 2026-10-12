@@ -101,31 +101,31 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
 
     async def get_by_date_range(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start_at: datetime,
+        end_exclusive: datetime,
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[UserAccessLog]:
         """
-        날짜 범위로 접속 로그를 조회합니다.
+        기간 ``[start_at, end_exclusive)`` 의 접속 로그를 조회합니다.
 
         Args:
-            start_date: 시작 날짜
-            end_date: 종료 날짜
+            start_at: 포함 하한(aware — 컬럼 타입이 UTC 로 바꿔 비교한다)
+            end_exclusive: **배타** 상한(aware)
             skip: 건너뛸 레코드 수
             limit: 최대 조회 수
 
         Returns:
             UserAccessLog 리스트
         """
-        logger.debug(f"[get_by_date_range] 조회 시작: {start_date} ~ {end_date}")
+        logger.debug(f"[get_by_date_range] 조회 시작: {start_at} ~ {end_exclusive}")
 
         stmt = (
             select(self.model)
             .where(
                 and_(
-                    self.model.created_at >= start_date,
-                    self.model.created_at <= end_date,
+                    self.model.created_at >= start_at,
+                    self.model.created_at < end_exclusive,
                 )
             )
             .order_by(self.model.created_at.desc(), self.model.id.desc())

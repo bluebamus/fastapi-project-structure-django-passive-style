@@ -17,7 +17,7 @@
 
 import os
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -90,8 +90,23 @@ class TimezoneSettings(BaseSettings):
         return ZoneInfo(self.TIME_ZONE)
 
     def now(self) -> datetime:
-        """현재 시간을 설정된 타임존으로 반환"""
+        """현재 시간을 설정된 타임존으로 반환 — 로그 파일명처럼 **표시용** 지역 시각."""
         return datetime.now(self.tz)
+
+    def utc_now(self) -> datetime:
+        """현재 시각(aware UTC) — DB 에 저장하는 시각의 **단일 출처**.
+
+        모델 default/onupdate 가 이것을 쓴다. DB 는 UTC 로 저장하고(service-hardening
+        ADR-010), 지역 시각은 표시·집계 경계에서만 계산한다.
+        """
+        return datetime.now(UTC)
+
+    def local_midnight_utc(self, day: date) -> datetime:
+        """설정 타임존의 ``day`` 0시를 aware UTC 순간으로 — 지역 영업일 경계를 DB 조건으로 바꾼다.
+
+        예: Asia/Seoul 의 2026-01-02 → 2026-01-01T15:00:00+00:00.
+        """
+        return datetime.combine(day, time(), tzinfo=self.tz).astimezone(UTC)
 
     def localize(self, dt: datetime) -> datetime:
         """naive datetime을 설정된 타임존으로 변환"""

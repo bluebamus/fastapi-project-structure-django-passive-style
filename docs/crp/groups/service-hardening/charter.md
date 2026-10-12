@@ -1,4 +1,4 @@
-# Charter — service-hardening  (Charter v0.1 / 2026-10-12)
+# Charter — service-hardening  (Charter v0.2 / 2026-10-12)
 
 > 검수의 **닫힌 정의**. 여기 적힌 것이 범위와 합격 기준의 전부다. 비면 코드 금지.
 > 변경 시 버전·날짜를 올린다.
@@ -13,6 +13,7 @@
 | 설정 | `config.py`, `.env.example` | 소스·설정 | A2 DSN, B1·B2 접속 로그 설정, D 시간대, F1 JWT·레이트 리밋 설정 |
 | 마이그레이션 | `migrations/env.py`, `migrations/versions/` | 소스 | A2 URL 전달, D UTC 변환 리비전, F2 `is_superuser`·`author_id` 리비전 |
 | DB 세션·라우팅 | `app/core/db/{session,router,errors}.py` | 소스 | A3 잠금 읽기, B5 오류 코드 변환 |
+| 모델 기반·시각 타입 | `app/core/models/{models_base,types}.py` | 소스 | D1 `UTCDateTime`·`utc_now` 기본값 |
 | Repository 기반 | `app/core/repositories/repository_base.py` | 소스 | A3 기본 정렬 (공개 메서드 8개 유지) |
 | 자원 수명주기 | `app/core/resources.py`, `app/core/bootstrap.py` | 소스 | E1 `get_redis`·`/ready`, B7 registry |
 | 앱 registry | `app/core/apps/{config,registry,wiring}.py` | 소스 | E2 `AppConfig.tasks_module` |
@@ -76,7 +77,7 @@
   - A: CI 계약 테스트, DSN 왕복(비밀번호 `p@ss:w/rd%#?`·IPv6·Alembic `%%`·Redis URL 파싱), 잠금 읽기 라우팅·거부(router on/off), 정렬 결정성·offset 페이지 비중복
   - B: 신뢰 홉 해석·위조 거부, 500 기록, query 마스킹, 컬럼 길이 자르기, null PATCH 422, 오류 코드별 변환, 날짜 상한
   - C: 공용 override 헬퍼의 read-only 세션 flush 거부, MySQL 스모크 수집
-  - D: TypeDecorator bind/result/naive 거부, SQLite 마이크로초 보존, 응답 오프셋
+  - D: TypeDecorator bind/result/naive 거부, SQLite 마이크로초 보존, 모델 기본값 aware UTC, 응답 오프셋, 리포트 지역→UTC 경계·자정 경계 버킷, 접속 로그 지역 일자, Celery `enable_utc`, Alembic 렌더 훅, MySQL `DATETIME(6)` 왕복·KST→UTC 리비전(`mysql` 마커)
   - E: `/ready` Redis 실패 503, `get_redis`, 태스크 자동 발견 목록, 기능 제거 시 include
   - F1: 해시·레거시 이전, 토큰 claims·거부 사례, 회전·재사용 탐지·logout, 429+Retry-After·창 만료·성공 초기화, 엔드포인트 흐름
   - F2: 401·403·소유자 수정·슈퍼유저 우회·비활성화 후 refresh 실패·접속 로그 user_id·create_superuser
@@ -86,3 +87,4 @@
 
 ## 4. 변경 이력
 - v0.1 (2026-10-12): 최초 작성.
+- v0.2 (2026-10-12): 단계 D — 인수 기준 D 항목 구체화. 마이그레이션 head 는 `e5a7c2d9f310`(시각 UTC·`DATETIME(6)`), 인벤토리 `app/core/models/types.py` 추가.

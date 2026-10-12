@@ -61,8 +61,8 @@ class ProductResponse(ProductBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(description="상품 ID(UUID)")
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(description="생성 시각(UTC, 오프셋 포함 ISO 8601)")
+    updated_at: datetime = Field(description="수정 시각(UTC, 오프셋 포함 ISO 8601)")
 
 
 class ProductListResponse(BaseModel):
@@ -81,8 +81,8 @@ class ProductListResponse(BaseModel):
                             "price": "129000.00",
                             "stock": 25,
                             "is_active": True,
-                            "created_at": "2026-08-01T10:30:00+09:00",
-                            "updated_at": "2026-08-01T10:30:00+09:00",
+                            "created_at": "2026-08-01T01:30:00Z",
+                            "updated_at": "2026-08-01T01:30:00Z",
                         }
                     ],
                     "total": 1,

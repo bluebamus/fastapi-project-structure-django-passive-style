@@ -12,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session
 from app.features.reports.services.report_service import ReportService
+from config import timezone_settings
 
 
 async def get_report_service_readonly(
     session: AsyncSession = Depends(get_read_only_db_session),
 ) -> ReportService:
-    """조회용 — 커밋하지 않는다."""
-    return ReportService(session)
+    """조회용 — 커밋하지 않는다. 영업일 경계는 설정 시간대(``TIME_ZONE``)로 정한다."""
+    return ReportService(session, timezone_settings)

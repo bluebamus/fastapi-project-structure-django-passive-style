@@ -33,8 +33,8 @@ class UserResponse(UserBase):
 
     id: str
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(description="생성 시각(UTC, 오프셋 포함 ISO 8601)")
+    updated_at: datetime = Field(description="수정 시각(UTC, 오프셋 포함 ISO 8601)")
 
 
 class UserListResponse(BaseModel):

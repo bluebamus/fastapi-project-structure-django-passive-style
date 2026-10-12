@@ -17,17 +17,18 @@ Raw UPDATE 는 ``UpdatedAtMixin.onupdate`` 를 발동시키지 않는다는 것�
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import DateTime, Numeric, String, bindparam, text
+from sqlalchemy import Numeric, String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.db.router import ReadOnlyRoutingError, mark_read_only
 from app.core.db.session import Base
 from app.core.exception import DuplicateException
+from app.core.models.types import UTCDateTime
 from app.features.reports.models.models import SalesOrder
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
@@ -52,15 +53,15 @@ _INSERT = text(
     """
 ).bindparams(
     bindparam("total_amount", type_=Numeric(12, 2)),
-    bindparam("ordered_at", type_=DateTime(timezone=True)),
-    bindparam("now", type_=DateTime(timezone=True)),
+    bindparam("ordered_at", type_=UTCDateTime()),
+    bindparam("now", type_=UTCDateTime()),
     bindparam("id", type_=String(36)),
 )
 
 #: Raw UPDATE 는 ORM 의 ``onupdate`` 를 타지 않는다 — ``updated_at`` 을 직접 쓴다.
 _MARK_PAID = text(
     "UPDATE sales_orders SET status = :status, updated_at = :now WHERE order_no = :order_no"
-).bindparams(bindparam("now", type_=DateTime(timezone=True)))
+).bindparams(bindparam("now", type_=UTCDateTime()))
 
 _COUNT_PAID = text("SELECT COUNT(*) FROM sales_orders WHERE status = :status")
 
@@ -178,7 +179,9 @@ async def test_report_query_still_works_on_a_read_only_session(session: AsyncSes
     repo = SalesReportRawRepository(session)
 
     rows = await repo.daily_sales(
-        start_at=datetime(2026, 8, 1).date(), end_exclusive=datetime(2026, 8, 4).date()
+        start_at=datetime(2026, 8, 1, tzinfo=UTC),
+        end_exclusive=datetime(2026, 8, 4, tzinfo=UTC),
+        utc_offset=timedelta(hours=9),
     )
 
     assert list(rows) == []

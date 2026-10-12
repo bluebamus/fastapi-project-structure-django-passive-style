@@ -28,6 +28,7 @@ if config.config_file_name is not None:
 # ---------------------------------------------------------------------------
 from app.core.apps import Apps  # noqa: E402
 from app.core.db.session import Base  # noqa: E402
+from app.core.models.types import render_item  # noqa: E402
 from config import INSTALLED_APPS, db_settings  # noqa: E402
 
 Apps().populate(INSTALLED_APPS, run_ready=False)
@@ -65,6 +66,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        render_item=render_item,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -87,7 +89,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # render_item: autogenerate 가 ``UTCDateTime`` 을 앱 import 없이 표준 타입으로 적게 한다.
+        context.configure(
+            connection=connection, target_metadata=target_metadata, render_item=render_item
+        )
 
         with context.begin_transaction():
             context.run_migrations()

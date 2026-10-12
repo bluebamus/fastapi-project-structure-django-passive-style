@@ -690,7 +690,10 @@ SQLite 는 숫자 코드를 주지 않으므로 파이썬 `sqlite3` 예외의 `s
 ### 4.8 모델과 기능 카탈로그
 
 모델은 `Base` 에 필요한 Mixin 을 조합한다. `sort_order` 로 컬럼 순서(id → 도메인 → created_at → updated_at)를 고정해
-`create_all` 과 migration 의 결과가 갈리지 않게 한다. 시각은 DB 가 아니라 앱 타임존(`TIME_ZONE`)으로 채운다.
+`create_all` 과 migration 의 결과가 갈리지 않게 한다. 시각은 DB 가 아니라 앱이 `timezone_settings.utc_now()`(aware UTC)로 채운다.
+`Mapped[datetime]` 은 `app/core/models/types.py` 의 `UTCDateTime` 이다 — MySQL `DATETIME(6)`·UTC 로 저장하고, naive datetime 은 저장 경계에서
+`ValueError` 로 거부하며, 읽을 때 `tzinfo=UTC` 를 붙여 응답이 `Z` 오프셋을 갖는다. Raw SQL 은 `bindparam(..., type_=UTCDateTime())` 로 같은 변환을 태운다.
+지역 시각(`TIME_ZONE`)은 표시·집계 경계에서만 쓴다 — 리포트·접속 로그의 날짜 범위는 지역 일자를 UTC 순간으로 바꿔 조회한다(service-hardening ADR-010).
 `UpdatedAtMixin.onupdate` 는 ORM UPDATE 에만 적용된다.
 
 | 앱 | 모델 → 테이블 | 기능 | Admin |
@@ -835,7 +838,7 @@ OAuth2 **password flow** + JWT access/refresh. 자격증명은 `user` 기능의 
 ```python
 celery_app = Celery("project", broker=redis_settings.REDIS_URL, backend=redis_settings.REDIS_URL,
                     include=["app.celery.tasks"])
-# JSON serializer 만 허용, task_track_started, timezone=TIME_ZONE, beat_schedule={}
+# JSON serializer 만 허용, task_track_started, enable_utc=True, timezone=TIME_ZONE(일정 해석용), beat_schedule={}
 ```
 
 - 태스크는 기능별 `worker/` 가 아니라 **중앙 `app/celery/tasks.py`** 에 `@celery_app.task` 로 정의한다. 예: `home.aggregate_access_stats`(background 세션으로 접속 통계 total 반환).
@@ -863,7 +866,7 @@ config.set_main_option(                                              # URL → �
 - `target_metadata` 는 전역 `Base.metadata` 다. 같은 프로세스에서 미설치 모델을 먼저 import 하면 metadata 에 남으므로, registry 소유 모델만으로 완전히 필터링하는 구조는 아니다(Alembic CLI 의 깨끗한 프로세스에서는 설치 앱 모델만 들어간다).
 - URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값을 `make_url()` 로 읽고(로컬·CI·SQLite), 없으면 primary URL 의 drivername 만 `mysql+pymysql` 로 바꾼다. DSN 은 모두 `sqlalchemy.engine.URL` 로 조립하므로 비밀번호의 `@ : / # ? %` 가 구분자로 읽히지 않는다. ConfigParser 보간 때문에 `%` 는 `%%` 로 넘긴다. **migration 은 항상 writer** 에서 실행한다.
 - Alembic 은 FastAPI lifespan 에 들어가지 않으므로 Redis ping 을 하지 않는다. 서버 기동이 자동 upgrade 를 하지도 않는다.
-- revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders.
+- revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders → `e5a7c2d9f310` 시각 UTC·`DATETIME(6)`(head — MySQL 만 변환, 기존 KST 벽시계를 `CONVERT_TZ(col, '+09:00', '+00:00')` 로 UTC 로 옮긴다. SQLite 는 no-op).
 - 검증: `tests/core/test_migration_chain.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.
 
 ---

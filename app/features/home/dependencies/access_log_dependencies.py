@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session
 from app.features.home.services.user_access_log_service import UserAccessLogService
+from config import timezone_settings
 
 
 async def get_access_log_service(
     session: AsyncSession = Depends(get_read_only_db_session),
 ) -> UserAccessLogService:
     """UserAccessLogService 를 구성해 view 에 제공한다(읽기 전용 — 커밋하지 않는다)."""
-    return UserAccessLogService(session)
+    return UserAccessLogService(session, timezone_settings)
