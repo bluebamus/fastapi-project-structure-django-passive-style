@@ -71,17 +71,22 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
         AppException 및 하위 예외들을 처리하여 일관된 에러 응답을 반환합니다.
         """
-        logger.error(
-            "[AppException] %s: %s",
-            exc.error_code,
-            exc.message,
-            extra={
-                "path": request.url.path,
-                "method": request.method,
-                "error_code": exc.error_code,
-                "detail": exc.detail,
-            },
-        )
+        # 4xx 는 클라이언트 입력 문제라 WARNING, detail(입력값이 섞일 수 있다)은 남기지 않는다.
+        # 5xx 만 ERROR 로 남겨 운영 경보가 클라이언트 실수로 울리지 않게 한다(F-013).
+        extra = {
+            "path": request.url.path,
+            "method": request.method,
+            "error_code": exc.error_code,
+        }
+        if exc.status_code < 500:
+            logger.warning("[AppException] %s: %s", exc.error_code, exc.message, extra=extra)
+        else:
+            logger.error(
+                "[AppException] %s: %s",
+                exc.error_code,
+                exc.message,
+                extra={**extra, "detail": exc.detail},
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),

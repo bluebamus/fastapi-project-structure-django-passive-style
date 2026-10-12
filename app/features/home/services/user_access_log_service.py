@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.services.services_base import BaseService
@@ -23,6 +24,28 @@ from app.features.home.schemas.user_access_log_schema import (
     UserAccessLogCreate,
 )
 
+#: 문자열 컬럼의 최대 길이 — 모델 선언에서 읽는다(숫자를 두 번 적지 않는다, ADR-006).
+#: 길이가 없는 ``Text`` 는 빠진다.
+_COLUMN_MAX_LENGTHS: dict[str, int] = {
+    column.name: column.type.length
+    for column in UserAccessLog.__table__.columns
+    if isinstance(column.type, String) and column.type.length
+}
+
+
+def truncate_to_columns(data: dict[str, Any]) -> dict[str, Any]:
+    """문자열 값을 ``user_access_logs`` 컬럼 길이로 자른 새 dict 를 돌려준다.
+
+    헤더·쿠키는 클라이언트가 정하므로 길이를 믿을 수 없다. 자르지 않으면 MySQL strict 모드가
+    1406(Data too long)으로 INSERT 를 거부하고, 긴 헤더 하나로 접속 기록을 피할 수 있다.
+    """
+    return {
+        key: value[: _COLUMN_MAX_LENGTHS[key]]
+        if isinstance(value, str) and key in _COLUMN_MAX_LENGTHS
+        else value
+        for key, value in data.items()
+    }
+
 
 class UserAccessLogService(BaseService):
     """접속 로그 비즈니스 로직 (세션 기반)."""
@@ -35,8 +58,10 @@ class UserAccessLogService(BaseService):
         self,
         data: UserAccessLogCreate | dict[str, Any],
     ) -> UserAccessLog:
-        """접속 로그를 생성한다(커밋은 호출자가 수행)."""
-        data_dict = data.model_dump() if isinstance(data, UserAccessLogCreate) else data
+        """접속 로그를 생성한다(커밋은 호출자가 수행). 문자열은 컬럼 길이로 자른다."""
+        data_dict = truncate_to_columns(
+            data.model_dump() if isinstance(data, UserAccessLogCreate) else data
+        )
         self.log.debug("접속 로그 생성: path=%s", data_dict.get("request_path"))
         return await self.repository.create(data_dict)
 

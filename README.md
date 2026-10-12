@@ -275,7 +275,7 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 | user | GET·POST `/api/v1/user/users` · GET·PATCH·DELETE `/api/v1/user/users/{user_id}` | 없음 |
 | auth | POST `/api/v1/auth/register` (JSON) · POST `/api/v1/auth/login` (**form**) · POST `/api/v1/auth/refresh` (JSON) · GET `/api/v1/auth/me` | `/me` 만 Bearer |
 | catalog | GET·POST `/api/v1/catalog/products` · GET·PATCH·DELETE `/api/v1/catalog/products/{product_id}` | 없음 |
-| reports | GET `/api/v1/reports/daily-sales?start_date=&end_date=` (종료일 포함, 최대 366일) | 없음 |
+| reports | GET `/api/v1/reports/daily-sales?start_date=&end_date=` (종료일 포함, 최대 366일, 1970-01-01~9998-12-31) | 없음 |
 
 ```bash
 curl -X POST localhost:8000/api/v1/auth/register -H 'Content-Type: application/json' \

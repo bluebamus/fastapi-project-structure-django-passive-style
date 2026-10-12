@@ -37,7 +37,7 @@
 
 | Req-ID | 날짜 | 요청(원문 요약) | 도출된 요구사항 | 상태 | 연결 |
 |---|---|---|---|---|---|
-| REQ-001 | 2026-10-12 | "1,2,3,4,5,6,7,8 redis 필수, 9는 전통적인 방식과 fastapi에서 최신 사용하는 실무 코드를 기반으로, 일반적으로 개발되는 설계를 기반으로 작업 계획을 만들고 이를 기반으로 개발을 진행해줘. 각 단계는 단위 테스트가 반드시 진행되어야 한다. 모든 기능은 같은 목적의 기능이 하나의 모듈 클래스로 만들어져야 하고 필수 작업은 반드시 주입을 통해 조합, 데이터 전달, 인증 및 자동 작업 등이 진행되어야 하며…" | 아래 §2-1 의 단계별 도출 요구 D-A1 ~ D-F2. 공통: 단계마다 단위 테스트(가능하면 fail-on-revert), 같은 목적 = 한 모듈 클래스, 조합·데이터 전달·인증·자동 작업은 주입으로 | Active | ADR-001~ADR-022 · C-1~C-15 · charter INV-1~ · ledger F-001~ · run-log Round 1~ |
+| REQ-001 | 2026-10-12 | "1,2,3,4,5,6,7,8 redis 필수, 9는 전통적인 방식과 fastapi에서 최신 사용하는 실무 코드를 기반으로, 일반적으로 개발되는 설계를 기반으로 작업 계획을 만들고 이를 기반으로 개발을 진행해줘. 각 단계는 단위 테스트가 반드시 진행되어야 한다. 모든 기능은 같은 목적의 기능이 하나의 모듈 클래스로 만들어져야 하고 필수 작업은 반드시 주입을 통해 조합, 데이터 전달, 인증 및 자동 작업 등이 진행되어야 하며…" | 아래 §2-1 의 단계별 도출 요구 D-A1 ~ D-F2. 공통: 단계마다 단위 테스트(가능하면 fail-on-revert), 같은 목적 = 한 모듈 클래스, 조합·데이터 전달·인증·자동 작업은 주입으로 | Active | ADR-001~ADR-025 · C-1~C-15 · charter INV-1~ · ledger F-001~ · run-log Round 1~ |
 
 ### 2-1. REQ-001 의 단계별 도출 요구
 
@@ -46,7 +46,7 @@
 | D-A1 | A (제안 1) | CI 의 모든 `uv sync` 가 `--locked` 로 락과 `pyproject.toml` 의 불일치를 실패로 만든다. 주석·문서도 사실대로 고친다 | ADR-001 · C-15 · F-004 |
 | D-A2 | A (제안 2) | DSN 은 `sqlalchemy.engine.URL.create()` 로 조립한다. 비밀번호의 특수문자(`@ : / % # ?`)가 왕복하고, Alembic 에는 `%` 를 `%%` 로 넘기며, Redis URL 의 비밀번호는 퍼센트 인코딩한다 | ADR-002 · C-6 · F-003 |
 | D-A3 | A (제안 3) | ORM 잠금 읽기(`with_for_update()`)는 writer 로 가고 읽기 전용 세션에서 거부된다. 범용 목록(`get_all`)은 `created_at DESC, PK DESC` 기본 정렬, `created_at desc` 단일 키 쿼리에는 `id desc` 보조 키 | ADR-003 · ADR-004 · C-7 · C-8 · F-001 · F-002 |
-| D-B | B (제안 4·5) | 클라이언트 IP 는 신뢰 홉 수로만 해석, 500 응답도 접속 로그에 남김, 민감 query 마스킹, 컬럼 길이로 자르기, null PATCH 422, DB 오류 코드별 변환, 리포트 날짜 상한, 남은 리뷰 버그 | ADR-005~ADR-008 · F-005~F-013 |
+| D-B | B (제안 4·5) | 클라이언트 IP 는 신뢰 홉 수로만 해석, 500 응답도 접속 로그에 남김, 민감 query 마스킹, 컬럼 길이로 자르기, null PATCH 422, DB 오류 코드별 변환, 리포트 날짜 상한, 남은 리뷰 버그 | ADR-005~ADR-008 · ADR-023~ADR-025 · F-005~F-013 |
 | D-C | C (제안 6) | 엔드포인트 테스트용 세션 override 헬퍼 하나(read-only 는 `mark_read_only` 경유), MySQL 방언 스모크, 설정 patch 순서 의존 제거 | ADR-009 · F-014~F-016 |
 | D-D | D (제안 7) | DB 는 UTC·마이크로초로 저장, 응답은 오프셋 포함 ISO 8601, 리포트는 설정 시간대의 영업일 기준 | ADR-010 · C-9 · F-017 |
 | D-E | E (제안 8) | Redis 필수 유지, `get_redis` provider, `/ready` 가 DB·Redis 를 모두 확인, Celery 태스크를 기능별 `tasks` 모듈로 옮기고 워커 include 를 `INSTALLED_APPS` 에서 만든다 | ADR-011 · ADR-012 · C-10 · F-018 · F-019 |
@@ -79,6 +79,9 @@
 | ADR-020 | 2026-10-12 | SQLAdmin 정책은 바꾸지 않는다 — `/admin` 인증 백엔드는 **영구 비목표**로 유지하고, 배포 환경의 `ADMIN_UNAUTHENTICATED_ACK` 확인과 기동 WARNING(orm-raw-repository ADR-007·ADR-036·C-10)을 그대로 둔다 | API 인증과 관리 화면 인증은 별개 결정이다. 이번 요청은 API 인증만 다룬다 | Accepted | |
 | ADR-021 | 2026-10-12 | 기존 그룹의 "인증 체계 개편/도입은 범위 밖" 비목표를 **이 그룹에 한해 대체(supersede)** 한다 — orm-raw-repository charter §2-4 의 "인증 체계 개편", 같은 그룹 residual-risk 잔여 위험 10번(예제 API 무인증), skeleton-purpose-audit charter §2-4 의 "인증 체계 도입". 두 그룹의 design-baseline 변경 이력에 상태 갱신 한 줄을 남긴다(append-only) | 그 비목표들은 각 그룹의 작업 범위를 좁힌 것이지 영구 금지가 아니었다(orm-raw-repository R-001 도 "인증은 로그인 고도화에서 붙인다" 고 적었다). 사용자가 2026-10-12 에 로그인 고도화(제안 9)를 명시 요청했다 | Accepted | orm-raw-repository charter §2-4 "인증 체계 개편" · residual-risk 10번 · skeleton-purpose-audit charter §2-4 "인증 체계 도입" |
 | ADR-022 | 2026-10-12 | 협력 객체는 생성자 인자로 받고, 조립은 provider 함수(`Depends`)가 한다. 구현이 하나뿐인 Protocol·팩토리는 만들지 않는다 — Redis 를 쓰는 클래스는 fakeredis 로 실물을 시험한다. 커밋은 핸들러가 응답 DTO 검증 후 1회 하고, 의존성 함수는 커밋하지 않는다 | 사용자 요구("필수 작업은 반드시 주입을 통해"). 단일 구현 추상화는 읽는 비용만 늘린다. 커밋 위치는 orm-raw-repository ADR-008 | Accepted | |
+| ADR-023 | 2026-10-12 | `TRUSTED_PROXY_HOPS` 기본값 0 은 **기존 동작을 바꾼다** — 이전에는 `X-Forwarded-For` 의 맨 왼쪽 값을 무조건, 없으면 `X-Real-IP` 를 기록했다. 이제 기본은 소켓 주소이고, 프록시 뒤 배포는 홉 수를 설정해야 실제 클라이언트 IP 가 기록된다. 해석은 XFF + 직접 피어를 이은 목록에서 직접 피어를 0번째로 센 오른쪽 N번째(= XFF 의 오른쪽 N번째)이고, 체인이 N 보다 짧으면 직접 피어로 돌아간다. 미들웨어는 `ClientIPResolver` 를 생성자 인자로 받고 `setup_user_info_middleware()` 가 설정으로 한 번 만든다. `.env.example`·ARCHITECTURE §6 에 같은 내용을 적는다 | ADR-005 의 "오른쪽 N번째" 를 werkzeug `ProxyFix(x_for=N)` 와 같은 뜻으로 고정한다(직접 피어를 1번째로 세면 hops=1 이 프록시 자신을 기록한다). 체인이 짧을 때 맨 왼쪽을 쓰면 클라이언트가 쓴 값을 믿게 된다. 안전한 기본값이 기존 배포의 기록 IP 를 바꾸므로 운영자가 알아야 한다 | Accepted | |
+| ADR-024 | 2026-10-12 | `convert_db_error` 는 코드 표(`_MYSQL_INTEGRITY_KINDS`·`_SQLITE_INTEGRITY_KINDS`)로 종류를 정한다. SQLite 는 숫자 코드가 없으므로 파이썬 `sqlite3` 예외의 `sqlite_errorname`(UNIQUE·PRIMARYKEY → 409, NOTNULL → 422, FOREIGNKEY → 422)으로 가르고, 코드도 이름도 없는 `IntegrityError` 는 500 이다. 4xx 로 바뀌는 위반은 WARNING, 나머지는 ERROR 로 남긴다 | 기존 규칙("코드 없음 = SQLite = 중복 409", orm-raw-repository 시절 결정)은 SQLite 의 NOT NULL 위반까지 409 로 답해 F-009 를 단위 테스트에서 가렸다. 메시지를 파싱하지 않는 원칙(값 유출)은 `sqlite_errorname` 으로 지킨다. SQLite 의 FK 위반은 부모·자식 방향을 구분하지 못한다 → residual-risk R-008 | Accepted | 기존 `convert_db_error` 의 "코드 없는 IntegrityError 는 중복" 규칙 |
+| ADR-025 | 2026-10-12 | (B7) ① lifespan 은 `create_app` 이 조립에 쓴 registry(`app.state.app_registry`)로 DDL 대상을 정한다 — `owned_tables(registry)`, `create_db_tables(registry=..., populate=False)`. ② `Apps.populate()` 를 이미 채운 registry 에 **다른 목록**으로 부르면 `ImproperlyConfigured`(같은 목록은 기존대로 no-op). ③ 전역 `AppException` 핸들러는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR. ④ catalog `active_only` 의 total 은 `count(is_active=True)` | ①② registry 단일 출처(orm-raw-repository C-2·C-3) — 주입한 registry 와 DDL 집합이 어긋나고, 다른 목록 populate 가 조용히 돌아가 호출자를 속였다(F-012). ③ 클라이언트 실수가 운영 ERROR 경보를 울리고 detail 에 입력값이 섞였다(F-013). ④ 목록 계약: total 은 items 와 같은 조건(F-005) | Accepted | |
 
 ## 4. 불가침 제약 (INVARIANT REQUIREMENTS — 추가 작업이 위반 금지)
 
@@ -101,6 +104,7 @@
 ## 5. 변경 이력
 - v0.1 (2026-10-12): 최초 작성. REQ-001(단계별 도출 D-A1~D-F2), ADR-001~ADR-022, C-1~C-15 등재. ADR-021 로 orm-raw-repository·skeleton-purpose-audit 의 인증 비목표를 이 그룹에 한해 대체.
 - v0.2 (2026-10-12): Round 1(단계 A) 완료 — ADR-001~ADR-004 구현, ledger F-001~F-004 Fixed.
+- v0.3 (2026-10-12): Round 2(단계 B) 완료 — ADR-005~ADR-008 구현, ADR-023(IP 기본값의 동작 변경)·ADR-024(SQLite 오류 분류·로그 수준)·ADR-025(B7 registry·로그·total) 추가, ledger F-005~F-013 Fixed.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

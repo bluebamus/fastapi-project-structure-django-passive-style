@@ -10,6 +10,8 @@ DB 호출은 대체한다 — 검증 대상은 "테이블을 만드는가" 가 �
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi import FastAPI
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -38,7 +40,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """자원 관리자가 부르는 외부 호출을 순서대로 기록한다."""
     recorded: list[str] = []
 
-    async def fake_create_tables(*, populate: bool = True) -> int:
+    async def fake_create_tables(*, registry: Apps | None = None, populate: bool = True) -> int:
         recorded.append("create_db_tables")
         return 1
 
@@ -50,12 +52,19 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
             recorded.append("drain")
 
     # 기본값: registry 에 테이블이 있다고 본다. 0개 분기는 개별 테스트가 덮어쓴다.
-    monkeypatch.setattr(resources, "owned_tables", lambda: ["t"])
+    monkeypatch.setattr(resources, "owned_tables", lambda registry: ["t"])
     monkeypatch.setattr(resources, "create_db_tables", fake_create_tables)
     monkeypatch.setattr(resources, "dispose_engine", fake_dispose)
     monkeypatch.setattr(resources, "access_log_tasks", _Tasks())
     monkeypatch.setattr(resources, "Redis", _FakeRedisFactory)
     return recorded
+
+
+def _app() -> FastAPI:
+    """lifespan 이 읽는 ``app.state.app_registry`` 만 갖춘 빈 앱(조립은 ``create_app`` 의 몫)."""
+    app = FastAPI()
+    app.state.app_registry = Apps()
+    return app
 
 
 async def _run_lifespan(app: FastAPI) -> None:
@@ -67,7 +76,7 @@ async def test_lifespan_creates_tables_in_debug(calls: list[str], monkeypatch):
     """DEBUG=True 면 테이블을 만들고, 종료 시 drain 후 엔진을 정리한다."""
     monkeypatch.setattr(resources.app_settings, "DEBUG", True)
 
-    await _run_lifespan(FastAPI())
+    await _run_lifespan(_app())
 
     assert calls == ["create_db_tables", "drain", "dispose_engine"]
 
@@ -76,7 +85,7 @@ async def test_lifespan_skips_table_creation_when_not_debug(calls: list[str], mo
     """운영에서는 Alembic 이 유일한 스키마 경로다 — create_all 을 부르지 않는다."""
     monkeypatch.setattr(resources.app_settings, "DEBUG", False)
 
-    await _run_lifespan(FastAPI())
+    await _run_lifespan(_app())
 
     assert calls == ["drain", "dispose_engine"]
 
@@ -88,9 +97,9 @@ async def test_lifespan_skips_database_entirely_when_no_models(calls: list[str],
     되면, registry 를 비우는 것만으로 기동이 깨진다.
     """
     monkeypatch.setattr(resources.app_settings, "DEBUG", True)
-    monkeypatch.setattr(resources, "owned_tables", list)
+    monkeypatch.setattr(resources, "owned_tables", lambda registry: [])
 
-    app = FastAPI()
+    app = _app()
     await _run_lifespan(app)
 
     assert "create_db_tables" not in calls
@@ -101,13 +110,13 @@ async def test_lifespan_propagates_table_creation_failure(calls: list[str], monk
     """기동 실패를 삼키지 않는다 — 반쯤 뜬 앱이 트래픽을 받으면 안 된다."""
     monkeypatch.setattr(resources.app_settings, "DEBUG", True)
 
-    async def boom(*, populate: bool = True) -> int:
+    async def boom(**_: object) -> int:
         raise RuntimeError("테이블 생성 실패(모의)")
 
     monkeypatch.setattr(resources, "create_db_tables", boom)
 
     with pytest.raises(RuntimeError, match="모의"):
-        await _run_lifespan(FastAPI())
+        await _run_lifespan(_app())
 
 
 async def test_redis_connection_failure_stops_startup(calls: list[str], monkeypatch):
@@ -126,7 +135,7 @@ async def test_redis_connection_failure_stops_startup(calls: list[str], monkeypa
             return _UnavailableRedis()
 
     monkeypatch.setattr(resources, "Redis", _UnavailableRedisFactory)
-    app = FastAPI()
+    app = _app()
 
     with pytest.raises(RedisConnectionError):
         await _run_lifespan(app)
@@ -144,13 +153,13 @@ async def test_startup_failure_runs_the_same_cleanup_path(calls: list[str], monk
     """
     monkeypatch.setattr(resources.app_settings, "DEBUG", True)
 
-    async def boom(*, populate: bool = True) -> int:
+    async def boom(**_: object) -> int:
         raise RuntimeError("모의 실패")
 
     monkeypatch.setattr(resources, "create_db_tables", boom)
 
     with pytest.raises(RuntimeError):
-        await _run_lifespan(FastAPI())
+        await _run_lifespan(_app())
 
     assert calls == [
         "drain",
@@ -162,7 +171,7 @@ async def test_resources_reference_is_cleared_after_shutdown(calls: list[str], m
     """종료 후 app.state 가 닫힌 자원을 가리키지 않는다."""
     monkeypatch.setattr(resources.app_settings, "DEBUG", False)
 
-    app = FastAPI()
+    app = _app()
     async with bootstrap.lifespan(app):
         assert app.state.resources is not None
 
@@ -180,7 +189,7 @@ async def test_cleanup_failure_does_not_stop_the_rest(calls: list[str], monkeypa
 
     monkeypatch.setattr(resources, "access_log_tasks", _BrokenTasks())
 
-    await _run_lifespan(FastAPI())
+    await _run_lifespan(_app())
 
     assert calls == [
         "drain",
@@ -226,3 +235,91 @@ def test_create_app_can_run_a_subset_of_apps():
     paths = set(app.openapi()["paths"])
     assert not any("/blog/" in path for path in paths)
     assert any("/home/" in path for path in paths)
+
+
+async def test_lifespan_creates_only_the_injected_registrys_tables(monkeypatch, tmp_path):
+    """lifespan 은 ``create_app`` 이 조립에 쓴 registry 의 테이블만 만든다(service-hardening F-012).
+
+    예전에는 ``_prepare_database`` 가 전역 registry 를 ``config.INSTALLED_APPS`` 로 채워 셌다 —
+    blog 를 뺀 앱도 ``posts`` 테이블을 만들었다. 실제 DDL 을 SQLite 파일에 실행해 확인한다.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.db import session as db_session
+
+    sqlite_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'startup.db'}")
+
+    async def _noop() -> None:
+        return None
+
+    class _Tasks:
+        async def drain(self, timeout: float = 0.0) -> None:
+            return None
+
+    monkeypatch.setattr(db_session, "engine", sqlite_engine)
+    monkeypatch.setattr(resources, "dispose_engine", _noop)
+    monkeypatch.setattr(resources, "access_log_tasks", _Tasks())
+    monkeypatch.setattr(resources, "Redis", _FakeRedisFactory)
+    monkeypatch.setattr(resources.app_settings, "DEBUG", True)
+
+    subset = [e for e in INSTALLED_APPS if e.split(".")[2] in {"home", "catalog"}]
+    registry = Apps()
+    app = bootstrap.create_app(installed_apps=subset, registry=registry, enable_admin=False)
+    expected = {model.__table__.name for model in registry.get_models()}
+
+    try:
+        async with bootstrap.lifespan(app):
+            assert app.state.resources.table_count == len(expected)
+        async with sqlite_engine.connect() as conn:
+            created = set(await conn.run_sync(lambda c: sa_inspect(c).get_table_names()))
+    finally:
+        await sqlite_engine.dispose()
+
+    assert expected == {"user_access_logs", "catalog_products"}
+    assert created == expected, f"설치하지 않은 앱의 테이블이 생겼다: {created - expected}"
+
+
+def _app_exception_log_records(status_code: int) -> list[logging.LogRecord]:
+    """``AppException`` 하나를 핸들러에 태워 그 로그 레코드를 돌려준다."""
+    from fastapi.testclient import TestClient
+
+    from app.core.exception import AppException
+
+    app = bootstrap.create_app(registry=Apps(), enable_admin=False)
+
+    @app.get("/raise")
+    async def _raise() -> None:
+        raise AppException(
+            message="모의", detail={"input": "민감할 수 있는 입력"}, status_code=status_code
+        )
+
+    records: list[logging.LogRecord] = []
+
+    class _Recorder(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.getMessage().startswith("[AppException]"):
+                records.append(record)
+
+    handler = _Recorder(logging.DEBUG)
+    bootstrap.logger.addHandler(handler)
+    try:
+        response = TestClient(app).get("/raise")
+    finally:
+        bootstrap.logger.removeHandler(handler)
+    assert response.status_code == status_code
+    return records
+
+
+def test_client_error_app_exception_is_logged_as_warning_without_detail():
+    """4xx 는 클라이언트 입력 문제다 — ERROR 로 남기면 운영 경보가 클라이언트 실수로 울린다(F-013)."""
+    (record,) = _app_exception_log_records(404)
+
+    assert record.levelno == logging.WARNING
+    assert not hasattr(record, "detail"), "4xx 로그에 detail(입력값)이 실렸다"
+
+
+def test_server_error_app_exception_is_logged_as_error():
+    (record,) = _app_exception_log_records(503)
+
+    assert record.levelno == logging.ERROR
