@@ -54,19 +54,23 @@ liveness 와 readiness 를 **분리**해서 제공합니다(ADR-013).
         "description": """
 **인증 API**
 
-JWT 기반 회원가입·로그인·토큰 재발급과 현재 사용자 조회를 제공합니다.
+JWT 기반 회원가입·로그인·토큰 재발급(회전)·로그아웃과 현재 사용자 조회를 제공합니다.
 
 ### 엔드포인트
-- `POST /register` — 회원가입 (bcrypt 해시 저장)
-- `POST /login` — 자격 검증 후 access/refresh 토큰 발급
-- `POST /refresh` — refresh 토큰으로 재발급
+- `POST /register` — 회원가입 (Argon2 해시 저장, ip 레이트 리밋)
+- `POST /login` — 자격 검증 후 access/refresh 토큰 발급 (ip·ip+username 레이트 리밋)
+- `POST /refresh` — refresh 토큰을 소비하고 같은 family 로 재발급. 재사용하면 family 폐기
+- `POST /logout` — refresh 토큰의 family 폐기 (204, 멱등)
 - `GET /me` — 현재 토큰의 사용자
+
+레이트 리밋을 넘으면 `429` 와 `Retry-After` 헤더(초)를 돌려줍니다.
 
 ### 응답 모델
 `AuthenticatedUserResponse` 는 `User` 태그의 `UserResponse` 와 **다른 모델**입니다 —
 인증 경로는 생성·수정 시각 없이 최소 정보만 돌려줍니다.
 
-`login` 과 `refresh` 는 DB 를 변경하지 않습니다. 쓰기 메서드지만 커밋하지 않습니다.
+`login` 은 기존 bcrypt 해시를 Argon2 로 다시 저장할 때만 DB 를 바꿉니다. `refresh`·`logout` 의
+회전·폐기 기록은 Redis 에 있어 DB 를 바꾸지 않습니다.
         """,
     },
     # =========================================================================

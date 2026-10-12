@@ -7,8 +7,10 @@
 """
 
 import pytest_asyncio
+from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
 
+from app.core.redis import get_redis
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
 from tests.session_overrides import sqlite_session_overrides
@@ -32,6 +34,9 @@ async def counting_client():
     # get_current_user 는 get_read_only_db_session 을 쓴다. 두 의존성의 세션에 같은 훅을
     # 걸어야 인증 경로의 커밋 횟수를 한 카운터로 셀 수 있다.
     async with sqlite_session_overrides(app, on_session=_count_commits):
+        # register/login 의 레이트 리밋·refresh 기록이 Redis 를 쓴다
+        redis = FakeRedis()
+        app.dependency_overrides[get_redis] = lambda: redis
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c, counter

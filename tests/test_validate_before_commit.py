@@ -34,9 +34,11 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
+from app.core.redis import get_redis
 from app.features.blog.models.models import Post
 from app.features.catalog.models.models import Product
 from app.features.reply.models.models import Reply
@@ -178,6 +180,9 @@ async def counting_client():
 
     # 예외 경로의 rollback 은 세션의 ``__aexit__`` 가 한다 — 운영 의존성과 같다.
     async with sqlite_session_overrides(app, on_session=_count_commits) as maker:
+        # auth-register 의 레이트 리밋이 Redis 를 쓴다(service-hardening F1)
+        redis = FakeRedis()
+        app.dependency_overrides[get_redis] = lambda: redis
         transport = ASGITransport(app=app, raise_app_exceptions=False)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client, calls, maker

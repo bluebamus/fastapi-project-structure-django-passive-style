@@ -36,6 +36,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "python-multipart>=0.0.32",
     "bcrypt>=5.0.0",
+    "pwdlib[argon2]>=0.3.1",
 ]
 
 [dependency-groups]
@@ -54,6 +55,7 @@ dev = [
     # (단계 번호는 적지 않는다 — 단계를 하나 넣을 때마다 주석이 틀려진다.)
     "pip-audit>=2.7",
     "playwright>=1.49.0,<2.0.0",
+    "fakeredis>=2.39.0",
 ]
 
 

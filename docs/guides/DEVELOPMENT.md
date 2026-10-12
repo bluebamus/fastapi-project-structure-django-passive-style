@@ -384,7 +384,7 @@ class UserRepository(BaseRepository[User]):
 
 - `async def` 는 await 하는 I/O 동안 다른 요청을 진행시킬 뿐, CPU 연산이나 동기 SDK 를 비동기로 바꾸지 않는다.
   async endpoint 에서 `time.sleep`·동기 HTTP·큰 파일 처리·무거운 CPU 루프를 직접 돌리지 않는다. 짧은 CPU 작업(JWT·Pydantic·User-Agent 파싱)은 그대로 두고,
-  bcrypt 처럼 비싼 것은 `asyncio.to_thread` 로 뺀다. 무거운·내구성이 필요한 작업은 Celery 로 보낸다.
+  비밀번호 해시(Argon2)처럼 비싼 것은 `asyncio.to_thread` 로 뺀다. 무거운·내구성이 필요한 작업은 Celery 로 보낸다.
 - 같은 `AsyncSession` 으로 `asyncio.gather` 하지 않는다. 한 트랜잭션의 SQL 은 순차 await, 독립 병렬 작업은 작업별 세션을 연다.
 - 요청의 세션·Service·Request 를 백그라운드나 Celery 로 넘기지 않는다. 요청 밖에서는 직접 조립한다.
 
@@ -446,7 +446,7 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 ```
 
 - `pytest` 콘솔 스크립트가 아니라 **`python -m pytest`** 를 쓴다(다른 인터프리터를 집어 import 가 어긋난 전례).
-- 단위 테스트는 in-memory SQLite 와 가짜 Redis 를 쓴다. `pyproject.toml` 이 `DEBUG=true`, `ENV=test` 를 주입하고 `tests/`·`app/` 의 `test_*.py` 를 수집한다(strict marker).
+- 단위 테스트는 in-memory SQLite 와 가짜 Redis 를 쓴다. Redis 를 실제로 쓰는 클래스(`RefreshTokenStore`·`RateLimiter`)와 그 엔드포인트는 dev 의존성 `fakeredis` 의 `fakeredis.aioredis.FakeRedis` 를 생성자에 넣거나 `app.dependency_overrides[get_redis]` 로 주입해 **실물 클래스**를 시험한다(가짜 Protocol 을 만들지 않는다, service-hardening ADR-022). 예: `app/features/auth/tests/test_endpoint.py`. `pyproject.toml` 이 `DEBUG=true`, `ENV=test` 를 주입하고 `tests/`·`app/` 의 `test_*.py` 를 수집한다(strict marker).
 - 임시 경로를 저장소 안에 두지 않으려면 `--basetemp <경로>`, `mypy --cache-dir <경로>` 를 준다. **게이트 판정용 mypy 는 콜드 캐시** 결과만 유효하다(CI 는 캐시를 복원하지 않는다).
 - 마커를 빼지 않으면 `mysql` 테스트는 MySQL 이 없을 때 skip 되지만 `browser` 테스트는 skip 없이 **실패**한다.
 - **폐기 경고는 실패다.** `pyproject.toml` 의 `filterwarnings` 가 `error::DeprecationWarning`·`error::PendingDeprecationWarning`
@@ -512,7 +512,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | Model·Repository | 기능 DB 테스트, `tests/core/test_repository_base.py`, migration chain, `alembic check` |
 | Raw SQL | `tests/core/test_raw_repository_base.py`·`tests/core/test_raw_routing.py`, MySQL 통합(방언·Decimal·날짜·rowcount) |
 | 세션·DB Router | transaction boundary, `tests/test_read_path_no_commit.py`, `tests/core/test_read_only_guard.py`, `tests/core/test_db_router.py`·`tests/core/test_db_router_env.py` |
-| 인증 | auth endpoint, `tests/utils/test_auth.py`, `tests/test_email_validation.py` |
+| 인증 | auth endpoint(`app/features/auth/tests/test_endpoint.py`), `tests/core/security/`(해시·토큰·refresh 기록·레이트 리밋), `tests/test_email_validation.py` |
 | Middleware | `tests/core/test_access_log_decoupling.py`, `tests/core/test_background_tasks.py`, `tests/core/test_cors_settings.py` |
 | 설정 | `tests/core/test_settings_contract.py`·`tests/core/test_deployment_safety.py`, `.env.example` 동시 갱신 |
 | 문서 | 문서 검사 세 파일(§6.3) |

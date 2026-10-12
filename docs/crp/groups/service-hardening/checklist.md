@@ -57,8 +57,15 @@
 - [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-10·C-14 충족, core→features 0, celery→features 0, 기능 간 import 0)
 - [x] run-log·residual-risk 갱신 (R-011)
 
-## Round 6 — 단계 F1 (인증 코어)
-- [ ] (F-020·F-021) `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`AuthService`, 엔드포인트, 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`)
+## Round 6 — 2026-10-12 · 단계 F1 (인증 코어)
+- [x] (F-020·F-021) `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`(`app/core/security/`)·`AuthService`, 엔드포인트, 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`)
+- [x] provider 조립(`get_password_hasher`·`get_token_service`·`get_client_ip_resolver` 프로세스 단일, `get_refresh_token_store`·`get_rate_limiter` 는 `Depends(get_redis)`, `get_auth_service(session, hasher, tokens, store)`), 레이트 리밋은 라우트 의존성 · fail-on-revert(변이 28종 모두 감지)
+- [x] `/logout` 추가 — 공개 경로 인벤토리·쓰기 커밋 목록 갱신(이유 기록), OpenAPI revert check 20/20
+- [x] `app/utils/authenticator/` 제거, 테스트를 `tests/core/security/` 로 이전
+- [x] 문서 — README(API·인증 흐름·환경 변수·구조)·ARCHITECTURE(§1.3·§7)·DEVELOPMENT(fakeredis·테스트 표)·`.env.example`·HTML 안내서 2편(설정 부록·코드 근거 링크)·OpenAPI 태그 설명
+- [x] GATE 3 인수기준(단계 F1 분) — 887 passed · skip 0 · coverage 95.95%
+- [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-3 주입, C-4 core→features 0·utils→core 0·기능 간 import 는 auth→user 예외만, C-5 커밋 위치, C-12 토큰 원문 로그 없음)
+- [x] run-log·residual-risk 갱신 (R-012·R-013)
 
 ## Round 7 — 단계 F2 (인가 · 소유권 · 운영 도구)
 - [ ] (F-022~F-025) `Principal`·`OwnershipPolicy`·슈퍼유저, 라우트 정책, `scripts/create_superuser.py`, 문서·OpenAPI 기준선

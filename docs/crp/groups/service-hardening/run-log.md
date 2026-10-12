@@ -236,6 +236,45 @@
 - **수렴 판정:** 단계 E `CONVERGED` (F-018·F-019 Fixed, F-015 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 6: F-020~F-025)
 - **잔여 위험 변화:** R-011(태스크 module 내부 import 오류는 워커 기동 시 드러남) 등록
 
+### Round 6 — 2026-10-12 (base SHA: `f40333f`) · 단계 F1
+- **트리거:** REQ-001 단계 F1 (제안 9 前半, 인증 코어) — ADR-013~ADR-016, 새 ADR-029
+- **검수 범위:** F-020 · F-021
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 ■ (단계 F1 한정)
+- **변경:**
+  - 의존성: `uv add "pwdlib[argon2]"`(pwdlib 0.3.1·argon2-cffi 25.1.0), `uv add --dev fakeredis`(2.39.0). `bcrypt` 는 기존 해시 검증에 남긴다.
+  - core security(`app/core/security/`): `PasswordHasher`(pwdlib `PasswordHash((Argon2Hasher(),))`, `verify_and_update(password, stored)` — `$2*` 는 72바이트 절단 bcrypt 검증 후
+    Argon2 새 해시, `None` 은 Argon2 더미 검증 후 실패, 알 수 없는 형식은 실패), `TokenService`(PyJWT, claims `sub·type·iat·nbf·exp·jti(uuid4 hex)·iss·aud` + access `username` /
+    refresh `fam`, decode `algorithms=[설정]`·`audience`·`issuer`·`leeway`·`options.require`, `type` 과 `fam` 문자열 검사, 실패는 `InvalidTokenException` 하나, 발급은 `IssuedToken(token, jti, expires_in)`),
+    `RefreshTokenStore(redis, ttl_seconds)`(`register` MULTI SET EX + SADD + EXPIRE, `consume` GETDEL, `revoke_family`, `is_family_revoked`, `revoke_user`),
+    `RateLimiter(redis)`(`hit` MULTI INCR + EXPIRE NX + TTL → `RateLimitResult(allowed, retry_after)`, `reset`).
+  - `app/core/exception.py`: `InvalidTokenException`(auth 에서 이동, 코드·메시지 유지), `TooManyRequestsException`(429, `Retry-After`), `AppException.headers` — `bootstrap.py` 핸들러가 싣는다.
+  - `config.py` `JWTSettings`: `JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_LEEWAY_SECONDS`, `JWT_ALGORITHM: Literal["HS256","HS384","HS512"]`, `ACCESS_TOKEN_EXPIRE_MINUTES` 기본 15, 레이트 리밋 정수 5종(ADR-029 ③).
+  - auth: `AuthService(session, password_hasher, token_service, refresh_store)` — `register`·`authenticate`(재해시 flush)·`issue_tokens`(새 family)·`rotate`·`logout`.
+    provider·레이트 리밋 의존성·`get_current_user`(TokenService + 읽기 전용 `UserRepository`)는 `auth_dependencies.py`. 라우터: register(`dependencies=[Depends(register_rate_limit)]`),
+    login(`Depends(login_rate_limit)` → 커밋 → ip+username 초기화), refresh(회전), logout(204), me. `TokenResponse` 에 `expires_in`.
+  - 제거: `app/utils/authenticator/`(소비처 0), `tests/utils/test_auth.py`(→ `tests/core/security/`).
+  - 테스트 조정(이유 기록): `tests/test_route_inventory.py` 에 `/api/v1/auth/logout` 추가(공개 API 추가, 기존 경로 불변). `tests/test_read_path_no_commit.py` 의 "DB 변경 없음" 목록에서
+    login 을 빼고(재해시 커밋) logout 을 넣었다(Redis 만 바꾼다). `tests/test_validate_before_commit.py`·`app/features/auth/tests/test_transaction_boundary.py` 의 클라이언트에
+    fakeredis `get_redis` override 를 더했다(register·login 이 레이트 리밋으로 Redis 를 쓴다). 검사 규칙은 약화하지 않았다.
+  - 문서: README(특징·기술 스택·구조·API 표 23 경로/38 오퍼레이션·curl·인증 흐름·환경 변수), ARCHITECTURE §1.3·§7(부품 표·흐름·설정 표), DEVELOPMENT(fakeredis 주입·테스트 표·해시 문구),
+    `.env.example`(새 키·HS384/512 키 길이 주의·프록시 홉), `server-lifecycle-guide.html` 설정 부록(JWTSettings 13개), `feature-development-guide.html`(코드 근거 링크·fakeredis), OpenAPI Auth 태그 설명.
+- **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 변이를 넣어 실행 후 복원 — 28종 모두 감지):**
+  - `tests/core/security/test_password_hasher.py` 7건(파라미터 포함 9) — 72바이트 절단 제거·레거시 재해시 미반환·더미 검증 제거 변이에서 실패.
+  - `tests/core/security/test_token_service.py` 17건(파라미터 포함 26) — require 옵션 제거(7건 실패)·type 검사 제거·issuer 제거·audience 제거·알고리즘 목록 확장·nbf 미발급·`fam` 문자열 검사 제거 변이에서 실패.
+  - `tests/core/security/test_refresh_token_store.py` 6건 — GETDEL→GET·사용자 family 집합 TTL 제거·`revoke_user` 미구현 변이에서 실패.
+  - `tests/core/security/test_rate_limiter.py` 7건 — EXPIRE NX 제거(창이 미끄러짐)·EXPIRE 자체 제거 변이에서 실패.
+  - `app/features/auth/tests/test_endpoint.py` 27건 — 재사용 시 family 폐기 제거·폐기 family 검사 제거·비활성 사용자 family 폐기 제거·logout family 폐기 제거·재해시 저장 제거·
+    login 커밋 제거·성공 시 카운터 초기화 제거·username 소문자 접기 제거·ip 한도 제거·register 레이트 리밋 제거·핸들러 headers 미전달·`/me` 비활성 검사 제거 변이에서 각각 실패.
+    처음 돌린 변이 중 4종(비활성 family 폐기·logout family 폐기·aud/iss 동시 제거·`/me` 비활성)이 통과해 테스트를 보강했다 — Redis 의 폐기 표시를 직접 확인하고, aud/iss 를
+    따로 변이하고, `/me` 비활성 401 테스트를 더했다. 보강 뒤 다시 돌려 모두 감지.
+- **검사:** ruff check 통과 · ruff format --check 349 파일 · mypy 211 파일 이슈 0(순수 Python 빌드 1.20.2) ·
+  `pytest -m "not mysql and not browser"` **887 passed · 31 deselected · skip 0** · `--cov=app` **95.95%** ·
+  `-m "mysql or browser" --collect-only` 31건 · bandit MEDIUM 이상 0(244 파일) · OpenAPI revert check 20/20 감지 · `uv lock --check` 통과 ·
+  `scripts.review_gate --fast`: ruff·mypy·bandit·pip-audit·pytest·OpenAPI 7단계 모두 OK
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0
+- **수렴 판정:** 단계 F1 `CONVERGED` (F-020·F-021 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 4: F-022~F-025)
+- **잔여 위험 변화:** R-012(bcrypt 잔존 사용자 타이밍)·R-013(프록시 홉 0 의 ip 한도 공유) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -245,3 +284,4 @@
 | 3 | 0 | 0 | 0 | 1 | 0 (Fixed 2: F-014·F-016, F-026 Accepted) | 단계 C: F-015 CI 판정 대기 · 그룹 Open 10 |
 | 4 | 0 | 0 | 0 | 0 | 0 (Fixed 1: F-017) | 단계 D CONVERGED · F-015 CI 판정 대기 · 그룹 Open 9 |
 | 5 | 0 | 0 | 0 | 0 | 0 (Fixed 3: F-015·F-018·F-019) | 단계 E CONVERGED · 그룹 Open 6 |
+| 6 | 0 | 0 | 0 | 0 | 0 (Fixed 2: F-020·F-021) | 단계 F1 CONVERGED · 그룹 Open 4 |

@@ -72,6 +72,7 @@ class AppException(Exception):
         error_code: 애플리케이션 에러 코드
         message: 사용자에게 표시할 에러 메시지
         detail: 추가 에러 상세 정보
+        headers: 응답에 함께 실을 HTTP 헤더(예: 429 의 ``Retry-After``). 전역 핸들러가 내보낸다
     """
 
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -84,9 +85,11 @@ class AppException(Exception):
         detail: Any | None = None,
         status_code: int | None = None,
         error_code: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.__class__.message
         self.detail = detail
+        self.headers = headers
         if status_code is not None:
             self.status_code = status_code
         if error_code is not None:
@@ -143,6 +146,19 @@ class UnauthorizedException(AppException):
     message = "인증이 필요합니다."
 
 
+class InvalidTokenException(UnauthorizedException):
+    """
+    유효하지 않은 인증 토큰 (401)
+
+    서명·만료·발급자·대상·필수 claim·토큰 종류 불일치, refresh 재사용·폐기를 **한 예외**로
+    답한다. 원인을 나눠 알려 주면 위조 시도에 판정 오라클이 된다. 토큰을 검증하는
+    ``app/core/security`` 가 던지므로 core 에 둔다(기능끼리 import 하지 않는다).
+    """
+
+    error_code = "AUTH_INVALID_TOKEN"
+    message = "유효하지 않은 인증 토큰입니다."
+
+
 class ForbiddenException(AppException):
     """
     권한 부족 예외 (403)
@@ -188,6 +204,26 @@ class DuplicateException(ConflictException):
 
     error_code = "DUPLICATE"
     message = "이미 존재하는 데이터입니다."
+
+
+class TooManyRequestsException(AppException):
+    """
+    요청 한도 초과 예외 (429)
+
+    레이트 리밋 창 안의 시도 수가 상한을 넘은 경우 발생합니다. 남은 창 길이(초)를
+    ``Retry-After`` 헤더와 ``detail.retry_after`` 로 함께 알린다.
+    """
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    error_code = "TOO_MANY_REQUESTS"
+    message = "요청이 너무 많습니다. 잠시 후 다시 시도하세요."
+
+    def __init__(self, retry_after: int, message: str | None = None) -> None:
+        super().__init__(
+            message,
+            detail={"retry_after": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 # =============================================================================
@@ -291,10 +327,12 @@ __all__ = [
     "BadRequestException",
     "ValidationException",
     "UnauthorizedException",
+    "InvalidTokenException",
     "ForbiddenException",
     "NotFoundException",
     "ConflictException",
     "DuplicateException",
+    "TooManyRequestsException",
     # 서버 에러 (5xx)
     "InternalServerException",
     "DatabaseException",
