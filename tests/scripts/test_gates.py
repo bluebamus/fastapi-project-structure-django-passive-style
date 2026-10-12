@@ -38,6 +38,8 @@ def test_local_pytest_steps_apply_the_same_rules_as_ci(tmp_path):
         assert {"skipped", "xfailed", "xpassed"} <= set(step.forbidden), step.name
     unit = steps[0]
     assert "--cov=app" in unit.argv
+    # 커버리지 리포트가 "files skipped due to complete coverage" 를 찍으면 skip 판정에 걸린다(F-026).
+    assert not any("skip-covered" in arg for arg in unit.argv)
 
 
 def test_coverage_threshold_has_one_source():
