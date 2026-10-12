@@ -59,9 +59,10 @@ jobs:
           cache-dependency-glob: uv.lock
 
       # .python-version(3.14)을 uv 가 읽어 인터프리터를 맞춘다.
-      # --frozen: uv.lock 을 그대로 쓰고, 락이 pyproject 와 어긋나면 실패한다(재현성).
+      # --locked: uv.lock 을 그대로 쓰되, 락이 pyproject 와 어긋나면 실패한다(재현성).
+      # (락을 검사하지 않고 설치만 하는 플래그를 쓰면 락 갱신을 잊어도 초록이 된다.)
       - name: 의존성 설치
-        run: uv sync --frozen
+        run: uv sync --locked
 
       # 검수 도구의 임시 파일·캐시를 **실행별 고유 경로**로 격리한다.
       # 공유 경로를 쓰면 앞선 실행이 남긴 캐시가 이번 결과에 섞여 들어오고, 그 오염은
@@ -191,7 +192,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: 의존성 설치
-        run: uv sync --frozen
+        run: uv sync --locked
 
       # --wait 는 healthcheck 가 healthy 를 낼 때까지 블록한다. 이게 없으면
       # 컨테이너 생성 직후 붙어서 첫 테스트가 "Connection refused" 로 깨진다.

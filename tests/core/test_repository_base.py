@@ -11,6 +11,7 @@ SQLite in-memory 로 실제 세션을 만들어 돌린다 — mock 으로는 "�
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -34,6 +35,19 @@ class Widget(Base):
 
 class WidgetRepository(BaseRepository[Widget]):
     model = Widget
+
+
+class Stamped(Base):
+    """``created_at`` 이 있는 모델 — ``get_all`` 기본 정렬의 1차 키를 시험한다."""
+
+    __tablename__ = "repo_base_stamped"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime]
+
+
+class StampedRepository(BaseRepository[Stamped]):
+    model = Stamped
 
 
 @pytest.fixture
@@ -89,6 +103,33 @@ async def test_get_one_and_all(repo: WidgetRepository, seeded: list[Widget]):
     assert await repo.get_one(name="missing") is None
     assert len(await repo.get_all()) == 3
     assert len(await repo.get_all(limit=2)) == 2
+
+
+async def test_get_all_without_created_at_orders_by_pk_desc(
+    repo: WidgetRepository, seeded: list[Widget]
+):
+    """``created_at`` 이 없는 모델은 PK 역순이다 — 삽입 순서(w1→w3)에 기대지 않는다."""
+    assert [w.id for w in await repo.get_all()] == ["w3", "w2", "w1"]
+
+
+async def test_get_all_orders_by_created_at_then_pk_and_pages_do_not_overlap(
+    session: AsyncSession,
+):
+    """기본 정렬은 ``created_at DESC, PK DESC`` 다(service-hardening F-002).
+
+    정렬 없는 ``OFFSET/LIMIT`` 은 페이지 사이 중복·누락을 만든다. ``created_at`` 이 같은 행은
+    PK 로 순서가 정해져야 offset 페이지가 겹치지 않는다. 삽입 순서를 기대 순서와 다르게 둔다.
+    """
+    repo = StampedRepository(session)
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    late = datetime(2026, 1, 2, tzinfo=UTC)
+    for row_id, created_at in (("a", late), ("b", early), ("c", late), ("d", late), ("e", early)):
+        await repo.create({"id": row_id, "created_at": created_at})
+    expected = ["d", "c", "a", "e", "b"]
+
+    assert [r.id for r in await repo.get_all()] == expected
+    pages = [r.id for skip in (0, 2, 4) for r in await repo.get_all(skip=skip, limit=2)]
+    assert pages == expected
 
 
 async def test_count_and_exists(repo: WidgetRepository, seeded: list[Widget]):

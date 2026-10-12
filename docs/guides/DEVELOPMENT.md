@@ -267,7 +267,7 @@ async def create_item(
    `InvalidQueryNameError`. 로그 라벨이라 요청값이 섞이면 cardinality 가 폭발하고 값이 샌다.
 4. **읽기/쓰기 의도는 Base 가 붙인다.** `fetch_*` 는 읽기, `execute` 와 `for_update=True` 는 쓰기다. read-only 세션에서 쓰기는
    `DB_ROUTER_ENABLED` 와 무관하게 **실행 전에** `ReadOnlyRoutingError`. 잠금 읽기(SELECT ... FOR UPDATE)는 `for_update=True` —
-   replica 에서 잡은 잠금은 아무것도 보호하지 않는다.
+   replica 에서 잡은 잠금은 아무것도 보호하지 않는다. ORM 의 `with_for_update()` 도 같은 규칙이다(writer 로 가고 read-only 에서 거부).
 5. **방언 함수를 SQL 에 넣지 않는다.** 단위 테스트는 SQLite, 운영은 MySQL 이다. 날짜 상한은 MySQL 전용 날짜 함수 대신 Service 가 계산한 배타 상한을 바인딩한다.
 
 자주 틀리는 지점:
@@ -290,7 +290,7 @@ POST /api/v1/catalog/products
 ```
 
 - `Product` 는 `catalog_products`, `sku` unique, 금액은 `Numeric(12, 2)` ↔ `Decimal`. API 는 price·stock 에 `ge=0` 을 두지만 DB 선언이 같은 규칙을 강제하지는 않는다 — 입력은 스키마, 동시성 상황의 최종 무결성은 DB 제약이 지킨다.
-- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 정렬 없는 `get_all()` 을 쓰고(OpenAPI 설명도 그렇게 적는다), `total` 은 필터와 무관한 전체 `count()` 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
+- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 `get_all()` 의 기본 정렬(`created_at DESC, id DESC`)을 쓰고(OpenAPI 설명도 그렇게 적는다), `total` 은 필터와 무관한 전체 `count()` 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
 - 수정은 대상 조회로 존재를 보장한 뒤 `model_dump(exclude_unset=True)` 로 보낸 필드만 반영한다. 보낸 필드가 없으면 기존 값을 그대로 돌려준다(`tests/test_update_noop.py`).
 
 ### 3.5 Raw 예제 — reports 일별 매출
@@ -461,7 +461,7 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 
 | job | 내용 |
 |---|---|
-| gate | `uv sync --frozen` → ruff check·format → mypy(콜드 캐시) → bandit gate → pip-audit(`--strict`) → pytest 커버리지 하한(`fail_under`, `-m "not mysql and not browser"`) → skipped·xfailed·xpassed 0건 확인 → OpenAPI 규칙 fail-on-revert → alembic 단일 head → SQLite `upgrade head` + `alembic check` |
+| gate | `uv sync --locked` → ruff check·format → mypy(콜드 캐시) → bandit gate → pip-audit(`--strict`) → pytest 커버리지 하한(`fail_under`, `-m "not mysql and not browser"`) → skipped·xfailed·xpassed 0건 확인 → OpenAPI 규칙 fail-on-revert → alembic 단일 head → SQLite `upgrade head` + `alembic check` |
 | mysql | compose 기동 → `upgrade head` → `downgrade -1` → 재-upgrade → `alembic check` → `pytest -m mysql`(skip·xfail·0건이면 실패) → Chromium 설치 → `pytest -m browser`(skip·xfail·0건이면 실패) → `down -v` |
 
 ### 6.2 테스트 위치

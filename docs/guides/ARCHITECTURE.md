@@ -597,7 +597,7 @@ flowchart TD
 - `DB_REPLICATION_ENABLED=true` 는 `DB_ROUTER_ENABLED=true` 와 `MYSQL_REPLICA_HOSTS` 를 요구한다. replica 계정·DB 를
   비우면 primary 값을 재사용한다. replica 없이 라우터만 켜면 읽기도 writer 로 간다.
 - 복제 지연을 허용할 수 없는 읽기는 `using_writer(session)` 으로 writer 에 고정한다.
-- 기동 시 `db_settings.describe_routing()` 이 비밀번호를 가린 DSN(`mask_dsn()`)으로 구성을 한 줄 남긴다.
+- 기동 시 `db_settings.describe_routing()` 이 비밀번호를 가린 DSN(`URL.render_as_string(hide_password=True)`)으로 구성을 한 줄 남긴다.
 
 **`text()` 는 SQL 을 해석하지 않는다.** 첫 단어 파싱은 `WITH doomed AS (SELECT ...) DELETE ...` 같은 CTE DML 을 읽기로
 오판해 replica 로 보낸다. 그래서 호출부가 의도를 붙이고(`read_intent`·`write_intent`, 조회는 `statement_intent`),
@@ -608,7 +608,7 @@ flowchart TD
 | 경로 | 차단 |
 |---|---|
 | ORM flush | `Session` 에 전역 등록된 `before_flush` 리스너가 거부 — 라우터 설정·sessionmaker 종류와 무관 |
-| Core DML·임의 `session.execute()` | `do_orm_execute` 리스너가 **실행 전에** 판정 — `Select` 와 `read_intent()` 가 붙은 `text()` 만 통과하고 나머지는 거부(default-deny) |
+| Core DML·임의 `session.execute()` | `do_orm_execute` 리스너가 **실행 전에** 판정 — 잠금 없는 `Select` 와 `read_intent()` 가 붙은 `text()` 만 통과하고 나머지는 거부(default-deny). ORM `with_for_update()` 는 쓰기로 보고 거부하며, 라우터는 writer 로 보낸다 |
 | Raw 쓰기(`execute`, `for_update=True`) | 위 리스너에 더해 `RawCRUDBase` 가 `is_read_only_session()` 으로 먼저 거부 — 어느 메서드가 원인인지 메시지에 남는다 |
 
 판정은 구문 타입과 의도 태그만 본다 — SQL 문자열을 해석하지 않으므로 완전한 sandbox 가 아니다. 위 세 경로의 차단은 라우터 on/off 두 구성에서 `tests/core/test_read_only_guard.py` 가 고정하고, 조회 경로가 쓰지 않는다는 규칙은 `tests/test_read_path_no_commit.py` 가 구조로 함께 고정한다.
@@ -654,7 +654,7 @@ DB 커밋과 HTTP 전송은 하나의 원자적 트랜잭션이 아니다. 커�
 | `create(data: dict)` | `id` 가 없으면 UUID 를 채우고 add → flush → refresh. DB 오류는 `convert_db_error` |
 | `get_by_id(id)` | 없으면 `None` |
 | `get_one(**filters)` | `filter_by` 단건, 없으면 `None` |
-| `get_all(skip=0, limit=100)` | offset/limit 조회 — **정렬을 지정하지 않는다** |
+| `get_all(skip=0, limit=100)` | offset/limit 조회 — 기본 정렬 `created_at DESC, PK DESC`(`created_at` 이 없으면 PK 역순). 동률에도 페이지가 겹치지 않는다 |
 | `count(**filters)` | 개수 |
 | `exists(id)` | PK 존재 여부 |
 | `update(id, data: dict)` | UPDATE → flush 후 **다시 조회**해 반환(없으면 `None`). MySQL 의 no-op UPDATE rowcount 0 을 부재로 읽지 않기 위해서다 |
@@ -832,11 +832,14 @@ celery_app = Celery("project", broker=redis_settings.REDIS_URL, backend=redis_se
 fileConfig(config.config_file_name, disable_existing_loggers=False)   # 앱 로거를 끄지 않는다
 Apps().populate(INSTALLED_APPS, run_ready=False)                      # ready() 부수효과 없음
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
+config.set_main_option(                                              # URL → 문자열, % 는 %% 로
+    "sqlalchemy.url",
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace("%", "%%"),
+)
 ```
 
 - `target_metadata` 는 전역 `Base.metadata` 다. 같은 프로세스에서 미설치 모델을 먼저 import 하면 metadata 에 남으므로, registry 소유 모델만으로 완전히 필터링하는 구조는 아니다(Alembic CLI 의 깨끗한 프로세스에서는 설치 앱 모델만 들어간다).
-- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그대로(로컬·CI·SQLite), 없으면 primary DSN 의 `+aiomysql` 을 `+pymysql` 로 바꾼 값. **migration 은 항상 writer** 에서 실행한다.
+- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값을 `make_url()` 로 읽고(로컬·CI·SQLite), 없으면 primary URL 의 drivername 만 `mysql+pymysql` 로 바꾼다. DSN 은 모두 `sqlalchemy.engine.URL` 로 조립하므로 비밀번호의 `@ : / # ? %` 가 구분자로 읽히지 않는다. ConfigParser 보간 때문에 `%` 는 `%%` 로 넘긴다. **migration 은 항상 writer** 에서 실행한다.
 - Alembic 은 FastAPI lifespan 에 들어가지 않으므로 Redis ping 을 하지 않는다. 서버 기동이 자동 upgrade 를 하지도 않는다.
 - revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders.
 - 검증: `tests/core/test_migration_chain.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.

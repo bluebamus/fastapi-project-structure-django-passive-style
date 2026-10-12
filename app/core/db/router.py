@@ -6,7 +6,8 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
 세션이 실행하는 구문의 성격에 따라 **바인딩할 엔진을 자동 선택**한다.
 
 라우팅 규칙:
-    1. ORM flush(=INSERT/UPDATE/DELETE) 또는 Core DML  → writer
+    1. ORM flush(=INSERT/UPDATE/DELETE), Core DML,
+       잠금 읽기(``with_for_update()``)                  → writer
     2. 그 밖의 SELECT                                   → reader (라운드로빈)
     3. 쓰기가 한 번이라도 일어난 세션의 이후 SELECT     → writer 고정(sticky)
 
@@ -173,16 +174,26 @@ def assert_writable(session: Session | AsyncSession, detail: str = "") -> None:
         )
 
 
+def _is_locking_select(clause: Any) -> bool:
+    """``SELECT ... FOR UPDATE``/``FOR SHARE`` 처럼 행 잠금을 잡는 ORM·Core 조회인가.
+
+    잠금 읽기는 쓰기와 같이 다룬다 — replica 에서 잡은 잠금은 primary 의 행을 보호하지
+    못한다. Raw 경로는 ``for_update=True`` 가 ``write_intent`` 로 바뀌어 같은 규칙을 따른다.
+    """
+    return isinstance(clause, Select) and clause._for_update_arg is not None
+
+
 def _statement_is_readable(clause: Any) -> bool:
     """이 구문을 읽기 전용 세션에서 실행해도 되는지 판별한다(default-deny).
 
     ``TextClause`` 는 문자열이라 타입으로 알 수 없으므로 **명시 의도 태그**만 본다
     (:func:`read_intent`). SQL 을 파싱하지 않는 이유는 :func:`_is_write` 주석과 같다.
+    잠금 읽기(``with_for_update()``)는 쓰기로 보고 거부한다.
     """
     if isinstance(clause, UpdateBase):
         return False  # Insert / Update / Delete / DDL
     if isinstance(clause, Select):
-        return True
+        return not _is_locking_select(clause)
     if isinstance(clause, TextClause):
         return statement_intent(clause) == READ_INTENT
     return False  # 판별 불가 — 거부
@@ -210,7 +221,7 @@ def _block_read_only_execute(orm_execute_state: ORMExecuteState) -> None:
     if not _statement_is_readable(orm_execute_state.statement):
         raise ReadOnlyRoutingError(
             "읽기 전용 세션에서 읽기로 판별되지 않는 구문을 실행하려 했습니다. "
-            "SELECT 와 read_intent() 가 붙은 text() 만 허용됩니다 — 태그 없는 Raw SQL 은 "
+            "잠금 없는 SELECT 와 read_intent() 가 붙은 text() 만 허용됩니다 — 태그 없는 Raw SQL 은 "
             "기본 거부됩니다. 쓰기에는 get_writer_db_session() 을 사용하세요."
         )
 
@@ -221,9 +232,10 @@ def _is_write(clause: Any, flushing: bool) -> bool:
     ORM flush 와 Core ``UpdateBase`` 는 타입으로 확정된다. ``TextClause`` 는 문자열이라
     타입으로 알 수 없으므로 **명시적 read 의도가 붙은 것만** 읽기로 본다. 의도가 없는
     Raw SQL 은 쓰기로 취급한다(fail-closed) — 읽기로 잘못 보면 DML 이 replica 로 새지만,
-    쓰기로 잘못 보면 SELECT 하나가 writer 로 갈 뿐이다.
+    쓰기로 잘못 보면 SELECT 하나가 writer 로 갈 뿐이다. 잠금 읽기(``with_for_update()``)도
+    쓰기다.
     """
-    if flushing or isinstance(clause, UpdateBase):
+    if flushing or isinstance(clause, UpdateBase) or _is_locking_select(clause):
         return True
     if isinstance(clause, TextClause):
         return statement_intent(clause) != READ_INTENT

@@ -100,6 +100,7 @@
 
 ## 5. 변경 이력
 - v0.1 (2026-10-12): 최초 작성. REQ-001(단계별 도출 D-A1~D-F2), ADR-001~ADR-022, C-1~C-15 등재. ADR-021 로 orm-raw-repository·skeleton-purpose-audit 의 인증 비목표를 이 그룹에 한해 대체.
+- v0.2 (2026-10-12): Round 1(단계 A) 완료 — ADR-001~ADR-004 구현, ledger F-001~F-004 Fixed.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

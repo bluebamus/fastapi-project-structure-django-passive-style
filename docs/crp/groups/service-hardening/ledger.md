@@ -11,10 +11,10 @@
 
 | ID | Severity | 위반 계약 조항 | 결정 | Status | 근거(커밋/링크) | 비고 |
 |---|---|---|---|---|---|---|
-| F-001 | MED | C-7 (잠금 읽기는 writer) | Fix | Open | 단계 A3 | 출처 R-08. `router.py` 의 `_is_write`·`_statement_is_readable` 이 `Select` 를 항상 읽기로 봐서 ORM `with_for_update()` 가 replica 로 가고 읽기 전용 세션에서도 통과했다 |
-| F-002 | MED | C-8 (결정적 목록 순서) | Fix | Open | 단계 A3 | 출처 R-10(앞부분). `BaseRepository.get_all` 에 ORDER BY 가 없고, 접속 로그 조회는 `created_at desc` 단일 키라 동률에서 페이지가 겹친다 |
-| F-003 | LOW | C-6 (DSN 은 URL 로 조립) | Fix | Open | 단계 A2 | 출처 리뷰 Low "DSN 의 비밀번호를 URL 인코딩하지 않음". `@ : / # ?` 가 든 비밀번호가 다른 호스트·계정으로 해석되고 `%` 는 Alembic 보간 오류 |
-| F-004 | LOW | C-15 (CI 락 검사) | Fix | Open | 단계 A1 | 출처 제안 1. `uv sync --frozen` 은 락을 검사하지 않는데 주석은 "어긋나면 실패" 라고 적었다 |
+| F-001 | MED | C-7 (잠금 읽기는 writer) | Fix | Fixed | Round 1 · `app/core/db/router.py` · `tests/core/test_read_only_guard.py::test_locking_select_is_blocked` · `tests/core/test_db_router.py::test_locking_select_is_served_by_writer` | 출처 R-08. `router.py` 의 `_is_write`·`_statement_is_readable` 이 `Select` 를 항상 읽기로 봐서 ORM `with_for_update()` 가 replica 로 가고 읽기 전용 세션에서도 통과했다 |
+| F-002 | MED | C-8 (결정적 목록 순서) | Fix | Fixed | Round 1 · `app/core/repositories/repository_base.py` · `app/features/home/repositories/user_access_log_repository.py` · `tests/core/test_repository_base.py` · `app/features/home/tests/test_access_log_service.py` | 출처 R-10(앞부분). `BaseRepository.get_all` 에 ORDER BY 가 없고, 접속 로그 조회는 `created_at desc` 단일 키라 동률에서 페이지가 겹친다 |
+| F-003 | LOW | C-6 (DSN 은 URL 로 조립) | Fix | Fixed | Round 1 · `config.py` · `migrations/env.py` · `app/core/db/session.py` · `tests/core/test_dsn.py` | 출처 리뷰 Low "DSN 의 비밀번호를 URL 인코딩하지 않음". `@ : / # ?` 가 든 비밀번호가 다른 호스트·계정으로 해석되고 `%` 는 Alembic 보간 오류 |
+| F-004 | LOW | C-15 (CI 락 검사) | Fix | Fixed | Round 1 · `.github/workflows/ci.yml` · `tests/core/test_security_hardening.py::test_ci_installs_dependencies_with_locked` | 출처 제안 1. `uv sync --frozen` 은 락을 검사하지 않는데 주석은 "어긋나면 실패" 라고 적었다 |
 | F-005 | MED | 계약: 목록 응답의 total 은 items 와 같은 조건이다 | Fix | Open | 단계 B7 | 출처 R-10(뒷부분). catalog `active_only=true` 의 total 이 전체 개수 |
 | F-006 | MED | C-12 · 접속 로그 무결성 | Fix | Open | 단계 B3 | 출처 R-03. 긴 헤더·쿠키 하나로 MySQL strict 1406 → 미들웨어가 삼켜 기록이 빠진다 |
 | F-007 | MED | 위협 모델: 헤더 위조 | Fix | Open | 단계 B1 | 출처 R-04. `X-Forwarded-For`/`X-Real-IP` 를 무조건 믿어 기록 IP 가 위조된다 |

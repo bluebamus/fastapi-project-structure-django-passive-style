@@ -9,13 +9,13 @@
 - [x] 리뷰 지적을 ledger F-001~F-025 로 등록
 
 ## Round 1 — 2026-10-12 · 단계 A (CI 재현성 · DSN · 잠금 읽기 · 정렬)
-- [ ] (F-004) A1 — CI `uv sync --frozen` → `--locked`(gate·mysql job), 주석·DEVELOPMENT.md 정정, 계약 테스트 · fail-on-revert
-- [ ] (F-003) A2 — DSN `URL.create()`, 마스킹 `render_as_string`, Alembic `%%`, Redis 비밀번호 인코딩, 문자열 비교 테스트를 의미 비교로 · fail-on-revert
-- [ ] (F-001) A3 — ORM `with_for_update()` 를 쓰기로 판정(라우터 writer, read-only 거부), router on/off 테스트 · fail-on-revert
-- [ ] (F-002) A3 — `get_all` 기본 정렬, 접속 로그 `id desc` 보조 키, 동률 결정성·offset 비중복 테스트 · fail-on-revert
-- [ ] GATE 3 인수기준(단계 A 분) 그린
-- [ ] 요구사항 회귀 0 — C-1~C-15, orm-raw-repository C-22(공개 메서드 8개) 위반 없음
-- [ ] run-log·residual-risk 갱신
+- [x] (F-004) A1 — CI `uv sync --frozen` → `--locked`(gate·mysql job), 주석·DEVELOPMENT.md 정정, 계약 테스트 · fail-on-revert. `scripts/review_gate.py` 는 `rglob` 으로 작업 트리를 훑지 않아 파일 목록 교체 대상 없음
+- [x] (F-003) A2 — DSN `URL.create()`, 마스킹 `render_as_string`, Alembic `%%`, Redis 비밀번호 인코딩, 문자열 비교 테스트를 의미 비교로 · fail-on-revert
+- [x] (F-001) A3 — ORM `with_for_update()` 를 쓰기로 판정(라우터 writer, read-only 거부), router on/off 테스트 · fail-on-revert
+- [x] (F-002) A3 — `get_all` 기본 정렬, 접속 로그 `id desc` 보조 키, 동률 결정성·offset 비중복 테스트 · fail-on-revert. catalog 목록 OpenAPI 설명·문서의 "정렬 없음" 서술 정정
+- [x] GATE 3 인수기준(단계 A 분) 그린 — 729 passed · skip 0 · coverage 94.01%
+- [x] 요구사항 회귀 0 — C-1~C-15, orm-raw-repository C-22(공개 메서드 8개) 위반 없음
+- [x] run-log·residual-risk 갱신
 
 ## Round 2 — 단계 B (접속 로그 수집 · 오류 매핑)
 - [ ] (F-007) B1 — `ClientIPResolver`, `TRUSTED_PROXY_HOPS`
