@@ -15,7 +15,7 @@ D. 접속 로그는 불변(생성·수정 불가), 콘텐츠 모델은 전체 CR
 -------------------------------
 ``column_details_list`` / ``form_columns`` 를 지정하지 않으면 상세 페이지와 수정 폼은
 **모델의 모든 컬럼**을 사용한다. 따라서 비밀번호 컬럼을 명시적으로 제외하지 않으면
-bcrypt 해시가 화면에 그대로 노출된다. ``test_exposure_probe_detects_sqladmin_default``
+비밀번호 해시가 화면에 그대로 노출된다. ``test_exposure_probe_detects_sqladmin_default``
 가 이 기본 동작을 실제로 재현하여, 아래 탐지 로직이 살아 있음을 증명한다.
 """
 

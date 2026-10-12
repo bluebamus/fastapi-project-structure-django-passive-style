@@ -1,5 +1,7 @@
 """Auth 도메인 스키마 — 회원가입/토큰 요청·응답."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.utils.validators import EMAIL_PATTERN
@@ -34,14 +36,15 @@ class AuthenticatedUserResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """토큰 응답(OAuth2 bearer)."""
+    """토큰 응답(OAuth2 bearer, RFC 6749 §5.1)."""
 
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+    access_token: str = Field(..., description="Access Token(Bearer)")
+    refresh_token: str = Field(..., description="Refresh Token — 한 번 쓰면 회전된다")
+    token_type: Literal["bearer"] = Field(default="bearer", description="토큰 종류")
+    expires_in: int = Field(..., description="Access Token 수명(초)")
 
 
 class RefreshRequest(BaseModel):
-    """토큰 재발급 요청."""
+    """refresh 토큰을 본문으로 받는 요청(재발급·로그아웃)."""
 
-    refresh_token: str = Field(..., description="유효한 Refresh Token")
+    refresh_token: str = Field(..., max_length=4096, description="유효한 Refresh Token")

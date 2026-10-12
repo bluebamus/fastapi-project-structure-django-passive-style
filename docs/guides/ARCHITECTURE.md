@@ -114,7 +114,9 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 | `app/core/db/session.py` | 엔진·세션 팩토리, 세션 Dependency, `background_session()`, `owned_tables()`, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` |
 | `app/core/db/router.py` | `DatabaseRouter`·`RoutingSession`, `using_writer`·`mark_read_only`·`is_read_only_session`, `read_intent`·`write_intent` |
 | `app/core/db/errors.py` | `convert_db_error()` — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환 |
-| `app/core/exception.py` | `AppException` 계층과 `ErrorResponse` |
+| `app/core/exception.py` | `AppException` 계층(`headers` 를 핸들러가 응답에 싣는다 — 429 `Retry-After`)과 `ErrorResponse` |
+| `app/core/redis.py` | `get_redis()` 주입 provider, `ping_redis()` |
+| `app/core/security/` | 인증 보안 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`(§7) |
 | `app/core/models/models_base.py` | `Base` + `UUIDPrimaryKeyMixin`·`CreatedAtMixin`·`UpdatedAtMixin`·`TimestampMixin` |
 | `app/core/repositories/` | ORM: `CRUDBase`·`BaseRepository` / Raw: `RawCRUDBase`·`RawRepositoryBase` (두 계열은 상속 관계가 없다) |
 | `app/core/services/services_base.py` | `BaseService` — 세션 보관, `commit()`·`rollback()` 헬퍼 |
@@ -799,28 +801,61 @@ N번째, 가장 바깥 신뢰 프록시가 본 주소)를 쓴다. 그보다 왼�
 
 ## 7. 인증 (JWT)
 
-OAuth2 **password flow** + JWT access/refresh. 자격증명은 `user` 기능의 `User.hashed_password`(bcrypt)에 있고,
-`auth` 는 인증 로직만 담당한다(`auth → user` 의존은 의도된 예외). 토큰 유틸은 `app/utils/authenticator/auth.py`.
+OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` 기능의 `User.hashed_password` 에 있고,
+`auth` 는 인증 로직만 담당한다(`auth → user` 의존은 의도된 예외). 목적마다 클래스 하나인 보안 부품은
+`app/core/security/` 에 있다 — user 기능(해시)과 다른 기능의 인증 의존성(토큰 검증)도 써야 하므로 core 에 둔다.
+
+| 부품 | 위치 | 역할 |
+|---|---|---|
+| `PasswordHasher` | `app/core/security/passwords.py` | pwdlib Argon2 해시. 기존 bcrypt(`$2…`)는 이전 규칙(72바이트 절단)으로 검증하고 성공하면 Argon2 새 해시를 돌려준다. 타이밍 균등화 더미 해시도 Argon2 |
+| `TokenService` | `app/core/security/tokens.py` | PyJWT 발급·검증. claims `sub·type·iat·nbf·exp·jti·iss·aud` + access `username` / refresh `fam`. 실패는 원인과 무관하게 `InvalidTokenException`(401, 오류 코드 AUTH_INVALID_TOKEN) |
+| `RefreshTokenStore` | `app/core/security/refresh_store.py` | Redis 에 미사용 refresh(`auth:rt:{jti}`)·사용자 family 집합·family 폐기 표시를 둔다. 소비는 Redis GETDEL 하나 |
+| `RateLimiter` | `app/core/security/rate_limit.py` | Redis 고정 창(MULTI 안에서 INCR + EXPIRE NX + TTL). 초과는 `TooManyRequestsException`(429, `Retry-After`) |
+
+조립은 `app/features/auth/dependencies/auth_dependencies.py` 의 provider 가 한다(생성자 주입, service-hardening ADR-022).
+`get_password_hasher`·`get_token_service`·`get_client_ip_resolver` 는 프로세스당 하나(`lru_cache`), `get_refresh_token_store`·`get_rate_limiter` 는
+`Depends(get_redis)`(§3.4)로 받은 클라이언트로 만들고, `get_auth_service(session, hasher, tokens, store)` 가 `AuthService` 를 만든다.
 
 | 메서드 | 경로 | 인증 | 요청 | 성공 | 실패 |
 |---|---|---|---|---|---|
-| POST | `/api/v1/auth/register` | — | JSON (비밀번호 8~128자) | 201 | 409 사용자명 중복 · 422 |
-| POST | `/api/v1/auth/login` | — | **form** (`username`·`password`) | 200 | 401 · 422 |
-| POST | `/api/v1/auth/refresh` | — | JSON `{"refresh_token": ...}` | 200 | 401 무효·만료·비활성 · 422 |
+| POST | `/api/v1/auth/register` | — | JSON (비밀번호 8~128자) | 201 | 409 사용자명 중복 · 422 · 429 |
+| POST | `/api/v1/auth/login` | — | **form** (`username`·`password`) | 200 | 401 · 422 · 429 |
+| POST | `/api/v1/auth/refresh` | — | JSON `{"refresh_token": ...}` | 200 | 401 무효·만료·재사용·폐기·비활성 · 422 |
+| POST | `/api/v1/auth/logout` | — | JSON `{"refresh_token": ...}` | 204 | 401 무효·만료 · 422 |
 | GET | `/api/v1/auth/me` | Bearer | — | 200 | 401 |
+
+토큰 응답은 `{"access_token", "refresh_token", "token_type": "bearer", "expires_in": <access 수명 초>}` 다.
+
+**흐름**
+
+1. **login** — `login_rate_limit` 의존성이 ip(`AUTH_LOGIN_IP_MAX_ATTEMPTS`)와 ip+소문자 username(`AUTH_LOGIN_MAX_ATTEMPTS`)을
+   `AUTH_LOGIN_WINDOW_SECONDS` 창으로 센다. ip 는 접속 로그와 같은 `ClientIPResolver`(`TRUSTED_PROXY_HOPS`, §6)로 정한다.
+   `AuthService.authenticate` 가 해시기를 `asyncio.to_thread` 로 부르고, bcrypt → Argon2 재해시가 있으면 `UserRepository.update` 로
+   flush 해 둔다. 새 family 로 토큰 쌍을 발급하고 refresh 의 jti 를 기록한 뒤 핸들러가 **커밋**하고 ip+username 카운터를 지운다.
+2. **refresh** — refresh 토큰을 검증하고 GETDEL `auth:rt:{jti}` 로 소비한다. 값이 없으면 이미 쓴 토큰의 **재사용**(탈취 신호)이라
+   그 family 를 폐기하고 401 — 정상 사용자가 가진 같은 family 의 최신 토큰도 함께 죽는다. family 가 폐기됐거나 사용자가 없거나
+   비활성이면 401(비활성·부재는 family 도 폐기). 통과하면 **같은 family** 로 새 쌍을 발급한다.
+3. **logout** — refresh 토큰의 family 를 폐기하고 jti 를 소비한다(멱등, 204). access 토큰은 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`)까지
+   유효하다 — 즉시 폐기 목록은 두지 않고 짧은 수명으로 대신한다.
+4. **/me** — `OAuth2PasswordBearer` → `TokenService.decode(…, "access")` → read-only 세션의 `UserRepository.get_by_id` → 없거나 비활성이면
+   401. Redis 도 쓰기 세션도 쓰지 않는다.
+5. **register** — `register_rate_limit`(ip, `AUTH_REGISTER_MAX_ATTEMPTS`/`AUTH_REGISTER_WINDOW_SECONDS`) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.
 
 | 설정 | 기본값 | 설명 |
 |---|---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | access 수명 |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | refresh 수명 |
-| `JWT_ALGORITHM` | `HS256` | 서명 알고리즘 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | access 수명 |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | refresh 수명 = Redis 기록·폐기 표시 TTL |
+| `JWT_ALGORITHM` | `HS256` | HS256·HS384·HS512 만 허용. 검증은 이 값 하나만 받는다 |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | `fastapi-project` / `fastapi-project-api` | 검증 시 일치해야 한다 |
+| `JWT_LEEWAY_SECONDS` | `5` | exp·nbf·iat 시계 오차 허용 |
+| `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 레이트 리밋 |
+| `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 레이트 리밋 |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 서로 다른 값으로 **배포 전 반드시 교체** — 기본값이면 누구나 토큰을 위조한다. staging/production 은 placeholder 이거나 두 키가 같으면 기동이 실패한다(`validate_deployment_safety()`, §3.2) |
 
-- payload 에 subject·`type`(access/refresh)·발급·만료 시각이 들어간다. 종류가 다른 토큰은 거부된다.
-- `refresh` 는 access·refresh 를 둘 다 새로 발급한다. 서버 측 폐기 목록·refresh 저장소·강제 로그아웃은 없다 — 유출된 refresh 토큰은 만료까지 유효하다.
-- `/me` 는 `OAuth2PasswordBearer` → `decode_token()`(secret·알고리즘·만료·type 검증) → read-only 세션으로 사용자 조회 → 없거나 비활성이면 401.
-- **상수 시간 인증**: 사용자가 없어도 더미 해시로 bcrypt 검증을 수행해 응답 시간차로 사용자명 존재를 알 수 없게 한다.
-- **논블로킹 해싱**: bcrypt 는 `asyncio.to_thread` 로 이벤트 루프 밖에서 돈다.
+- access 와 refresh 는 서명 키가 다르고, `type` claim 도 검사한다(키가 같게 설정돼도 종류 혼동을 막는 두 번째 벽).
+- **상수 시간 인증**: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
+  bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).
+- **논블로킹 해싱**: Argon2·bcrypt 는 `asyncio.to_thread` 로 이벤트 루프 밖에서 돈다.
 - 보호가 붙은 endpoint 는 `/me` 뿐이다. 새 endpoint 의 인증·소유권·역할 검사는 직접 설계한다. `require_admin` 같은 관리자 권한 Dependency 는 없다.
 
 ---

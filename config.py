@@ -979,9 +979,10 @@ class RedisSettings(BaseSettings):
 # JWT 인증 설정
 # =============================================================================
 class JWTSettings(BaseSettings):
-    """JWT 토큰(access/refresh) 설정.
+    """JWT 토큰(access/refresh)·인증 레이트 리밋 설정.
 
-    OAuth2 password flow 기반 인증에 사용됩니다.
+    OAuth2 password flow 기반 인증에 사용됩니다. 소비처는 ``app/core/security``
+    (``TokenService``·``RefreshTokenStore``·``RateLimiter``)와 auth 기능의 provider 다.
     비밀 키는 운영 환경에서 반드시 안전한 값으로 교체하세요.
     """
 
@@ -1001,20 +1002,66 @@ class JWTSettings(BaseSettings):
         default="change-this-refresh-token-secret-key",
         description="Refresh Token 서명 키",
     )
-    # Access Token 만료 (분)
+    # Access Token 만료 (분) — access 는 즉시 폐기 수단이 없으므로 짧게 둔다(service-hardening ADR-014)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
-        default=30,
+        default=15,
+        ge=1,
         description="Access Token 만료 시간(분)",
     )
-    # Refresh Token 만료 (일)
+    # Refresh Token 만료 (일) — Redis 의 refresh 기록·family 폐기 표시 TTL 도 이 값이다
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
         default=7,
+        ge=1,
         description="Refresh Token 만료 시간(일)",
     )
-    # JWT 서명 알고리즘
-    JWT_ALGORITHM: str = Field(
+    # JWT 서명 알고리즘 — 대칭키(HMAC)만 허용한다. 검증은 이 값 하나만 받는다(`alg` 혼동 차단)
+    JWT_ALGORITHM: Literal["HS256", "HS384", "HS512"] = Field(
         default="HS256",
         description="JWT 서명 알고리즘",
+    )
+    # 발급자(iss)·대상(aud) — 다른 서비스가 같은 키로 만든 토큰을 받지 않는다
+    JWT_ISSUER: str = Field(
+        default="fastapi-project",
+        min_length=1,
+        description="JWT 발급자(iss)",
+    )
+    JWT_AUDIENCE: str = Field(
+        default="fastapi-project-api",
+        min_length=1,
+        description="JWT 대상(aud)",
+    )
+    # 서버 간 시계 차이 허용(초) — exp·nbf·iat 판정에 더한다
+    JWT_LEEWAY_SECONDS: int = Field(
+        default=5,
+        ge=0,
+        description="JWT 시각 검증 허용 오차(초)",
+    )
+    # 로그인 레이트 리밋(Redis 고정 창) — ip+username 과 ip 두 기준을 함께 센다
+    AUTH_LOGIN_MAX_ATTEMPTS: int = Field(
+        default=5,
+        ge=1,
+        description="창마다 같은 ip+username 의 로그인 시도 상한",
+    )
+    AUTH_LOGIN_IP_MAX_ATTEMPTS: int = Field(
+        default=20,
+        ge=1,
+        description="창마다 같은 ip 의 로그인 시도 상한",
+    )
+    AUTH_LOGIN_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="로그인 레이트 리밋 창(초)",
+    )
+    # 회원가입 레이트 리밋(ip 기준)
+    AUTH_REGISTER_MAX_ATTEMPTS: int = Field(
+        default=5,
+        ge=1,
+        description="창마다 같은 ip 의 회원가입 시도 상한",
+    )
+    AUTH_REGISTER_WINDOW_SECONDS: int = Field(
+        default=3600,
+        ge=1,
+        description="회원가입 레이트 리밋 창(초)",
     )
 
 

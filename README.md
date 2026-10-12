@@ -24,7 +24,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **읽기 전용 세션은 쓰기를 거부한다**(항상): `get_read_only_db_session` 으로 받은 세션에서 ORM flush·Core DML·의도 태그가 없는 `text()` 는 실행 전에 `ReadOnlyRoutingError`. 차단은 `Session` 에 전역 등록된 리스너가 하므로 `DB_ROUTER_ENABLED` 설정과 무관하다.
 - **Raw SQL 은 명시적 의도 태그 계약**: 구문에 `read_intent()`·`write_intent()` 를 붙여 읽기/쓰기를 선언한다(판정은 `statement_intent()`). SQL 문자열을 파싱하지 않으므로 **태그가 없는 `text()` 는 쓰기로 보고 읽기 전용 세션에서 거부**된다(fail-closed).
 - **읽기/쓰기 라우팅**(선택): primary/replica 분리. 끄면 바인딩만 단일 엔진으로 가고 위 두 계약은 그대로다.
-- **JWT 인증**: OAuth2 password flow + access/refresh, bcrypt.
+- **JWT 인증**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500, SQL·비밀값 로그 차단, 종료 시 자원 정리 순서 보장.
 - **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면(`ADMIN=true`, 인증 없음).
 
@@ -37,9 +37,9 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | ORM / Migration | SQLAlchemy 2.0 async, Alembic |
 | Database | MySQL (aiomysql / 마이그레이션은 PyMySQL) |
 | Validation / Settings | Pydantic v2, pydantic-settings |
-| Redis | **필수** — startup 연결 검증, `get_redis` 주입, `/ready` 확인, Celery broker·result backend |
+| Redis | **필수** — startup 연결 검증, `get_redis` 주입, `/ready` 확인, refresh 회전·인증 레이트 리밋, Celery broker·result backend |
 | Task Queue | Celery 5 |
-| Auth | OAuth2 Password + PyJWT + bcrypt |
+| Auth | OAuth2 Password + PyJWT + pwdlib(Argon2) · 기존 bcrypt 해시 검증 · Redis(refresh 회전·레이트 리밋) |
 | Admin / Docs | SQLAdmin / Scalar |
 | Quality | pytest, Ruff, mypy, Bandit, pip-audit, Playwright |
 
@@ -84,10 +84,11 @@ fastapi-project-structure-django-passive-style/
 │   │   ├── repositories/        # ORM: CRUDBase·BaseRepository / Raw: RawCRUDBase·RawRepositoryBase
 │   │   ├── services/            # BaseService
 │   │   ├── middlewares/         # CORS · UserInfo · AccessLogSink · BackgroundTaskRunner
+│   │   ├── security/            # PasswordHasher · TokenService · RefreshTokenStore · RateLimiter
 │   │   ├── exception.py         # AppException 계층 + ErrorResponse
 │   │   └── tags_metadata.py     # OpenAPI 태그 선언
 │   ├── celery/                  # Celery 앱(include 는 INSTALLED_APPS 의 앱별 tasks.py) · run_async 브릿지 · worker 종료 정리
-│   └── utils/                   # logs · authenticator(JWT·bcrypt) · pagination · validators
+│   └── utils/                   # logs · pagination · validators
 │
 ├── migrations/                  # Alembic — env.py 가 App Registry 로 설치 앱 모델만 수집
 ├── scripts/                     # new_app(골격 생성) · review_gate · bandit_gate · openapi_revert_check
@@ -193,6 +194,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 | `ADMIN` | `true` | `/admin` 이 **인증 없이** 열린다(개발 편의 결정) |
 | `ENV` | `development` | production/staging 에서 `ADMIN=true` 면 `ADMIN_UNAUTHENTICATED_ACK=true` 없이는 설정 로드가 실패한다(승인하면 매 기동 WARNING). `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 여도 실패한다. 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access·refresh 수명. `JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·`JWT_LEEWAY_SECONDS` 와 레이트 리밋 `AUTH_LOGIN_*`·`AUTH_REGISTER_*` 는 `.env.example`·[아키텍처 §7](docs/guides/ARCHITECTURE.md#7-인증-jwt) |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
 > **`/admin` 에는 인증이 없습니다.** `ADMIN=true` 면 앱에 도달할 수 있는 누구나 사용자·게시글·접속 로그 등을 조회·수정·삭제하고
@@ -263,7 +265,7 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 
 `DEBUG=true` 일 때 Scalar 문서 `/docs` 와 `/openapi.json` 이 열립니다(Swagger UI·ReDoc 은 끔). `/admin` 은 `ADMIN=true` 일 때만 있습니다.
 
-`app.openapi()` 실측 **22 경로 / 37 오퍼레이션**입니다. 공개 경로 목록은 `tests/test_route_inventory.py` 가 고정하므로 route 를 바꾸면 이 표도 함께 고칩니다.
+`app.openapi()` 실측 **23 경로 / 38 오퍼레이션**입니다. 공개 경로 목록은 `tests/test_route_inventory.py` 가 고정하므로 route 를 바꾸면 이 표도 함께 고칩니다.
 
 | 앱 | 메서드 · 경로 | 인증 |
 |---|---|---|
@@ -273,7 +275,7 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 | reply | GET·POST `/api/v1/reply/replies` · GET·PATCH·DELETE `/api/v1/reply/replies/{reply_id}` | 없음 |
 | sns | GET·POST `/api/v1/sns/posts` · GET·PATCH·DELETE `/api/v1/sns/posts/{post_id}` | 없음 |
 | user | GET·POST `/api/v1/user/users` · GET·PATCH·DELETE `/api/v1/user/users/{user_id}` | 없음 |
-| auth | POST `/api/v1/auth/register` (JSON) · POST `/api/v1/auth/login` (**form**) · POST `/api/v1/auth/refresh` (JSON) · GET `/api/v1/auth/me` | `/me` 만 Bearer |
+| auth | POST `/api/v1/auth/register` (JSON) · POST `/api/v1/auth/login` (**form**) · POST `/api/v1/auth/refresh` (JSON) · POST `/api/v1/auth/logout` (JSON, 204) · GET `/api/v1/auth/me` | `/me` 만 Bearer. register·login 은 레이트 리밋(429 + `Retry-After`) |
 | catalog | GET·POST `/api/v1/catalog/products` · GET·PATCH·DELETE `/api/v1/catalog/products/{product_id}` | 없음 |
 | reports | GET `/api/v1/reports/daily-sales?start_date=&end_date=` (종료일 포함, 최대 366일, 1970-01-01~9998-12-31) | 없음 |
 
@@ -281,11 +283,18 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 curl -X POST localhost:8000/api/v1/auth/register -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.com","password":"secret-pw-1234"}'   # 비밀번호 8자 이상
 curl -X POST localhost:8000/api/v1/auth/login -d 'username=alice&password=secret-pw-1234'
-# → {"access_token":"eyJ...","refresh_token":"eyJ...","token_type":"bearer"}
+# → {"access_token":"eyJ...","refresh_token":"eyJ...","token_type":"bearer","expires_in":900}
 curl localhost:8000/api/v1/auth/me -H 'Authorization: Bearer <access_token>'
 curl -X POST localhost:8000/api/v1/auth/refresh -H 'Content-Type: application/json' \
-  -d '{"refresh_token":"<refresh_token>"}'        # access·refresh 둘 다 새로 발급
+  -d '{"refresh_token":"<refresh_token>"}'        # 새 쌍 발급, 쓴 refresh 는 소비된다
+curl -X POST localhost:8000/api/v1/auth/logout -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh_token>"}'        # 204, 그 family 의 refresh 가 모두 무효
 ```
+
+**인증 흐름** — login 이 access(기본 15분)·refresh(7일) 쌍을 준다. access 가 만료되면 refresh 로 새 쌍을 받고, 쓴 refresh 는
+버린다 — **한 번 쓴 refresh 를 다시 보내면 재사용(탈취 신호)으로 보고 그 로그인 세션(family) 전체를 폐기**한다(401). logout 은
+family 를 폐기한다. access 는 즉시 폐기되지 않으므로 수명을 짧게 둔다. 로그인은 ip 당·ip+username 당, 회원가입은 ip 당 시도 수를
+Redis 고정 창으로 세고 넘으면 429 + `Retry-After` 다. 기존 bcrypt 해시 사용자는 로그인할 때 Argon2 로 다시 저장된다.
 
 토큰 정책·오류 응답 형식·접속 로그 수집 항목은 [아키텍처 레퍼런스](docs/guides/ARCHITECTURE.md)를 봅니다.
 
