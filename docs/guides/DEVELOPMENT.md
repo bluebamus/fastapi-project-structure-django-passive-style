@@ -470,7 +470,7 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 ### 6.2 테스트 위치
 
 기능 테스트는 `app/features/<name>/tests/`, 여러 기능·core 계약을 보는 테스트는 최상위 `tests/`(`core/`·`core/apps/`·`integration/`·`browser/`·`scripts/`·`utils/`).
-Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 종료 시 복원한다. lifespan 을 검증할 때는 `app.router.lifespan_context` 처럼 실제 context 에 진입한다 — ASGITransport 요청만으로 startup 이 검증되지 않는다.
+Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 종료 시 복원한다. 세션 의존성(`get_writer_db_session`·`get_read_only_db_session`)은 손으로 오버라이드하지 않고 `tests/session_overrides.py` 의 `sqlite_session_overrides(app)` 를 쓴다 — 운영과 같이 read-only 세션은 `mark_read_only`, writer 세션은 `using_writer` 를 거쳐 GET 핸들러의 몰래 쓰기가 테스트에서도 `ReadOnlyRoutingError` 로 드러난다(커밋 집계는 `on_session` 훅, 손 오버라이드 금지는 `tests/test_session_overrides.py`). `importlib.reload(config)` 를 하는 테스트는 루트 `conftest.py` 의 `restore_config` 픽스처로 원래 설정 객체를 되돌리고, alembic 을 부르는 테스트는 `config.db_settings` 를 호출 시점에 꺼내 patch 한다. lifespan 을 검증할 때는 `app.router.lifespan_context` 처럼 실제 context 에 진입한다 — ASGITransport 요청만으로 startup 이 검증되지 않는다.
 
 ### 6.3 구조 계약을 지키는 테스트
 

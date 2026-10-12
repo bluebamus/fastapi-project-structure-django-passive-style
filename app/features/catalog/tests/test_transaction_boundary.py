@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.catalog.models.models import Product  # noqa: F401  (register table)
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 _NEW = {"sku": "SKU-TX", "name": "경계 검증", "price": "1000.00", "stock": 1}
 _MISSING_ID = "00000000-0000-0000-0000-000000000000"
@@ -31,41 +29,27 @@ _MISSING_ID = "00000000-0000-0000-0000-000000000000"
 @pytest_asyncio.fixture
 async def tx_client():
     """commit/rollback 호출을 집계하는 클라이언트."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
     calls = {"commit": 0, "rollback": 0}
 
-    async def _override_get_session():
-        async with maker() as session:
-            original_commit = session.commit
-            original_rollback = session.rollback
+    def _count_calls(session):
+        original_commit = session.commit
+        original_rollback = session.rollback
 
-            async def _counting_commit(*args, **kwargs):
-                calls["commit"] += 1
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            calls["commit"] += 1
+            return await original_commit(*args, **kwargs)
 
-            async def _counting_rollback(*args, **kwargs):
-                calls["rollback"] += 1
-                return await original_rollback(*args, **kwargs)
+        async def _counting_rollback(*args, **kwargs):
+            calls["rollback"] += 1
+            return await original_rollback(*args, **kwargs)
 
-            session.commit = _counting_commit  # type: ignore[method-assign]
-            session.rollback = _counting_rollback  # type: ignore[method-assign]
-            yield session
+        session.commit = _counting_commit
+        session.rollback = _counting_rollback
 
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, calls
-    app.dependency_overrides.clear()
-    await engine.dispose()
+    async with sqlite_session_overrides(app, on_session=_count_calls):
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c, calls
 
 
 async def test_read_path_does_not_commit(tx_client):

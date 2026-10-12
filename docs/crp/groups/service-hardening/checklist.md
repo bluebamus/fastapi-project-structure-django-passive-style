@@ -28,10 +28,14 @@
 - [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(core→features 0, 기능 간 import 0, 계층 검사 그린)
 - [x] run-log·residual-risk 갱신 (R-007·R-008)
 
-## Round 3 — 단계 C (테스트 하네스)
-- [ ] (F-014) C1 — 공용 세션 override 헬퍼, 기존 파일 전환, read-only flush 거부 회귀 테스트
-- [ ] (F-015) C2 — MySQL ORM 스모크(`mysql` 마커)
-- [ ] (F-016) C3 — 설정 reload 와 import 시점 patch 순서 의존 제거
+## Round 3 — 2026-10-12 · 단계 C (테스트 하네스)
+- [x] (F-014) C1 — `tests/session_overrides.py` `sqlite_session_overrides`(writer `using_writer`, read-only `mark_read_only`, `on_session` 훅), 11파일 전환, read-only flush 거부·writer 고정 회귀 테스트, 손 오버라이드 금지 AST 계약 · fail-on-revert
+- [x] (F-015) C2 — `tests/integration/test_mysql_orm_smoke.py` 5건(catalog CRUD, 동률 created_at 정렬·페이지, username utf8mb4_unicode_ci 중복 409, NOT NULL None 422, 접속 로그 자르기) 작성 · `-m mysql --collect-only` 수집 확인. 실행 판정은 CI mysql job(skip·xfail 0)
+- [x] (F-016) C3 — `test_migration_chain` 호출 시점 patch, 루트 `conftest.py` `restore_config` 스냅샷 복원(security_hardening 3곳·deployment_safety 공용), reload 후 미끼 URL 회귀 테스트 · fail-on-revert
+- [x] GATE 3 인수기준(단계 C 분) — 782 passed · skip 0 · coverage 94.96% · 정순(`-p no:randomly`)·파일 역순 모두 그린
+- [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(앱 코드 변경 없음, 테스트 하네스만)
+- [x] run-log·residual-risk 갱신 (R-009)
+- [ ] (F-015) CI mysql job 그린 확인 — 감독자 푸시 후
 
 ## Round 4 — 단계 D (UTC 저장)
 - [ ] (F-017) D1~D4 — `UTCDateTime`, `utc_now`, Alembic 리비전, 리포트 영업일 집계, Celery `enable_utc`

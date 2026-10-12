@@ -9,6 +9,8 @@ create_db_tables() 가 이 결함을 가려왔다 — 운영(DEBUG=false)에서�
 모델과 일치하는지까지 확인한다. SQLite 로 실행하므로 외부 인프라가 필요 없다.
 """
 
+import importlib
+
 import sqlalchemy as sa
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -17,7 +19,7 @@ from alembic.migration import MigrationContext
 
 from app.core.apps import Apps
 from app.core.db.session import Base
-from config import INSTALLED_APPS, db_settings
+from config import INSTALLED_APPS
 
 _EXPECTED_TABLES = {
     "user_access_logs",
@@ -33,9 +35,14 @@ _EXPECTED_TABLES = {
 
 def _upgrade_to_head(tmp_path, monkeypatch) -> sa.Engine:
     """빈 SQLite DB를 만들고 마이그레이션을 head 까지 적용한다."""
+    import config as config_module
+
     url = f"sqlite:///{(tmp_path / 'chain.db').as_posix()}"
-    # env.py 가 db_settings.ALEMBIC_URL 을 읽는다. 이 필드를 바꾸면 그대로 반영된다.
-    monkeypatch.setattr(db_settings, "ALEMBIC_DATABASE_URL", url)
+    # env.py 는 실행 시점의 ``config.db_settings`` 를 읽는다. 그래서 import 시점에 잡아 둔
+    # 객체가 아니라 **호출 시점의** 모듈 속성을 patch 한다 — 다른 테스트가
+    # ``importlib.reload(config)`` 로 객체를 바꿔 두었으면 import 시점 객체 patch 는 조용히
+    # 무시되고 alembic 이 ``.env`` 의 DB 로 간다.
+    monkeypatch.setattr(config_module.db_settings, "ALEMBIC_DATABASE_URL", url)
 
     command.upgrade(Config("alembic.ini"), "head")
     return sa.create_engine(url)
@@ -82,3 +89,24 @@ def test_migrated_schema_matches_models(tmp_path, monkeypatch):
         engine.dispose()
 
     assert diff == [], f"마이그레이션 결과와 모델이 다르다: {diff}"
+
+
+def test_upgrade_follows_the_patch_after_a_config_reload(tmp_path, monkeypatch, restore_config):
+    """다른 테스트가 먼저 ``config`` 를 reload 해도 alembic 은 patch 한 SQLite 로 간다.
+
+    reload 로 생긴 새 설정 객체에는 미끼 URL(``decoy.db``)을 심는다. patch 가 import 시점
+    객체에 걸리면 env.py 가 새 객체를 읽어 미끼 쪽에 테이블을 만든다 — 실제 ``.env`` 의
+    DB 대신 무해한 파일로 실패를 드러낸다.
+    """
+    decoy = tmp_path / "decoy.db"
+    monkeypatch.setenv("ALEMBIC_DATABASE_URL", f"sqlite:///{decoy.as_posix()}")
+    importlib.reload(restore_config)
+
+    engine = _upgrade_to_head(tmp_path, monkeypatch)
+    try:
+        tables = set(sa.inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+    assert "users" in tables, "patch 한 URL 에 마이그레이션이 적용되지 않았다"
+    assert not decoy.exists(), "alembic 이 reload 된 설정 객체의 URL 로 갔다"

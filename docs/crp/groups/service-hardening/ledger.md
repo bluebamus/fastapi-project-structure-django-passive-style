@@ -24,9 +24,9 @@
 | F-011 | LOW | C-12 (민감 값 비저장) | Fix | Fixed | Round 2 · `app/core/middlewares/user_info_middleware.py` · `tests/core/test_access_log_collection.py::test_sensitive_query_values_are_masked` | 출처 리뷰 Low. 원본 query_string(토큰 등)을 그대로 저장 |
 | F-012 | MED | orm-raw-repository C-2·C-3 (registry 단일 출처) | Fix | Fixed | Round 2 · `app/core/resources.py` · `app/core/db/session.py` · `app/core/apps/registry.py` · `tests/core/test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables` · `tests/core/apps/test_registry_lifecycle.py::test_populate_with_a_different_list_is_rejected` · ADR-025 | 출처 R-15. lifespan 이 주입된 registry 를 무시하고 `populate()` 가 다른 목록에도 조용히 반환 |
 | F-013 | LOW | 운영 로그 품질 | Fix | Fixed | Round 2 · `app/core/bootstrap.py` · `tests/core/test_bootstrap.py::test_client_error_app_exception_is_logged_as_warning_without_detail` · ADR-025 | 출처 리뷰 Info. 4xx 를 ERROR 로 기록 |
-| F-014 | MED | C-1 · orm-raw-repository C-1 | Fix | Open | 단계 C1 | 출처 R-19. 엔드포인트 테스트 override 가 `mark_read_only` 를 우회 |
-| F-015 | MED | C-1 | Fix | Open | 단계 C2 | 출처 R-20. tz·마이크로초·strict·collation 의 MySQL 방언 검증 0건 |
-| F-016 | MED | C-1 (테스트 신뢰성) | Fix | Open | 단계 C3 | 출처 R-21. import 시점 설정 객체 patch 가 `importlib.reload` 순서에 의존 |
+| F-014 | MED | C-1 · orm-raw-repository C-1 | Fix | Fixed | Round 3 · `tests/session_overrides.py` · `tests/test_session_overrides.py` (4건) · 엔드포인트·트랜잭션 경계 테스트 11파일 전환 · ADR-026 | 출처 R-19. 엔드포인트 테스트 override 가 `mark_read_only` 를 우회 |
+| F-015 | MED | C-1 | Fix | Open | Round 3 · `tests/integration/test_mysql_orm_smoke.py` (5건, `mysql` 마커) — 작성·수집 확인, **실행 판정은 CI mysql job**. tz·마이크로초 왕복은 단계 D 에서 추가 | 출처 R-20. tz·마이크로초·strict·collation 의 MySQL 방언 검증 0건. strict·collation·정렬·자르기 분은 C2 로 작성, CI 그린과 단계 D 를 거쳐 Fixed |
+| F-016 | MED | C-1 (테스트 신뢰성) | Fix | Fixed | Round 3 · `tests/core/test_migration_chain.py::test_upgrade_follows_the_patch_after_a_config_reload` · 루트 `conftest.py` `restore_config` · `tests/core/test_security_hardening.py` · `tests/core/test_deployment_safety.py` · ADR-026 | 출처 R-21. import 시점 설정 객체 patch 가 `importlib.reload` 순서에 의존 |
 | F-017 | MED | C-9 (UTC 저장) | Fix | Open | 단계 D | 출처 R-09. `DateTime(timezone=True)` 가 MySQL 에서 tz·마이크로초를 잃는다 |
 | F-018 | MED | C-14 (워커의 앱 탈착성) | Fix | Open | 단계 E2 | 출처 R-16. `app/celery/tasks.py` 가 home 을 직접 import |
 | F-019 | MED | C-10 (Redis 필수의 근거) | Fix | Open | 단계 E1 | 출처 R-18. API 가 Redis 를 ping 만 하고 쓰지 않는다 — 필수 결정(ADR-011)과 실제 사용(F1)으로 해소 |
@@ -36,6 +36,7 @@
 | F-023 | MED | 위협 모델: 이름 선점 | Fix | Open | 단계 F2 | 출처 R-02. user API 가 비밀번호 없는 계정을 만든다 |
 | F-024 | LOW | 접속 로그 무결성 | Fix | Open | 단계 F2 | 출처 리뷰 Low. `request.state.user_id` 를 채우는 코드가 없어 by-user 조회가 항상 빈 목록 |
 | F-025 | LOW | 위협 모델: 로그 유출 | Fix | Open | 단계 F2 | 출처 리뷰 Low. 접속 로그 조회가 무인증 |
+| F-026 | LOW | charter §3 (review_gate 인프라 불필요 단계 통과) | Accept-out-of-scope | Accepted | Round 3 · residual-risk R-009 | `scripts/review_gate.py` 의 pytest 단계가 커버리지 리포트(`term-missing:skip-covered`)의 "N files skipped due to complete coverage" 줄을 `skipped` 로 읽어 실패한다. 테스트 skip 은 0건이다. 단계 C 범위 밖 — 게이트 수정은 별도 요청 |
 
 <!--
 규칙:

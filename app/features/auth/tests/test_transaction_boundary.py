@@ -8,49 +8,33 @@
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
+from tests.session_overrides import sqlite_session_overrides
 
 
 @pytest_asyncio.fixture
 async def counting_client():
     """세션 commit 횟수를 세는 클라이언트. `counter["on"]` 구간의 커밋만 집계."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
     counter = {"on": False, "count": 0}
 
-    async def _override_get_session():
-        async with maker() as session:
-            original_commit = session.commit
+    def _count_commits(session):
+        original_commit = session.commit
 
-            async def _counting_commit(*args, **kwargs):
-                if counter["on"]:
-                    counter["count"] += 1
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            if counter["on"]:
+                counter["count"] += 1
+            return await original_commit(*args, **kwargs)
 
-            session.commit = _counting_commit  # type: ignore[method-assign]
-            yield session
+        session.commit = _counting_commit
 
-    # get_current_user 는 get_read_only_db_session 을 쓴다. 같은 세션으로 오버라이드해야
-    # 인증 경로의 커밋 횟수를 한 카운터로 셀 수 있다.
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, counter
-    app.dependency_overrides.clear()
-    await engine.dispose()
+    # get_current_user 는 get_read_only_db_session 을 쓴다. 두 의존성의 세션에 같은 훅을
+    # 걸어야 인증 경로의 커밋 횟수를 한 카운터로 셀 수 있다.
+    async with sqlite_session_overrides(app, on_session=_count_commits):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c, counter
 
 
 async def test_me_read_only_path_does_not_commit(counting_client):
