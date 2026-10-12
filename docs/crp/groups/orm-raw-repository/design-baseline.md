@@ -173,3 +173,4 @@ CRP F-001~F-018 전건 Fixed, 373 tests), 그 결과를 **착수 게이트 피�
 - v1.16 (2026-10-07): REQ-030 · ADR-036 등록 — 설정 검증 확장(`.env` 출처, 개발 환경 예시 비밀값·짧은 키), 무인증 `/admin` 승인 시 기동 WARNING, CI 주간 실행. C-10 주석 보강.
 - v1.17 (2026-10-08): REQ-031 · ADR-037 · C-34 등록 — CI mysql·browser 단계의 pipefail 누락과 CI 에 Redis 가 없어 브라우저 테스트가 에러인 채 초록이던 결함을 고쳤다.
 - v1.18 (2026-10-08): REQ-032 · ADR-038 · C-35 등록 — 로컬 게이트와 CI 의 판정 규칙을 맞췄고(xfail·strict-markers·커버리지 하한 단일화·CI revert check), bandit 게이트가 파싱 실패를 실패로 본다.
+- v1.19 (2026-10-12): **상태 갱신(대체)** — charter §2-4 비목표 "인증 체계 개편" 과 residual-risk 잔여 위험 10번(예제 API 무인증)은 2026-10-12 사용자 요청(로그인 고도화)으로 `service-hardening` 그룹 ADR-021 에 의해 대체됐다(Superseded by service-hardening ADR-021). 이 그룹의 다른 결정은 그대로이며, 무인증 `/admin` 정책(ADR-007·ADR-036·C-10·R-001)은 service-hardening ADR-020 이 유지한다.
