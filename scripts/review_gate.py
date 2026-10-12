@@ -124,7 +124,9 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                 "-rsxX",
                 # 임계값은 pyproject `[tool.coverage.report] fail_under` 하나다 — CI 도 같은 값을 읽는다.
                 "--cov=app",
-                "--cov-report=term-missing:skip-covered",
+                # `:skip-covered` 는 쓰지 않는다 — "N files skipped due to complete coverage" 줄이
+                # SKIP_MARKERS 의 `skipped` 에 걸려 테스트 skip 0건인데도 단계가 실패했다(F-026).
+                "--cov-report=term-missing",
             ],
             why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 하한이 모두 여기 들어 있다",
             # 저장소 루트의 `.coverage` 를 쓰면 병렬 실행끼리 데이터가 섞인다.

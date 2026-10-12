@@ -36,7 +36,7 @@
 | F-023 | MED | 위협 모델: 이름 선점 | Fix | Open | 단계 F2 | 출처 R-02. user API 가 비밀번호 없는 계정을 만든다 |
 | F-024 | LOW | 접속 로그 무결성 | Fix | Open | 단계 F2 | 출처 리뷰 Low. `request.state.user_id` 를 채우는 코드가 없어 by-user 조회가 항상 빈 목록 |
 | F-025 | LOW | 위협 모델: 로그 유출 | Fix | Open | 단계 F2 | 출처 리뷰 Low. 접속 로그 조회가 무인증 |
-| F-026 | LOW | charter §3 (review_gate 인프라 불필요 단계 통과) | Accept-out-of-scope | Accepted | Round 3 · residual-risk R-009 | `scripts/review_gate.py` 의 pytest 단계가 커버리지 리포트(`term-missing:skip-covered`)의 "N files skipped due to complete coverage" 줄을 `skipped` 로 읽어 실패한다. 테스트 skip 은 0건이다. 단계 C 범위 밖 — 게이트 수정은 별도 요청 |
+| F-026 | LOW | charter §3 (review_gate 인프라 불필요 단계 통과) | Fix | Fixed | Round 3 · 2026-10-12 `scripts/review_gate.py` · `tests/scripts/test_gates.py` | `scripts/review_gate.py` 의 pytest 단계가 커버리지 리포트(`term-missing:skip-covered`)의 "N files skipped due to complete coverage" 줄을 `skipped` 로 읽어 실패한다. 테스트 skip 은 0건이다. 단계 C 범위 밖으로 등록했으나, 원인이 직전 게이트 정비(orm-raw-repository ADR-038)가 넣은 `:skip-covered` 라 바로 고쳤다 — `term-missing` 으로 바꾸고 `test_local_pytest_steps_apply_the_same_rules_as_ci` 가 재발을 막는다. residual-risk R-009 해소 |
 
 <!--
 규칙:
