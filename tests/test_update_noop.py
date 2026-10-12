@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.exception import NotFoundException
+from app.core.security import OwnershipPolicy, Principal
 from app.features.blog.schemas.blog_schema import PostUpdate
 from app.features.blog.services.blog_service import BlogService
 from app.features.reply.schemas.reply_schema import ReplyUpdate
@@ -19,6 +20,8 @@ from app.features.sns.schemas.sns_schema import SnsPostUpdate
 from app.features.sns.services.sns_service import SnsService
 from app.features.user.schemas.user_schema import UserUpdate
 from app.features.user.services.user_service import UserService
+
+_ADMIN = Principal(id="admin", username="admin", is_superuser=True)
 
 # (서비스 클래스, update 메서드명, 부분수정 스키마 인스턴스)
 _CASES = [
@@ -53,7 +56,9 @@ class _MissingRepo:
 
 
 def _build(service_cls, repo):
-    service = service_cls(session=None)  # DB 없이 구성(트랜잭션 경계 불필요)
+    # DB 없이 구성(트랜잭션 경계 불필요). 인가는 슈퍼유저 주체로 통과시킨다 — 여기서는
+    # no-op 반환만 본다(인가는 tests/test_authorization_policy.py).
+    service = service_cls(session=None, ownership=OwnershipPolicy())
     service.repository = repo
     return service
 
@@ -61,9 +66,9 @@ def _build(service_cls, repo):
 @pytest.mark.parametrize("service_cls,method,payload", _CASES)
 async def test_noop_update_returns_existing_not_404(service_cls, method, payload):
     """update 가 None(no-op)이어도 존재하는 엔티티는 404 없이 그대로 반환된다."""
-    sentinel = SimpleNamespace(id="x1")
+    sentinel = SimpleNamespace(id="x1", author_id=None)
     service = _build(service_cls, _StubRepo(sentinel))
-    result = await getattr(service, method)("x1", payload)
+    result = await getattr(service, method)("x1", payload, _ADMIN)
     assert result is sentinel
 
 
@@ -72,4 +77,4 @@ async def test_missing_entity_still_raises(service_cls, method, payload):
     """실제로 존재하지 않는 엔티티는 여전히 NotFound 예외가 발생한다."""
     service = _build(service_cls, _MissingRepo())
     with pytest.raises(NotFoundException):  # 각 도메인의 *NotFoundException 은 이를 상속
-        await getattr(service, method)("missing", payload)
+        await getattr(service, method)("missing", payload, _ADMIN)

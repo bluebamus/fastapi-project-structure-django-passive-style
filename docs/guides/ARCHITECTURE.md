@@ -116,7 +116,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 | `app/core/db/errors.py` | `convert_db_error()` — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환 |
 | `app/core/exception.py` | `AppException` 계층(`headers` 를 핸들러가 응답에 싣는다 — 429 `Retry-After`)과 `ErrorResponse` |
 | `app/core/redis.py` | `get_redis()` 주입 provider, `ping_redis()` |
-| `app/core/security/` | 인증 보안 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`(§7) |
+| `app/core/security/` | 인증·인가 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`Principal`·`OwnershipPolicy`와 주입 경로 `dependencies.py`(`get_current_principal`·`require_superuser`, §7·§7.1) |
 | `app/core/models/models_base.py` | `Base` + `UUIDPrimaryKeyMixin`·`CreatedAtMixin`·`UpdatedAtMixin`·`TimestampMixin` |
 | `app/core/repositories/` | ORM: `CRUDBase`·`BaseRepository` / Raw: `RawCRUDBase`·`RawRepositoryBase` (두 계열은 상속 관계가 없다) |
 | `app/core/services/services_base.py` | `BaseService` — 세션 보관, `commit()`·`rollback()` 헬퍼 |
@@ -795,7 +795,8 @@ N번째, 가장 바깥 신뢰 프록시가 본 주소)를 쓴다. 그보다 왼�
 `request_path`, `request_method`, `query_string`(민감 키 값 `***`), `referer`, `accept_language`, `session_id`(`SESSION_COOKIE_NAME` 쿠키 원문), `user_id`(`request.state`),
 `response_status`, `response_time_ms`. 인덱스: created_at·ip_address·os_name·browser_name·device_type·country·session_id·user_id.
 
-조회 API(`/api/v1/home/access-logs` 외 4개)는 모두 read-only 세션을 쓰며 인증이 없다(§11.3).
+조회 API(`/api/v1/home/access-logs` 외 4개)는 모두 read-only 세션을 쓰며 **슈퍼유저 전용**이다(라우터 의존성 `require_superuser`, §7.1).
+인증된 요청의 `user_id` 는 `get_current_principal` 이 핸들러 실행 중에 `request.state.user_id` 로 채우고, 미들웨어가 **응답 뒤에** 읽어 기록한다.
 
 ---
 
@@ -808,13 +809,15 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 | 부품 | 위치 | 역할 |
 |---|---|---|
 | `PasswordHasher` | `app/core/security/passwords.py` | pwdlib Argon2 해시. 기존 bcrypt(`$2…`)는 이전 규칙(72바이트 절단)으로 검증하고 성공하면 Argon2 새 해시를 돌려준다. 타이밍 균등화 더미 해시도 Argon2 |
-| `TokenService` | `app/core/security/tokens.py` | PyJWT 발급·검증. claims `sub·type·iat·nbf·exp·jti·iss·aud` + access `username` / refresh `fam`. 실패는 원인과 무관하게 `InvalidTokenException`(401, 오류 코드 AUTH_INVALID_TOKEN) |
+| `TokenService` | `app/core/security/tokens.py` | PyJWT 발급·검증. claims `sub·type·iat·nbf·exp·jti·iss·aud` + access `username`·`su`(슈퍼유저 여부, bool 필수) / refresh `fam`. 실패는 원인과 무관하게 `InvalidTokenException`(401, 오류 코드 AUTH_INVALID_TOKEN) |
 | `RefreshTokenStore` | `app/core/security/refresh_store.py` | Redis 에 미사용 refresh(`auth:rt:{jti}`)·사용자 family 집합·family 폐기 표시를 둔다. 소비는 Redis GETDEL 하나 |
 | `RateLimiter` | `app/core/security/rate_limit.py` | Redis 고정 창(MULTI 안에서 INCR + EXPIRE NX + TTL). 초과는 `TooManyRequestsException`(429, `Retry-After`) |
+| `Principal` · `OwnershipPolicy` | `app/core/security/principal.py` | 요청 주체(id·username·is_superuser, 불변)와 소유권 판정 `ensure_can_modify(owner_id, principal)` — 소유자 또는 슈퍼유저, 아니면 403 |
 
-조립은 `app/features/auth/dependencies/auth_dependencies.py` 의 provider 가 한다(생성자 주입, service-hardening ADR-022).
-`get_password_hasher`·`get_token_service`·`get_client_ip_resolver` 는 프로세스당 하나(`lru_cache`), `get_refresh_token_store`·`get_rate_limiter` 는
-`Depends(get_redis)`(§3.4)로 받은 클라이언트로 만들고, `get_auth_service(session, hasher, tokens, store)` 가 `AuthService` 를 만든다.
+조립은 provider 함수가 한다(생성자 주입, service-hardening ADR-022). 여러 기능이 함께 쓰는 provider —
+`get_password_hasher`·`get_token_service`·`get_ownership_policy`(프로세스당 하나, `lru_cache`)와 `get_refresh_token_store`(`Depends(get_redis)`, §3.4) —
+는 `app/core/security/dependencies.py` 에 있고, 인증 기능(`app/features/auth/dependencies/auth_dependencies.py`)은 그것을 그대로 쓰면서
+`get_client_ip_resolver`·`get_rate_limiter`·`get_auth_service(session, hasher, tokens, store)` 를 더한다.
 
 | 메서드 | 경로 | 인증 | 요청 | 성공 | 실패 |
 |---|---|---|---|---|---|
@@ -837,8 +840,8 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
    비활성이면 401(비활성·부재는 family 도 폐기). 통과하면 **같은 family** 로 새 쌍을 발급한다.
 3. **logout** — refresh 토큰의 family 를 폐기하고 jti 를 소비한다(멱등, 204). access 토큰은 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`)까지
    유효하다 — 즉시 폐기 목록은 두지 않고 짧은 수명으로 대신한다.
-4. **/me** — `OAuth2PasswordBearer` → `TokenService.decode(…, "access")` → read-only 세션의 `UserRepository.get_by_id` → 없거나 비활성이면
-   401. Redis 도 쓰기 세션도 쓰지 않는다.
+4. **/me** — `get_current_principal`(아래 §7.1) → read-only 세션의 `UserRepository.get_by_id` → 없거나 비활성이면 401.
+   Redis 도 쓰기 세션도 쓰지 않는다.
 5. **register** — `register_rate_limit`(ip, `AUTH_REGISTER_MAX_ATTEMPTS`/`AUTH_REGISTER_WINDOW_SECONDS`) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.
 
 | 설정 | 기본값 | 설명 |
@@ -856,7 +859,35 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 - **상수 시간 인증**: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
   bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).
 - **논블로킹 해싱**: Argon2·bcrypt 는 `asyncio.to_thread` 로 이벤트 루프 밖에서 돈다.
-- 보호가 붙은 endpoint 는 `/me` 뿐이다. 새 endpoint 의 인증·소유권·역할 검사는 직접 설계한다. `require_admin` 같은 관리자 권한 Dependency 는 없다.
+
+### 7.1 인가 — 주체·소유권·슈퍼유저
+
+권한은 **슈퍼유저/일반 2단계**다(`users.is_superuser`). 인가는 core 의 주입 경로 하나(`app/core/security/dependencies.py`)로 한다 —
+기능이 인가를 위해 user 기능을 import 하지 않는다(service-hardening C-11).
+
+| 주입 | 하는 일 | 실패 |
+|---|---|---|
+| `oauth2_scheme` | `OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)` — OpenAPI 에 Bearer 스킴을 싣는다 | 헤더가 없으면 아래가 401 |
+| `get_current_principal` | access 토큰 검증 → `Principal(id, username, is_superuser)`. **DB 조회 없음**. `request.state.user_id` 를 채운다 | 401 UNAUTHORIZED(토큰 없음, `WWW-Authenticate: Bearer`) · 401 AUTH_INVALID_TOKEN(만료·위조·`su` 누락·refresh 토큰) |
+| `require_superuser` | 주체가 슈퍼유저인지 본다 | 403 FORBIDDEN |
+| `CurrentPrincipal` / `SuperuserPrincipal` | 위 두 의존성의 `Annotated` 별칭 — 핸들러 인자 타입으로 쓴다 | — |
+| `OwnershipPolicy` | 서비스가 생성자로 받아 수정·삭제 전에 `ensure_can_modify(owner_id, principal)` 를 부른다. `owner_id` 가 `None` 이면 슈퍼유저만 | 403 FORBIDDEN |
+
+| 기능 | 공개 | 인증 | 소유자 또는 슈퍼유저 | 슈퍼유저 |
+|---|---|---|---|---|
+| blog · sns · reply | 목록·단건 조회 | 생성(작성자 `author_id`·`author` 는 서버가 주체로 채운다 — 본문 값은 무시) | 수정·삭제(존재 확인 404 가 먼저) | — |
+| catalog | 목록·단건 조회 | — | — | 생성·수정·삭제 |
+| reports | — | — | — | 일별 매출 |
+| home | — | — | — | 접속 로그 조회 5종(라우터 의존성) |
+| user | — | — | 단건 조회·수정(본인 — **권한 판정이 존재 확인보다 먼저**라 남의 ID 는 있든 없든 403) | 목록·생성(비밀번호 필수, `is_superuser` 지정 가능)·삭제, `is_active`·`is_superuser` 변경 |
+| auth | register·login·refresh·logout | `/me` | — | — |
+
+- 비활성화(`is_active=false`)·강등(`is_superuser=false`)·삭제는 그 사용자의 refresh family 를 모두 폐기한다(`RefreshTokenStore.revoke_user`).
+  이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).
+- `author_id` 가 없는 행(인가 리비전 `a3c9e8f1b274` 이전 데이터)은 슈퍼유저만 수정·삭제한다.
+- 정책 표는 `tests/test_authorization_policy.py` 가 고정한다 — 새 오퍼레이션은 등급을 정해 표에 올려야 하고, OpenAPI `security` 와 교차 확인된다.
+- 첫 관리자는 `uv run python -m scripts.create_superuser --username <이름> --email <메일>` 로 만든다(이미 있으면 승격, 비밀번호는 `--set-password` 일 때만 바꾼다).
+  사용법은 README 「첫 관리자 만들기」.
 
 ---
 
@@ -936,6 +967,8 @@ config.set_main_option(                                              # URL → �
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
 | 8 | 오케스트레이터가 `/health` 를 liveness, `/ready` 를 readiness 로 연결 | DB 흔들림에 프로세스 재시작 |
 | 9 | 로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록 | — |
+| 10 | 프록시 뒤 배포면 `TRUSTED_PROXY_HOPS` 를 **앞단 프록시 단 수**로 | 0 으로 두면 모든 요청이 프록시 IP 하나로 보여 로그인·가입 IP 레이트 리밋을 모두가 나눠 쓴다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 `X-Forwarded-For` 를 믿는다(service-hardening R-013) |
+| 11 | 첫 관리자를 `scripts.create_superuser` 로 만들고, 관리 API(사용자 목록·접속 로그·리포트·상품 쓰기)가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 를 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
 
 ### 11.2 배포 절차와 확인
 
@@ -960,14 +993,15 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 전제로 삼지 않는다.
 
-- **API 인증·인가**: `/api/v1/auth/me` 외 모든 endpoint(사용자 CRUD, 접속 로그 조회 포함)에 인증이 없다. 관리자 권한 Dependency 도 없다.
+- **API 인가의 세분**: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). `Principal` 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
+  다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.
 - **Admin 인증**: 영구 비목표(§8).
-- **JWT 즉시 폐기**: 블랙리스트·refresh 저장소·강제 로그아웃 없음.
+- **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·삭제)로 대신한다.
 - **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
   `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장되고,
   보존 기간·자동 삭제 정책이 없다. 개인정보 정책을 배포 측에서 정한다.
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
-- **레이트 리밋**: 없음(2026-08-13 제거).
+- **레이트 리밋**: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.
 - **자동 앱 탐색**: 없음(설계 원칙).
 - **미사용 설정**: `ApiSettings`·`SMTPSettings`·`UploadSettings`, `SessionSettings` 의 쿠키 이름 밖의 필드, 일부 로그 설정(§3.2).
 - **검증하지 않은 것**: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.
@@ -980,6 +1014,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-12 | **service-hardening**: DSN `URL.create`, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 `/ready`, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(`Principal`·`OwnershipPolicy`·슈퍼유저·`scripts/create_superuser.py`, §7.1) (`docs/crp/groups/service-hardening/`). |
 | 2026-09-21 ~ 2026-10-02 | **읽기 전용 강제를 라우터와 분리 + 게이트·문서 위생**: 읽기 전용 세션의 쓰기 차단을 `get_bind()` 안에서 `Session` 전역 이벤트(`before_flush`·`do_orm_execute`)로 옮겨 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하게 했다 — 이전에는 **기본 설정(라우터 off)에서 차단이 통째로 없었다**(§4.4, `tests/core/test_read_only_guard.py`). `ValidationException` 을 `HTTP_422_UNPROCESSABLE_CONTENT` 로 옮겼다(값은 그대로 422, starlette 1.x 폐기 예고). 게이트에 `pip-audit` 단계를 넣어 9단계가 됐고, 게이트를 가리키는 문서 포인터를 번호에서 **스텝 이름**으로 바꿨다(번호는 단계가 끼면 밀린다). `filterwarnings` 를 `error::` 로 올리고 파일 핸들 누수를 없앴다. `redis 6.4.0`·`uvicorn 0.54.0` 상향, pyjwt 권고 10건 해소. 문서가 인용한 비밀값이 배포 안전 검사에 걸리는지 보는 `tests/test_docs_secret_examples.py` 를 신설했다. |
 | 2026-09-17 | **HTML 안내서 복원 + 정합성 점검**: 재구성에서 지운 `server-lifecycle-guide.html`·`feature-development-guide.html` 을 되살려 현재 코드·Markdown 과 맞췄다(다른 저장소 비교 제거, 부록 설정표를 `config.py` 에서 재생성). README 「문서 안내」를 `문서 / 역할 / 언제 보나` 표로 바꾸고 두 안내서를 넣었다. 코드 설명 정정: `API_DESCRIPTION`(다른 프로젝트 제목·UnitOfWork 제거), `pyproject.toml` 이름·설명, `/api/v1/catalog/products` 설명(`active_only=false` 는 정렬 없음), 미사용 설정(`ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings`·`LOG_CONSOLE_ENABLED`·로그 포맷 3종) 표기, `ENV` 가 `/health` 에 포함된다는 잘못된 주석. 문서 검사에 HTML(코드 경로·`data-source`·링크·앵커·꺾쇠 이스케이프)과 Markdown 앵커 검사를 추가했다. 같은 날 후속: 모든 쓰기 핸들러를 **응답 DTO 검증 → commit** 순서로 통일했다(이전에는 commit 후 검증이라 DTO 실패 시 데이터가 남았다, `tests/test_validate_before_commit.py`). Python 규칙을 `>=3.13`·ruff `py313`·mypy `3.13` 으로 올렸다. |
 | 2026-09-17 | **문서 재구성**: 진입·아키텍처·개발 세 문서로 통합했다. `docs/guides/QUICKSTART.md` 는 README 로, `docs/project-guide/v1.1/`(10편)·`docs/django-style-app-registry/`(3편)·HTML 안내서 2편(`server-lifecycle-guide.html`·`feature-development-guide.html`)은 이 문서와 `docs/guides/DEVELOPMENT.md` 로 흡수한 뒤 삭제했다. 삭제된 통합 계획서의 요구 ID 의미(§2.8)와 운영 준비 계획·배포 문서의 여전히 참인 항목(§11)을 코드와 대조해 되살렸다. 정정: 운영 Admin 차단은 존재한다(ACK 없으면 기동 거부), 공개 API 는 22 경로 / 37 오퍼레이션, 파일 로그는 staging/production 에서만, `exists()` 는 PK 인자. |

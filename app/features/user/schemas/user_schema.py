@@ -1,6 +1,7 @@
 """User 도메인 스키마 — 사용자 CRUD 요청/응답 모델 (Pydantic v2)."""
 
 from datetime import datetime
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,14 +17,24 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """사용자 생성 요청."""
+    """사용자 생성 요청(슈퍼유저 전용).
+
+    비밀번호는 필수다 — 로그인할 수 없는 계정이 이름만 선점하지 못하게 한다(ledger F-023).
+    """
+
+    password: str = Field(..., min_length=8, max_length=128, description="비밀번호(8자 이상)")
+    is_superuser: bool = Field(False, description="슈퍼유저 여부")
 
 
 class UserUpdate(PatchSchema):
     """사용자 수정 요청 — 전달된 필드만 부분 수정한다."""
 
     email: str | None = Field(None, max_length=255, pattern=EMAIL_PATTERN, description="이메일")
-    is_active: bool | None = Field(None, description="활성 여부")
+    is_active: bool | None = Field(None, description="활성 여부(슈퍼유저만 변경)")
+    is_superuser: bool | None = Field(None, description="슈퍼유저 여부(슈퍼유저만 변경)")
+
+    #: 슈퍼유저만 바꿀 수 있는 필드 — 본인이라도 스스로 활성화·승격할 수 없다.
+    privileged_fields: ClassVar[frozenset[str]] = frozenset({"is_active", "is_superuser"})
 
 
 class UserResponse(UserBase):
@@ -33,6 +44,7 @@ class UserResponse(UserBase):
 
     id: str
     is_active: bool
+    is_superuser: bool
     created_at: datetime = Field(description="생성 시각(UTC, 오프셋 포함 ISO 8601)")
     updated_at: datetime = Field(description="수정 시각(UTC, 오프셋 포함 ISO 8601)")
 

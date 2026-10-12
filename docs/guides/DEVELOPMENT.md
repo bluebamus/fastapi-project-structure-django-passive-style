@@ -341,7 +341,7 @@ flowchart TD
 ```
 
 HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여러 Service 가 참여하면 같은 writer 세션을 주입하고 커밋 주체를 하나로 둔다.
-인증(`get_current_user`)은 read-only 세션을 따로 쓰므로, 인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려면 쓰기 세션에서 다시 조회한다.
+인가(`CurrentPrincipal`)는 DB 를 읽지 않는다. 사용자 엔티티가 필요한 인증(`get_current_user`)은 read-only 세션을 따로 쓰므로, 인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려면 쓰기 세션에서 다시 조회한다.
 
 ### 4.2 커밋과 응답
 
@@ -353,8 +353,8 @@ HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여�
   (`expire_on_commit=False` 가 모든 관계 로딩을 해결하지는 않는다).
 - PATCH 스키마의 `None` 은 "미전달"과 다르다. `exclude_unset=True` 는 안 보낸 필드만 뺀다. 그래서 수정 스키마는
   `app/core/schemas.py` 의 `PatchSchema` 를 상속한다 — 보낸 필드의 null 은 `nullable_fields`(모델 컬럼이 `nullable=True`
-  인 것만 적는다) 밖이면 422 다. 예: `PostUpdate.nullable_fields = frozenset({"author"})` 라 `{"title": null}` 은 422,
-  `{"author": null}` 은 작성자를 지운다.
+  인 것만 적는다) 밖이면 422 다. 예: `ProductUpdate.nullable_fields = frozenset({"description"})` 라 `{"name": null}` 은 422,
+  `{"description": null}` 은 설명을 지운다.
 - 상태 전환·재고 차감처럼 동시성이 있는 변경은 "조회 후 UPDATE" 만으로 안전하지 않다. 조건부 UPDATE·잠금·DB 제약을 설계한다.
 - 커밋 성공 뒤 응답이 유실될 수 있다. 중요한 생성 업무는 멱등 키·중복 처리 정책을 정한다.
 
@@ -400,6 +400,44 @@ async with background_session() as session:     # 요청 밖 — 커밋은 직�
 - 접속 로그 runner(`access_log_tasks`)는 drop 가능한 비핵심 작업 전용이다. 업무 저장·결제·발송을 넣지 않는다.
 - Redis 는 필수다. 새 기능은 `redis: Redis = Depends(get_redis)`(`app/core/redis.py`)로 lifespan 이 소유한 client 를 주입받는다 —
   `Redis.from_url` 을 직접 만들지 않는다. client 가 없으면(lifespan 밖) 503. 테스트는 `app.state.redis` 에 fakeredis 를 넣거나 `dependency_overrides[get_redis]` 를 쓴다.
+
+### 4.5 인증·인가 붙이기
+
+인가는 core 의 주입 경로(`app/core/security/dependencies.py`) 하나로 건다 — 기능이 인가를 위해 user·auth 기능을 import 하지 않는다.
+권한은 슈퍼유저/일반 2단계다. 정책 전체 표는 [아키텍처 §7.1](ARCHITECTURE.md#71-인가--주체소유권슈퍼유저).
+
+| 필요 | 쓰는 것 | 실패 |
+|---|---|---|
+| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal` | 401 |
+| 슈퍼유저 | 인자 `principal: SuperuserPrincipal`, 또는 결과가 필요 없으면 `dependencies=[Depends(require_superuser)]`(라우트·`APIRouter` 전체) | 401 · 403 |
+| 작성자만 수정 | 서비스가 생성자로 `OwnershipPolicy` 를 받고 `ensure_can_modify(row.author_id, principal)` | 403 |
+| 사용자 엔티티(활성 여부 포함) | auth 의 `get_current_user` — DB 를 읽는다. 인가만 필요하면 쓰지 않는다 | 401 |
+
+```python
+# dependencies/<name>_dependencies.py — 정책 객체도 provider 로 주입한다
+async def get_item_service(
+    session: AsyncSession = Depends(get_writer_db_session),
+    ownership: OwnershipPolicy = Depends(get_ownership_policy),
+) -> ItemService:
+    return ItemService(session, ownership)
+
+# services/<name>_service.py — 존재 확인(404) 뒤 소유권(403)
+async def update_item(self, item_id: str, data: ItemUpdate, principal: Principal) -> Item:
+    existing = await self.get_item(item_id)
+    self.ownership.ensure_can_modify(existing.author_id, principal)
+    ...
+
+# api/routers/v1/<name>.py — 작성자는 서버가 주체로 채운다(요청 본문에서 받지 않는다)
+@router.post("/items", ...)
+async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service: ItemService = Depends(get_item_service)):
+    item = await service.create_item(payload, principal)   # author_id=principal.id
+```
+
+- 보호 라우트는 `responses` 에 `app/core/security/dependencies.py` 의 공용 401·403 응답 상수를 싣는다(OpenAPI 에 문서화된다).
+- 새 오퍼레이션은 `tests/test_authorization_policy.py` 의 정책 표에 등급(public·auth·owner·self·admin)을 올린다 — 빠지면 실패한다.
+- 엔드포인트 테스트는 `get_current_principal` 을 override 하지 않고 `tests/auth_headers.py` 의 헤더(`admin_headers()`·`user_headers()`)로
+  실제 토큰을 보낸다. 토큰 검증·`su` claim·`request.state.user_id` 기록까지 같이 시험된다.
+- `Principal` 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.
 
 ---
 
@@ -512,7 +550,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | Model·Repository | 기능 DB 테스트, `tests/core/test_repository_base.py`, migration chain, `alembic check` |
 | Raw SQL | `tests/core/test_raw_repository_base.py`·`tests/core/test_raw_routing.py`, MySQL 통합(방언·Decimal·날짜·rowcount) |
 | 세션·DB Router | transaction boundary, `tests/test_read_path_no_commit.py`, `tests/core/test_read_only_guard.py`, `tests/core/test_db_router.py`·`tests/core/test_db_router_env.py` |
-| 인증 | auth endpoint(`app/features/auth/tests/test_endpoint.py`), `tests/core/security/`(해시·토큰·refresh 기록·레이트 리밋), `tests/test_email_validation.py` |
+| 인증·인가 | auth endpoint(`app/features/auth/tests/test_endpoint.py`), `tests/core/security/`(해시·토큰·refresh 기록·레이트 리밋), `tests/test_authorization_policy.py`(정책 표·401·403·접속 로그 user_id), `tests/test_ownership.py`(소유권), `app/features/user/tests/test_endpoint.py`(본인·권한 필드·refresh 폐기), `tests/scripts/test_create_superuser.py`, `tests/test_email_validation.py` |
 | Middleware | `tests/core/test_access_log_decoupling.py`, `tests/core/test_background_tasks.py`, `tests/core/test_cors_settings.py` |
 | 설정 | `tests/core/test_settings_contract.py`·`tests/core/test_deployment_safety.py`, `.env.example` 동시 갱신 |
 | 문서 | 문서 검사 세 파일(§6.3) |

@@ -275,6 +275,51 @@
 - **수렴 판정:** 단계 F1 `CONVERGED` (F-020·F-021 Fixed). 그룹 전체는 `NOT CONVERGED` (Open Fix 4: F-022~F-025)
 - **잔여 위험 변화:** R-012(bcrypt 잔존 사용자 타이밍)·R-013(프록시 홉 0 의 ip 한도 공유) 등록
 
+### Round 7 — 2026-10-12 (base SHA: `b3c49eb`) · 단계 F2
+- **트리거:** REQ-001 단계 F2 (제안 9 後半, 인가·소유권·운영 도구) — ADR-017~ADR-020, 새 ADR-030
+- **검수 범위:** F-022 · F-023 · F-024 · F-025
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 ■ (단계 F2 · 그룹 전체)
+- **변경:**
+  - 리비전 `a3c9e8f1b274`(down `e5a7c2d9f310`): `users.is_superuser` Boolean NOT NULL `server_default=false()`, `blog_posts`·`sns_posts`·`replies.author_id` String(36) NULL + `ix_<table>_author_id`.
+    모델은 도메인 컬럼 뒤(`author_id` 는 `author` 다음, `is_superuser` 는 `is_active` 다음)에 두어 `sort_order` 배치(id → 도메인 → created_at → updated_at)를 지킨다.
+  - core security: `principal.py`(`Principal` frozen dataclass, `OwnershipPolicy.ensure_can_modify`), `dependencies.py`(`oauth2_scheme` auto_error=False, provider 4종, `get_current_principal`,
+    `require_superuser`, `CurrentPrincipal`·`SuperuserPrincipal`, 공용 401·403 OpenAPI 응답), `tokens.py`(`issue_access(sub, username, is_superuser)`, access 필수 claim 에 `su`, 추가 claim 값 타입 표 `username:str·su:bool·fam:str`).
+  - auth: provider 를 core 에서 가져와 재사용, `get_current_user` = `get_current_principal` + read-only `UserRepository`, `_issue` 가 `user.is_superuser` 를 싣는다, `AuthenticatedUserResponse.is_superuser`.
+  - blog·sns·reply: 서비스 생성자 `(session, ownership)`, `create_*(data, principal)`(author_id·author 서버 채움), `update_*/delete_*(id, data?, principal)` 은 존재 확인 뒤 소유권. Create/Update 스키마에서 `author` 제거,
+    응답에 `author_id`. 라우터: POST `CurrentPrincipal`, PATCH·DELETE `CurrentPrincipal` + 401·403 문서화.
+  - catalog 쓰기·user 목록/생성/삭제: 라우트 `dependencies=[Depends(require_superuser)]`. reports·home: v1 `APIRouter(dependencies=[Depends(require_superuser)], responses=...)`.
+  - user: `UserCreate.password`(8~128)·`is_superuser`, `UserUpdate.is_superuser`·`privileged_fields`, `UserService(session, ownership, password_hasher=None, refresh_store=None)` — 단건 조회·수정은
+    `ensure_can_modify(user_id, principal)` 를 **존재 확인 전에**, 일반 사용자의 권한 필드 변경 403, `is_active=false`·`is_superuser=false`·삭제 → `revoke_user`. 쓰기 provider 가 core 해시기·refresh 기록을 주입.
+  - 접속 로그 미들웨어: `user_id` 를 `_record`(응답 뒤)에서 `request.state` 로 읽는다.
+  - `scripts/create_superuser.py`: `--username`·`--email`·`--password-stdin`·`--set-password`, getpass 두 번, `background_session()` + `UserRepository` + core `PasswordHasher`, 생성 또는 승격, 커밋 1회, 종료 코드 0/1/2.
+  - 테스트 조정(이유 기록, 검사 규칙 약화 없음): 기존 엔드포인트 클라이언트(blog·sns·reply·user·catalog·reports·트랜잭션 경계·영업일·`test_validate_before_commit`)에 실토큰 관리자 헤더
+    (`tests/auth_headers.py`)를 붙였다 — 정책상 이제 인증이 필요하다. user 엔드포인트·생성 페이로드에 비밀번호를 더했다(F-023). `test_update_noop` 은 슈퍼유저 주체와 `OwnershipPolicy` 로 서비스를 만든다.
+    `test_patch_schema` 의 "null author 허용" 단언은 `author` 필드 부재 단언으로 바꿨다(작성자는 서버가 채운다). sns 테스트의 본문 author 단언은 서버 채움 값으로. 컬럼 배치 표에 새 컬럼.
+    MySQL 왕복 테스트: 한 단계씩 내리기에 인가 리비전 단계를 앞에 더하고, 기존 행이 `is_superuser=0`·`author_id NULL` 로 올라가고 downgrade 가 행을 지우지 않는지 보는 테스트를 더했다(`mysql` 마커, CI 판정).
+  - 문서: README(특징·환경 변수 `TRUSTED_PROXY_HOPS`·API 표 인증 열·인증 흐름·권한 표·첫 관리자 만들기·운영 배포 체크리스트 — "/admin 은 여전히 무인증" 갱신 + **프록시 뒤 `TRUSTED_PROXY_HOPS` 미설정 시 IP 레이트 리밋 공유** 항목(R-013 결정 종결)),
+    ARCHITECTURE(§1.3 core 표·§6 접속 로그 user_id·§7 부품 표·조립·/me 흐름·§7.1 인가 신설·§11.1 #10·#11·§11.3 알려진 제한 갱신·§12 변경 이력), DEVELOPMENT(§4.1·§4.2 예시 교체·§4.5 인증·인가 붙이기·§6.4),
+    HTML 안내서 2편, OpenAPI 태그 설명(Auth·Home·User·Blog·Reply·SNS·Catalog·Sales Reports), `.env.example`(프록시 홉 주석).
+- **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 변이를 넣어 실행 후 복원 — 34종 모두 감지):**
+  - `tests/test_authorization_policy.py` — 정책 표 ↔ OpenAPI 오퍼레이션·security·401/403 문서화, 보호 오퍼레이션 31개 무토큰 401(`WWW-Authenticate: Bearer`), 관리 오퍼레이션 13개 일반 사용자 403,
+    공개 GET 무토큰 통과, 나쁜 토큰 6종 401(만료·위조·`su` 누락·`su` 문자열·refresh 를 access 로·쓰레기), 다른 키로 `su=true` 재서명 401, 접속 로그 user_id(인증 요청은 id, 익명은 None).
+    감지 변이: `require_superuser` 무력화, reports·home 라우터 가드 제거, catalog 쓰기 가드 전체·생성만 제거, user 관리 가드 제거, `su` 필수 제거, `su` 타입 검사 제거, principal 의 `su` 무시,
+    `request.state.user_id` 미기록, 미들웨어의 응답 뒤 읽기 제거, 무토큰 401 우회.
+  - `tests/test_ownership.py` — `OwnershipPolicy` 단위 5건 + blog·sns·reply 공통 7건×3(무토큰 401, author·author_id 서버 채움(본문 위조 무시), 소유자 수정·삭제, 타인 403(행 보존), 슈퍼유저 우회, author_id NULL 행은 슈퍼유저만, 없는 행 404).
+    감지 변이: 판정 무력화, NULL 소유자 허용, 슈퍼유저 우회 제거, 세 기능 update·delete 의 판정 호출 제거(6종), 본문 author 사용.
+  - `app/features/user/tests/test_endpoint.py` — Argon2 저장, 비밀번호 필수, 슈퍼유저 생성, 본인 조회·수정, 타인 403, **없는 ID 도 403**(판정이 존재 확인보다 먼저), 본인 권한 필드 403, 일반 사용자 목록·생성·삭제 403,
+    비활성화·강등·삭제 → family 폐기, 일반 수정은 유지. 감지 변이: 본인 판정 제거(조회·수정), 존재 확인을 판정 앞으로, 권한 필드 검사 제거, revoke 호출 제거(비활성화·강등·삭제 각각), 해시 없이 저장.
+  - `app/features/auth/tests/test_endpoint.py` +2 — 관리자 API 비활성화 → 재활성화해도 미소비 refresh 401(`revoke_user` 가 막았음을 분리), 로그인 토큰의 `su`·`/me` 의 `is_superuser`·슈퍼유저 토큰으로 관리 API 200. 감지 변이: `su` 를 항상 False 로 발급.
+  - `tests/core/security/test_token_service.py` — `su` 왕복, `su` 비bool 4종 거부, 필수 claim 목록에 `su`.
+  - `tests/scripts/test_create_superuser.py` 9건 — 생성(Argon2·검증 통과), 승격(비밀번호 유지), `--set-password` 재해시, getpass 불일치 1·일치 0, 짧은 비밀번호·나쁜 이메일·생성 시 이메일 없음 → 1 + 미기록, 사용자명 없음 → 2.
+    감지 변이: 승격 안 함, 승격 시 비밀번호 덮어쓰기, 확인 입력 무시.
+- **검사:** ruff check 통과 · ruff format --check 356 파일 · mypy 214 파일 이슈 0(순수 Python 빌드 1.20.2) ·
+  `pytest -m "not mysql and not browser"` **996 passed · 32 deselected · skip 0** · `--cov=app` **95.99%** · `-m "mysql or browser" --collect-only` 32건 ·
+  `alembic heads` 단일(`a3c9e8f1b274`) · SQLite upgrade head → `alembic check` 무드리프트 → downgrade `e5a7c2d9f310` → 재-upgrade → 무드리프트 · 계층 검사 통과(core→features 0, 기능 간 import 는 auth→user 만) ·
+  bandit MEDIUM 이상 0(247 파일) · OpenAPI revert check 20/20 감지 · `uv lock --check` 통과 · `scripts.review_gate --fast` 7단계 모두 OK(pip-audit 포함)
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0
+- **수렴 판정:** 단계 F2 `CONVERGED` (F-022~F-025 Fixed). **그룹 전체 `CONVERGED`** — Open Fix 0, ledger 의 모든 Fix 가 Fixed(F-001~F-026), Accept 항목은 residual-risk 에 근거와 함께 있다.
+- **잔여 위험 변화:** R-013 결정 종결(배포 체크리스트 항목), R-014(강등 후 access 권한 잔존)·R-015(새 컬럼 물리 순서) 등록
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -285,3 +330,4 @@
 | 4 | 0 | 0 | 0 | 0 | 0 (Fixed 1: F-017) | 단계 D CONVERGED · F-015 CI 판정 대기 · 그룹 Open 9 |
 | 5 | 0 | 0 | 0 | 0 | 0 (Fixed 3: F-015·F-018·F-019) | 단계 E CONVERGED · 그룹 Open 6 |
 | 6 | 0 | 0 | 0 | 0 | 0 (Fixed 2: F-020·F-021) | 단계 F1 CONVERGED · 그룹 Open 4 |
+| 7 | 0 | 0 | 0 | 0 | 0 (Fixed 4: F-022~F-025) | 단계 F2 CONVERGED · **그룹 CONVERGED** (Open 0) |

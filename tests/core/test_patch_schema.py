@@ -43,10 +43,11 @@ def test_omitted_fields_are_not_checked():
     assert _Sample.model_validate({"title": "x"}).model_dump(exclude_unset=True) == {"title": "x"}
 
 
-def test_blog_update_rejects_null_title_but_allows_null_author():
+def test_blog_update_rejects_null_title():
+    """작성자는 서버가 채우므로(service-hardening ADR-018) 수정 스키마에 nullable 필드가 없다."""
     with pytest.raises(ValidationError):
         PostUpdate.model_validate({"title": None})
-    assert PostUpdate.model_validate({"author": None}).author is None
+    assert "author" not in PostUpdate.model_fields
 
 
 def _update_schemas() -> list[type[PatchSchema]]:

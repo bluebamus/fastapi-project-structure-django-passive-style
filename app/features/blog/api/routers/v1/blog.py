@@ -1,6 +1,8 @@
 """
 Blog v1 API 엔드포인트 — 게시글 CRUD.
 
+인가: 조회는 공개, 생성은 인증(``CurrentPrincipal`` — 작성자는 서버가 채운다), 수정·삭제는
+소유자 또는 슈퍼유저(서비스가 주입받은 ``OwnershipPolicy`` 로 판정한다).
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
 쓰기 핸들러는 응답 DTO 를 먼저 검증한 뒤 `await service.commit()` 으로 한 번 커밋한다(별도 UnitOfWork 없음).
@@ -12,6 +14,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import (
+    FORBIDDEN_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+    CurrentPrincipal,
+)
 from app.features.blog.dependencies.blog_dependencies import (
     get_blog_service,
     get_blog_service_readonly,
@@ -29,21 +36,25 @@ router = APIRouter()
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
     404: {"model": ErrorResponse, "description": "게시글을 찾을 수 없음"}
 }
+#: 수정·삭제 — 소유자 또는 슈퍼유저만(ADR-018). 존재 확인(404)이 권한 확인(403)보다 먼저다.
+_OWNER_ONLY = {**_NOT_FOUND, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE}
 
 
 @router.post(
     "/posts",
     response_model=PostResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=UNAUTHORIZED_RESPONSE,
     summary="게시글 생성",
     description="새 게시글을 생성합니다.",
     operation_id="createPost",
 )
 async def create_post(
     payload: PostCreate,
+    principal: CurrentPrincipal,
     service: BlogService = Depends(get_blog_service),
 ) -> PostResponse:
-    post = await service.create_post(payload)
+    post = await service.create_post(payload, principal)
     response = PostResponse.model_validate(post)  # 검증 실패면 커밋하지 않는다
     await service.commit()
     return response
@@ -89,17 +100,18 @@ async def get_post(
 @router.patch(
     "/posts/{post_id}",
     response_model=PostResponse,
-    responses=_NOT_FOUND,
+    responses=_OWNER_ONLY,
     summary="게시글 수정",
     description="게시글을 부분 수정합니다(전달한 필드만).",
     operation_id="updatePost",
 )
 async def update_post(
     payload: PostUpdate,
+    principal: CurrentPrincipal,
     post_id: str = Path(..., description="게시글 ID(UUID)"),
     service: BlogService = Depends(get_blog_service),
 ) -> PostResponse:
-    post = await service.update_post(post_id, payload)
+    post = await service.update_post(post_id, payload, principal)
     response = PostResponse.model_validate(post)  # 검증 실패면 커밋하지 않는다
     await service.commit()
     return response
@@ -108,14 +120,15 @@ async def update_post(
 @router.delete(
     "/posts/{post_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_NOT_FOUND,
+    responses=_OWNER_ONLY,
     summary="게시글 삭제",
     description="게시글을 삭제합니다.",
     operation_id="deletePost",
 )
 async def delete_post(
+    principal: CurrentPrincipal,
     post_id: str = Path(..., description="게시글 ID(UUID)"),
     service: BlogService = Depends(get_blog_service),
 ) -> None:
-    await service.delete_post(post_id)
+    await service.delete_post(post_id, principal)
     await service.commit()

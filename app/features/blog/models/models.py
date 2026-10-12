@@ -18,7 +18,8 @@ class Post(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         id: UUID 기본키
         title: 제목
         content: 본문
-        author: 작성자(선택)
+        author: 작성자 표시 이름(서버가 인증 주체의 username 으로 채운다)
+        author_id: 작성자 사용자 ID(소유자 판정 키)
         created_at: 생성 시각
         updated_at: 수정 시각
     """
@@ -28,6 +29,9 @@ class Post(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 소유자 판정 키(service-hardening ADR-018). 서버가 인증 주체로 채운다. NULL = 소유자 기록
+    # 이전의 행 — 슈퍼유저만 수정·삭제할 수 있다.
+    author_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     def __repr__(self) -> str:
         return f"<Post(id={self.id}, title={self.title!r})>"

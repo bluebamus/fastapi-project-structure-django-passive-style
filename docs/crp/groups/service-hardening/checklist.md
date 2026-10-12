@@ -67,7 +67,16 @@
 - [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-3 주입, C-4 core→features 0·utils→core 0·기능 간 import 는 auth→user 예외만, C-5 커밋 위치, C-12 토큰 원문 로그 없음)
 - [x] run-log·residual-risk 갱신 (R-012·R-013)
 
-## Round 7 — 단계 F2 (인가 · 소유권 · 운영 도구)
-- [ ] (F-022~F-025) `Principal`·`OwnershipPolicy`·슈퍼유저, 라우트 정책, `scripts/create_superuser.py`, 문서·OpenAPI 기준선
+## Round 7 — 2026-10-12 · 단계 F2 (인가 · 소유권 · 운영 도구)
+- [x] (F-022~F-025) `Principal`·`OwnershipPolicy`·슈퍼유저, 라우트 정책, `scripts/create_superuser.py`, 문서·OpenAPI 기준선
+- [x] 리비전 `a3c9e8f1b274`(`users.is_superuser` NOT NULL server_default false · blog/sns/reply `author_id` String(36) NULL + 인덱스) — 단일 head, SQLite upgrade·downgrade·재-upgrade·`alembic check` 무드리프트, MySQL 왕복 테스트 작성(`mysql` 마커, CI 판정)
+- [x] core 주입 경로(`app/core/security/dependencies.py`) — auth 는 core provider 재사용, `get_current_user` 는 principal 위에서 DB 조회
+- [x] 정책 표 테스트(38 오퍼레이션 ↔ OpenAPI security), 401(무토큰·만료·위조·`su` 누락·`su` 비bool·refresh 토큰·쓰레기), 403(타인 리소스·관리 경로·권한 필드), 소유자·슈퍼유저 우회, author 서버 채움, 비활성화 → refresh 401, 접속 로그 user_id, create_superuser
+- [x] fail-on-revert — 변이 34종 모두 감지(가드마다: 소유권 판정·각 라우터 `require_superuser`·`su` 필수·`revoke_user` 호출·권한 필드 검사 등)
+- [x] OpenAPI 기준선 — 스냅샷 대상 DTO(`test_core_schema_snapshot_is_unchanged`) 변경 없음, 경로 23 / 오퍼레이션 38 불변, revert check 20/20
+- [x] 문서 — README(권한 표·인증 흐름·첫 관리자 만들기·운영 배포 체크리스트 + `TRUSTED_PROXY_HOPS`/R-013)·ARCHITECTURE(§1.3·§6·§7·§7.1·§11.1·§11.3·§12)·DEVELOPMENT(§4.1·§4.2·§4.5·§6.4)·HTML 안내서 2편·OpenAPI 태그 설명·`.env.example`
+- [x] GATE 3 인수기준(단계 F2 분) — 996 passed · skip 0 · coverage 95.99%
+- [x] 요구사항 회귀 0 — C-1~C-15 위반 없음(C-4 core→features 0·기능 간 import 는 auth→user 예외만, C-11 인가는 core 주입 하나, C-13 SQLAdmin 정책 불변)
+- [x] run-log·residual-risk 최종 갱신 (R-013 결정 종결, R-014·R-015 등록)
 
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.

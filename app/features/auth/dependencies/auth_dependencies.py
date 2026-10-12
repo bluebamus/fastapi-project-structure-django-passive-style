@@ -10,7 +10,7 @@ import hashlib
 from functools import lru_cache
 
 from fastapi import Depends, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,45 +19,33 @@ from app.core.exception import InvalidTokenException, TooManyRequestsException
 from app.core.middlewares.client_ip import ClientIPResolver
 from app.core.redis import get_redis
 from app.core.security import (
-    ACCESS,
     PasswordHasher,
+    Principal,
     RateLimiter,
     RefreshTokenStore,
     TokenService,
+)
+from app.core.security.dependencies import (
+    get_current_principal,
+    get_password_hasher,
+    get_refresh_token_store,
+    get_token_service,
 )
 from app.features.auth.services.auth_service import AuthService
 from app.features.user.models.models import User
 from app.features.user.repositories.user_repository import UserRepository
 from config import jwt_settings, middleware_settings
 
-# 로그인 엔드포인트에서 access token 을 발급받는다.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-
 
 # =============================================================================
-# 부품 provider
+# 부품 provider — 해시기·토큰 서비스·refresh 기록은 core 의 provider 를 그대로 쓴다
+# (``app.core.security.dependencies``). 다른 기능의 인가 의존성과 같은 객체라, 테스트가
+# override 하면 모든 기능에 한 번에 적용된다.
 # =============================================================================
-@lru_cache
-def get_password_hasher() -> PasswordHasher:
-    """프로세스당 하나 — 생성 시 더미 해시를 한 번 만든다."""
-    return PasswordHasher()
-
-
-@lru_cache
-def get_token_service() -> TokenService:
-    """프로세스당 하나 — 설정에서 키·알고리즘·iss/aud 를 읽는다."""
-    return TokenService(jwt_settings)
-
-
 @lru_cache
 def get_client_ip_resolver() -> ClientIPResolver:
     """접속 로그 미들웨어와 같은 신뢰 홉 수로 클라이언트 IP 를 정한다."""
     return ClientIPResolver(middleware_settings.TRUSTED_PROXY_HOPS)
-
-
-def get_refresh_token_store(redis: Redis = Depends(get_redis)) -> RefreshTokenStore:
-    """refresh 회전 기록. TTL 은 refresh 수명이다."""
-    return RefreshTokenStore(redis, ttl_seconds=jwt_settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
 
 
 def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
@@ -141,25 +129,24 @@ async def register_rate_limit(
 # 현재 사용자
 # =============================================================================
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    token_service: TokenService = Depends(get_token_service),
+    principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_read_only_db_session),
 ) -> User:
-    """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401).
+    """Bearer access token 을 검증해 현재 사용자 **엔티티**를 반환한다(실패 시 401).
 
-    토큰 검증은 ``TokenService`` 가, 조회는 읽기 전용 세션의 ``UserRepository`` 가 한다 —
-    Redis 도 쓰기 세션도 필요 없다. 커밋하는 ``get_auth_service`` 에 기대지 않으므로
-    인증+쓰기 의존성을 함께 쓰는 엔드포인트에서 한 세션에 커밋 주체가 둘이 되는
-    이중 커밋 위험이 없고, 인증된 읽기 요청마다 불필요한 COMMIT 왕복도 없다
-    (검수 W2/REQ-009). 읽기 전용 세션이라 ``DB_ROUTER_ENABLED`` 를 켜면 replica 로
-    분산된다(P4-3).
+    토큰 검증은 core 의 ``get_current_principal`` 이 하고(``request.state.user_id`` 도 채운다),
+    여기서는 읽기 전용 세션의 ``UserRepository`` 로 사용자를 다시 읽어 활성 여부를 본다 —
+    ``/me`` 처럼 사용자 엔티티가 필요한 곳에서만 쓴다(인가만 필요하면 ``CurrentPrincipal``).
+    커밋하는 ``get_auth_service`` 에 기대지 않으므로 인증+쓰기 의존성을 함께 쓰는
+    엔드포인트에서 한 세션에 커밋 주체가 둘이 되는 이중 커밋 위험이 없고, 인증된 읽기
+    요청마다 불필요한 COMMIT 왕복도 없다(검수 W2/REQ-009). 읽기 전용 세션이라
+    ``DB_ROUTER_ENABLED`` 를 켜면 replica 로 분산된다(P4-3).
 
     쓰기 의존성과 함께 쓰이는 라우트가 생기면 세션이 둘로 나뉜다(읽기용·쓰기용).
     인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려 들면 다른 세션의 인스턴스라
     반영되지 않는다. 그런 라우트를 만들 때는 쓰기 세션에서 다시 조회할 것.
     """
-    claims = token_service.decode(token, ACCESS)
-    user = await UserRepository(session).get_by_id(claims["sub"])
+    user = await UserRepository(session).get_by_id(principal.id)
     if user is None or not user.is_active:
         raise InvalidTokenException()
     return user

@@ -172,9 +172,9 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             "referer": request.headers.get("Referer"),
             # 추가 헤더
             "accept_language": request.headers.get("Accept-Language"),
-            # 사용자 정보 (인증 미들웨어에서 설정될 수 있음)
+            # 사용자 정보 — user_id 는 인증 의존성이 핸들러 실행 중에 채우므로 응답 뒤
+            # ``_record`` 에서 읽는다(요청 시작 시점에는 아직 없다).
             "session_id": request.cookies.get(self.session_cookie_name),
-            "user_id": getattr(request.state, "user_id", None),
         }
 
     async def _save_access_log(self, data: dict) -> None:
@@ -227,18 +227,25 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         try:
             response: Response = await call_next(request)
         except Exception:
-            self._record(request_info, 500, start_time)
+            self._record(request, request_info, 500, start_time)
             raise
 
-        self._record(request_info, response.status_code, start_time)
+        self._record(request, request_info, response.status_code, start_time)
         logger.debug(
             f"[요청 완료] {request.method} {path} "
             f"- {response.status_code} ({request_info['response_time_ms']}ms)"
         )
         return response
 
-    def _record(self, request_info: dict, status_code: int, start_time: float) -> None:
-        """응답 정보를 채우고 백그라운드 저장을 예약한다."""
+    def _record(
+        self, request: Request, request_info: dict, status_code: int, start_time: float
+    ) -> None:
+        """응답 정보를 채우고 백그라운드 저장을 예약한다.
+
+        ``user_id`` 는 여기서 읽는다 — ``get_current_principal`` 이 핸들러 실행 중에
+        ``request.state.user_id`` 를 채운다(``request.state`` 는 scope 를 공유한다, ledger F-024).
+        """
+        request_info["user_id"] = getattr(request.state, "user_id", None)
         request_info["response_status"] = status_code
         request_info["response_time_ms"] = int((time.perf_counter() - start_time) * 1000)
         # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음).

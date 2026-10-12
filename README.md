@@ -13,6 +13,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - [앱 설치 — 목록에 한 줄](#앱-설치--목록에-한-줄)
 - [ORM / Raw 데이터 접근](#orm--raw-데이터-접근)
 - [API](#api)
+- [운영 배포 체크리스트](#운영-배포-체크리스트)
 - [문서 안내](#문서-안내)
 
 ## 주요 특징
@@ -24,7 +25,8 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **읽기 전용 세션은 쓰기를 거부한다**(항상): `get_read_only_db_session` 으로 받은 세션에서 ORM flush·Core DML·의도 태그가 없는 `text()` 는 실행 전에 `ReadOnlyRoutingError`. 차단은 `Session` 에 전역 등록된 리스너가 하므로 `DB_ROUTER_ENABLED` 설정과 무관하다.
 - **Raw SQL 은 명시적 의도 태그 계약**: 구문에 `read_intent()`·`write_intent()` 를 붙여 읽기/쓰기를 선언한다(판정은 `statement_intent()`). SQL 문자열을 파싱하지 않으므로 **태그가 없는 `text()` 는 쓰기로 보고 읽기 전용 세션에서 거부**된다(fail-closed).
 - **읽기/쓰기 라우팅**(선택): primary/replica 분리. 끄면 바인딩만 단일 엔진으로 가고 위 두 계약은 그대로다.
-- **JWT 인증**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
+- **JWT 인증·인가**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
+  슈퍼유저/일반 2단계 권한과 작성자 소유권(`CurrentPrincipal`·`require_superuser`·`OwnershipPolicy`), 첫 관리자 생성 스크립트.
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500, SQL·비밀값 로그 차단, 종료 시 자원 정리 순서 보장.
 - **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면(`ADMIN=true`, 인증 없음).
 
@@ -188,6 +190,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 
 | 변수 | 기본값 | 의미 |
 |---|---|---|
+| `TRUSTED_PROXY_HOPS` | `0` | 앞단 신뢰 프록시 단 수. 프록시 뒤 배포면 반드시 설정 — [운영 배포 체크리스트](#운영-배포-체크리스트) |
 | `DEBUG` | `true` | true = 개발 테이블 생성 + `/docs` 노출 + DEBUG 로그 / false = 모두 끔(스키마는 Alembic) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()` 대상. 연결 실패 시 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
@@ -270,14 +273,14 @@ SQL 은 `text()` 모듈 상수, 외부 값은 named bind parameter, `query_name`
 | 앱 | 메서드 · 경로 | 인증 |
 |---|---|---|
 | — | GET `/health` (liveness) · GET `/ready` (writer DB·Redis readiness, 하나라도 실패 시 503) | — |
-| home | GET `/api/v1/home/access-logs` · `/recent` · `/by-ip/{ip_address}` · `/by-user/{user_id}` · `/stats` | 없음 |
-| blog | GET·POST `/api/v1/blog/posts` · GET·PATCH·DELETE `/api/v1/blog/posts/{post_id}` | 없음 |
-| reply | GET·POST `/api/v1/reply/replies` · GET·PATCH·DELETE `/api/v1/reply/replies/{reply_id}` | 없음 |
-| sns | GET·POST `/api/v1/sns/posts` · GET·PATCH·DELETE `/api/v1/sns/posts/{post_id}` | 없음 |
-| user | GET·POST `/api/v1/user/users` · GET·PATCH·DELETE `/api/v1/user/users/{user_id}` | 없음 |
-| auth | POST `/api/v1/auth/register` (JSON) · POST `/api/v1/auth/login` (**form**) · POST `/api/v1/auth/refresh` (JSON) · POST `/api/v1/auth/logout` (JSON, 204) · GET `/api/v1/auth/me` | `/me` 만 Bearer. register·login 은 레이트 리밋(429 + `Retry-After`) |
-| catalog | GET·POST `/api/v1/catalog/products` · GET·PATCH·DELETE `/api/v1/catalog/products/{product_id}` | 없음 |
-| reports | GET `/api/v1/reports/daily-sales?start_date=&end_date=` (종료일 포함, 최대 366일, 1970-01-01~9998-12-31) | 없음 |
+| home | GET `/api/v1/home/access-logs` · `/recent` · `/by-ip/{ip_address}` · `/by-user/{user_id}` · `/stats` | 슈퍼유저 |
+| blog | GET·POST `/api/v1/blog/posts` · GET·PATCH·DELETE `/api/v1/blog/posts/{post_id}` | GET 공개 · POST 로그인 · PATCH·DELETE 작성자/슈퍼유저 |
+| reply | GET·POST `/api/v1/reply/replies` · GET·PATCH·DELETE `/api/v1/reply/replies/{reply_id}` | GET 공개 · POST 로그인 · PATCH·DELETE 작성자/슈퍼유저 |
+| sns | GET·POST `/api/v1/sns/posts` · GET·PATCH·DELETE `/api/v1/sns/posts/{post_id}` | GET 공개 · POST 로그인 · PATCH·DELETE 작성자/슈퍼유저 |
+| user | GET·POST `/api/v1/user/users` · GET·PATCH·DELETE `/api/v1/user/users/{user_id}` | 목록·생성·삭제 슈퍼유저 · 단건 GET·PATCH 본인/슈퍼유저 |
+| auth | POST `/api/v1/auth/register` (JSON) · POST `/api/v1/auth/login` (**form**) · POST `/api/v1/auth/refresh` (JSON) · POST `/api/v1/auth/logout` (JSON, 204) · GET `/api/v1/auth/me` | `/me` 만 로그인. register·login 은 레이트 리밋(429 + `Retry-After`) |
+| catalog | GET·POST `/api/v1/catalog/products` · GET·PATCH·DELETE `/api/v1/catalog/products/{product_id}` | GET 공개 · 쓰기 슈퍼유저 |
+| reports | GET `/api/v1/reports/daily-sales?start_date=&end_date=` (종료일 포함, 최대 366일, 1970-01-01~9998-12-31) | 슈퍼유저 |
 
 ```bash
 curl -X POST localhost:8000/api/v1/auth/register -H 'Content-Type: application/json' \
@@ -291,12 +294,63 @@ curl -X POST localhost:8000/api/v1/auth/logout -H 'Content-Type: application/jso
   -d '{"refresh_token":"<refresh_token>"}'        # 204, 그 family 의 refresh 가 모두 무효
 ```
 
-**인증 흐름** — login 이 access(기본 15분)·refresh(7일) 쌍을 준다. access 가 만료되면 refresh 로 새 쌍을 받고, 쓴 refresh 는
+### 인증 흐름
+
+login 이 access(기본 15분)·refresh(7일) 쌍을 준다. access 가 만료되면 refresh 로 새 쌍을 받고, 쓴 refresh 는
 버린다 — **한 번 쓴 refresh 를 다시 보내면 재사용(탈취 신호)으로 보고 그 로그인 세션(family) 전체를 폐기**한다(401). logout 은
 family 를 폐기한다. access 는 즉시 폐기되지 않으므로 수명을 짧게 둔다. 로그인은 ip 당·ip+username 당, 회원가입은 ip 당 시도 수를
 Redis 고정 창으로 세고 넘으면 429 + `Retry-After` 다. 기존 bcrypt 해시 사용자는 로그인할 때 Argon2 로 다시 저장된다.
 
 토큰 정책·오류 응답 형식·접속 로그 수집 항목은 [아키텍처 레퍼런스](docs/guides/ARCHITECTURE.md)를 봅니다.
+
+### 권한 표
+
+권한은 **슈퍼유저/일반 2단계**입니다. 인가는 core 의 `get_current_principal`(access 토큰만 검증, DB 조회 없음)·`require_superuser`·
+`OwnershipPolicy` 로 겁니다 — 세부는 [아키텍처 §7.1](docs/guides/ARCHITECTURE.md#71-인가--주체소유권슈퍼유저), 붙이는 법은
+[개발 가이드 §4.5](docs/guides/DEVELOPMENT.md#45-인증인가-붙이기). 표 전체는 `tests/test_authorization_policy.py` 가 OpenAPI 와 대조해 고정합니다.
+
+| 등급 | 오퍼레이션 |
+|---|---|
+| 공개 | `/health`·`/ready`, auth register·login·refresh·logout, blog·sns·reply·catalog 의 목록·단건 GET |
+| 로그인 | auth `/me`, blog·sns·reply 생성(작성자는 서버가 로그인 사용자로 채운다 — 본문의 `author` 는 받지 않는다) |
+| 작성자 또는 슈퍼유저 | blog·sns·reply 수정·삭제 (작성자 기록이 없는 기존 행은 슈퍼유저만) |
+| 본인 또는 슈퍼유저 | user 단건 GET·PATCH (`is_active`·`is_superuser` 변경은 슈퍼유저만) |
+| 슈퍼유저 | user 목록·생성(비밀번호 필수)·삭제, catalog 생성·수정·삭제, reports, home 접속 로그 5종 |
+
+토큰이 없으면 401(`WWW-Authenticate: Bearer`), 토큰이 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다.
+사용자를 비활성화·강등·삭제하면 그 사용자의 refresh 토큰이 모두 폐기됩니다(이미 받은 access 는 만료까지 유효).
+
+```bash
+curl -X POST localhost:8000/api/v1/blog/posts -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' -d '{"title":"첫 글","content":"본문"}'   # author·author_id 는 서버가 채운다
+```
+
+### 첫 관리자 만들기
+
+Django 의 `createsuperuser` 와 같은 역할입니다. 마이그레이션은 기존 사용자를 아무도 관리자로 만들지 않습니다.
+
+```bash
+uv run python -m scripts.create_superuser --username admin --email admin@example.com          # 비밀번호를 두 번 묻는다
+printf '%s\n' "$PW" | uv run python -m scripts.create_superuser --username admin --email admin@example.com --password-stdin
+uv run python -m scripts.create_superuser --username alice                                     # 기존 사용자 승격(비밀번호 유지)
+uv run python -m scripts.create_superuser --username alice --set-password                      # 승격 + 비밀번호 변경
+```
+
+비밀번호는 명령행 인자로 받지 않습니다(셸 기록에 남는다). 종료 코드는 0 성공 · 1 입력 거부 · 2 인자 오류입니다.
+만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다.
+
+## 운영 배포 체크리스트
+
+전체 표는 [아키텍처 §11.1](docs/guides/ARCHITECTURE.md#111-배포-체크리스트--사람이-확인할-것)입니다. 이번 인증·인가와 함께 꼭 볼 것:
+
+- **API 는 이제 인증·인가가 걸려 있습니다** — 쓰기·관리 API 는 토큰 없이 401, 권한 없이 403 입니다. 단, **`/admin`(SQLAdmin)에는 여전히
+  인증이 없습니다**(영구 비목표). 운영·스테이징은 `ADMIN=false`, 켜야 하면 프록시에서 막고 `ADMIN_UNAUTHENTICATED_ACK=true`.
+- **프록시 뒤에 배포하면 `TRUSTED_PROXY_HOPS` 를 앞단 프록시 단 수로 설정합니다.** 0 으로 두면 모든 요청이 프록시 IP 하나로 보여
+  **IP 레이트 리밋(로그인 20회/60초·가입 5회/시간)을 모든 사용자가 나눠 씁니다** — 한 사람이 한도를 채우면 전원이 429 를 받습니다.
+  실제보다 크게 잡으면 위조된 `X-Forwarded-For` 를 믿습니다(검수 기록 service-hardening R-013).
+- 첫 관리자를 `scripts.create_superuser` 로 만들고, 일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지 확인합니다.
+- `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY` 는 서로 다른 무작위 값이어야 합니다 — 키를 아는 사람은 `su=true` 토큰을 만들 수 있습니다.
+- 마이그레이션 `uv run alembic upgrade head` 로 `users.is_superuser`·게시물 `author_id` 를 추가합니다(리비전 `a3c9e8f1b274`).
 
 ## 문서 안내
 

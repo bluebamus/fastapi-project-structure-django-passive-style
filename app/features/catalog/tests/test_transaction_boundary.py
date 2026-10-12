@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.features.catalog.models.models import Product  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import admin_headers
 from tests.session_overrides import sqlite_session_overrides
 
 _NEW = {"sku": "SKU-TX", "name": "경계 검증", "price": "1000.00", "stock": 1}
@@ -48,7 +49,9 @@ async def tx_client():
 
     async with sqlite_session_overrides(app, on_session=_count_calls):
         transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
+        async with AsyncClient(
+            transport=transport, base_url="http://test", headers=admin_headers()
+        ) as c:
             yield c, calls
 
 
