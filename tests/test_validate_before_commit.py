@@ -45,6 +45,7 @@ from app.features.reply.models.models import Reply
 from app.features.sns.models.models import SnsPost
 from app.features.user.models.models import User
 from main import app
+from tests.auth_headers import admin_headers
 from tests.session_overrides import sqlite_session_overrides
 
 
@@ -64,7 +65,7 @@ class WriteCase:
 _BLOG = {"title": "제목", "content": "본문", "author": "kim"}
 _REPLY = {"content": "댓글", "author": "lee", "post_id": "p1"}
 _SNS = {"content": "피드", "author": "park"}
-_USER = {"username": "alice", "email": "alice@example.com"}
+_USER = {"username": "alice", "email": "alice@example.com", "password": "secret-pw-1234"}
 _PRODUCT = {"sku": "SKU-DTO", "name": "상품", "price": "1000.00", "stock": 1}
 
 CASES = [
@@ -184,7 +185,9 @@ async def counting_client():
         redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: redis
         transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://test", headers=admin_headers()
+        ) as client:
             yield client, calls, maker
 
 

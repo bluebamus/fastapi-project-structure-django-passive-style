@@ -104,7 +104,7 @@ class AuthService(BaseService):
         await self.refresh_store.consume(claims["jti"])
 
     async def _issue(self, user: User, *, family: str) -> TokenResponse:
-        access = self.token_service.issue_access(user.id, user.username)
+        access = self.token_service.issue_access(user.id, user.username, user.is_superuser)
         refresh = self.token_service.issue_refresh(user.id, family)
         await self.refresh_store.register(refresh.jti, user.id, family)
         return TokenResponse(

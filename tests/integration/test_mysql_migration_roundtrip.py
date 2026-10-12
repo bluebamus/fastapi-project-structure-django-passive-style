@@ -82,12 +82,17 @@ def test_new_revisions_have_a_working_downgrade(alembic_on_mysql):
     """새 revision 들을 **하나씩** 되돌린다.
 
     `base` 까지 한 번에 내리면 중간 revision 의 downgrade 가 깨져 있어도 뒤따르는
-    drop 에 묻힐 수 있다. 한 단계씩 내려 각각을 실제로 실행한다. 맨 위는 시각 정책
-    revision(테이블을 지우지 않는다, service-hardening D2)이고, 그 아래가 두 테이블이다.
+    drop 에 묻힐 수 있다. 한 단계씩 내려 각각을 실제로 실행한다. 맨 위는 인가 컬럼
+    revision(service-hardening F2), 그 아래가 시각 정책 revision(테이블을 지우지 않는다, D2),
+    그 아래가 두 테이블이다.
     """
     engine = sa.create_engine(SYNC_URL)
     try:
         command.upgrade(alembic_on_mysql, "head")
+
+        command.downgrade(alembic_on_mysql, "-1")  # is_superuser · author_id 제거
+        assert _authorization_columns(engine) == set(), "인가 컬럼이 남았다"
+        assert set(NEW_TABLES) <= _table_names(engine), "인가 revision 이 테이블을 지웠다"
 
         command.downgrade(alembic_on_mysql, "-1")  # DATETIME(6) → DATETIME, UTC → KST
         assert set(NEW_TABLES) <= _table_names(engine), "시각 revision 이 테이블을 지웠다"
@@ -102,6 +107,73 @@ def test_new_revisions_have_a_working_downgrade(alembic_on_mysql):
 
         command.upgrade(alembic_on_mysql, "head")
         assert set(NEW_TABLES) <= _table_names(engine)
+        assert _authorization_columns(engine) == set(_AUTHORIZATION_COLUMNS)
+    finally:
+        engine.dispose()
+
+
+#: 인가 revision(a3c9e8f1b274)이 더하는 컬럼 — (테이블, 컬럼).
+_AUTHORIZATION_COLUMNS = (
+    ("users", "is_superuser"),
+    ("blog_posts", "author_id"),
+    ("sns_posts", "author_id"),
+    ("replies", "author_id"),
+)
+
+
+def _authorization_columns(engine: sa.Engine) -> set[tuple[str, str]]:
+    inspector = sa.inspect(engine)
+    return {
+        (table, column)
+        for table, column in _AUTHORIZATION_COLUMNS
+        if column in {c["name"] for c in inspector.get_columns(table)}
+    }
+
+
+def test_authorization_revision_keeps_existing_rows_unprivileged(alembic_on_mysql):
+    """인가 revision 이전의 행: 사용자는 일반(is_superuser=0), 게시물은 소유자 없음(NULL).
+
+    아무도 자동으로 관리자가 되지 않고, 소유자를 모르는 기존 게시물은 슈퍼유저만 고칠 수
+    있다(service-hardening ADR-018·ADR-019). downgrade 는 컬럼을 지우고 행은 남긴다.
+    """
+    engine = sa.create_engine(SYNC_URL)
+    try:
+        command.upgrade(alembic_on_mysql, "e5a7c2d9f310")
+        with engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "INSERT INTO users (id, username, email, is_active, created_at, updated_at) "
+                    "VALUES ('u-old', 'old', 'old@example.com', 1, "
+                    "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                )
+            )
+            connection.execute(
+                sa.text(
+                    "INSERT INTO blog_posts (id, title, content, author, created_at, updated_at) "
+                    "VALUES ('p-old', 't', 'c', 'kim', "
+                    "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                )
+            )
+
+        command.upgrade(alembic_on_mysql, "a3c9e8f1b274")
+        with engine.connect() as connection:
+            is_superuser = connection.execute(
+                sa.text("SELECT is_superuser FROM users WHERE id = 'u-old'")
+            ).scalar_one()
+            author_id = connection.execute(
+                sa.text("SELECT author_id FROM blog_posts WHERE id = 'p-old'")
+            ).scalar_one()
+        assert is_superuser == 0
+        assert author_id is None
+        assert "ix_blog_posts_author_id" in {
+            index["name"] for index in sa.inspect(engine).get_indexes("blog_posts")
+        }
+
+        command.downgrade(alembic_on_mysql, "e5a7c2d9f310")
+        assert _authorization_columns(engine) == set()
+        with engine.connect() as connection:
+            remaining = connection.execute(sa.text("SELECT COUNT(*) FROM blog_posts")).scalar_one()
+        assert remaining == 1, "downgrade 가 행을 지웠다"
     finally:
         engine.dispose()
 

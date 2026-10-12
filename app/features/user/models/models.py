@@ -4,7 +4,7 @@ User 도메인 데이터베이스 모델
 사용자(User) 엔티티를 정의한다. 최소 CRUD 동작을 위한 기본 컬럼만 둔다.
 """
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.session import Base
@@ -19,6 +19,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         username: 사용자명(고유)
         email: 이메일
         is_active: 활성 여부
+        is_superuser: 슈퍼유저 여부
         created_at: 생성 시각
         updated_at: 수정 시각
     """
@@ -30,6 +31,10 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 인증(auth 도메인)용 비밀번호 해시(Argon2 — 이전 bcrypt 해시는 로그인 시 바뀐다). 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 슈퍼유저/일반 2단계 권한(service-hardening ADR-019). 기존 행은 server_default 로 false.
+    is_superuser: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username!r})>"

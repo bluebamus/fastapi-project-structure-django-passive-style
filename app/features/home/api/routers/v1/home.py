@@ -4,6 +4,7 @@ Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
 조회 전용이라 read-only 세션을 쓰고 커밋하지 않는다(별도 UnitOfWork 없음).
+접속 로그는 IP·User-Agent 같은 개인 정보라 슈퍼유저만 본다(라우터 의존성, ledger F-025).
 """
 
 from typing import Any
@@ -11,6 +12,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import (
+    ADMIN_FORBIDDEN_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+    require_superuser,
+)
 from app.features.home.dependencies.access_log_dependencies import get_access_log_service
 from app.features.home.schemas.user_access_log_schema import (
     AccessLogStats,
@@ -19,7 +25,11 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
-router = APIRouter()
+#: 모든 엔드포인트가 슈퍼유저 전용이다(service-hardening F2) — 라우터 의존성으로 한 번에 건다.
+router = APIRouter(
+    dependencies=[Depends(require_superuser)],
+    responses={**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE},
+)
 
 _ERR: dict[int | str, dict[str, Any]] = {
     500: {"model": ErrorResponse, "description": "서버 내부 오류"}

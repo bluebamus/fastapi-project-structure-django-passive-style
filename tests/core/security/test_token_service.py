@@ -47,6 +47,7 @@ def _claims(**overrides: Any) -> dict[str, Any]:
         "iss": "test-issuer",
         "aud": "test-audience",
         "username": "alice",
+        "su": False,
     }
     claims.update(overrides)
     return {k: v for k, v in claims.items() if v is not None}
@@ -60,18 +61,36 @@ def _forge(claims: dict[str, Any], key: str = ACCESS_KEY, algorithm: str = "HS25
 # 발급
 # ---------------------------------------------------------------------------
 def test_access_token_carries_all_claims(service):
-    issued = service.issue_access("user-1", "alice")
+    issued = service.issue_access("user-1", "alice", False)
 
     claims = service.decode(issued.token, ACCESS)
 
     assert claims["sub"] == "user-1"
     assert claims["type"] == "access"
     assert claims["username"] == "alice"
+    assert claims["su"] is False
     assert claims["iss"] == "test-issuer"
     assert claims["aud"] == "test-audience"
     assert claims["jti"] == issued.jti and len(issued.jti) == 32
     assert claims["nbf"] == claims["iat"]
     assert claims["exp"] - claims["iat"] == 15 * 60 == issued.expires_in
+
+
+def test_access_token_carries_the_superuser_flag(service):
+    """``su`` 는 인가 의존성이 DB 조회 없이 읽는 슈퍼유저 여부다 (service-hardening ADR-030)."""
+    issued = service.issue_access("admin-1", "root", True)
+
+    assert service.decode(issued.token, ACCESS)["su"] is True
+
+
+@pytest.mark.parametrize("value", ["true", 1, "False", None])
+def test_access_token_with_non_bool_superuser_flag_is_rejected(service, value):
+    """``su`` 는 정확히 bool 이어야 한다 — 문자열·숫자로 슈퍼유저를 흉내 내지 못한다."""
+    claims = _claims()
+    claims["su"] = value
+
+    with pytest.raises(InvalidTokenException):
+        service.decode(_forge(claims), ACCESS)
 
 
 def test_refresh_token_carries_family(service):
@@ -85,7 +104,7 @@ def test_refresh_token_carries_family(service):
 
 
 def test_every_token_gets_a_new_jti(service):
-    assert service.issue_access("u", "n").jti != service.issue_access("u", "n").jti
+    assert service.issue_access("u", "n", False).jti != service.issue_access("u", "n", False).jti
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +140,7 @@ def test_wrong_audience_or_issuer_is_rejected(service, claim, value):
 
 
 @pytest.mark.parametrize(
-    "missing", ["exp", "iat", "nbf", "sub", "jti", "iss", "aud", "type", "username"]
+    "missing", ["exp", "iat", "nbf", "sub", "jti", "iss", "aud", "type", "username", "su"]
 )
 def test_missing_required_claim_is_rejected(service, missing):
     with pytest.raises(InvalidTokenException):
@@ -129,14 +148,14 @@ def test_missing_required_claim_is_rejected(service, missing):
 
 
 def test_refresh_without_family_is_rejected(service):
-    token = _forge(_claims(type="refresh", username=None), key=REFRESH_KEY)
+    token = _forge(_claims(type="refresh", username=None, su=None), key=REFRESH_KEY)
 
     with pytest.raises(InvalidTokenException):
         service.decode(token, REFRESH)
 
 
 def test_refresh_with_non_string_family_is_rejected(service):
-    token = _forge(_claims(type="refresh", username=None, fam=123), key=REFRESH_KEY)
+    token = _forge(_claims(type="refresh", username=None, su=None, fam=123), key=REFRESH_KEY)
 
     with pytest.raises(InvalidTokenException):
         service.decode(token, REFRESH)
@@ -172,14 +191,14 @@ def test_unsigned_token_is_rejected(service):
 
 def test_configured_algorithm_is_used_for_both_issue_and_verify():
     service = TokenService(_settings(JWT_ALGORITHM="HS512"))
-    token = service.issue_access("user-1", "alice").token
+    token = service.issue_access("user-1", "alice", False).token
 
     assert jwt.get_unverified_header(token)["alg"] == "HS512"
     assert service.decode(token, ACCESS)["sub"] == "user-1"
 
 
 def test_tampered_token_is_rejected(service):
-    token = service.issue_access("user-1", "alice").token
+    token = service.issue_access("user-1", "alice", False).token
 
     with pytest.raises(InvalidTokenException):
         service.decode(token + "x", ACCESS)

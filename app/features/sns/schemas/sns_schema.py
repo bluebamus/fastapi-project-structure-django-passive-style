@@ -11,20 +11,16 @@ class SnsPostBase(BaseModel):
     """피드 게시물 공통 필드."""
 
     content: str = Field(..., min_length=1, max_length=500, description="게시물 본문")
-    author: str | None = Field(None, max_length=100, description="작성자(선택)")
 
 
 class SnsPostCreate(SnsPostBase):
-    """피드 게시물 생성 요청."""
+    """피드 게시물 생성 요청. 작성자는 받지 않는다 — 서버가 인증 주체로 채운다(ADR-018)."""
 
 
 class SnsPostUpdate(PatchSchema):
     """피드 게시물 수정 요청 — 전달된 필드만 부분 수정한다."""
 
-    nullable_fields = frozenset({"author"})
-
     content: str | None = Field(None, min_length=1, max_length=500, description="본문")
-    author: str | None = Field(None, max_length=100, description="작성자")
 
 
 class SnsPostResponse(SnsPostBase):
@@ -33,6 +29,12 @@ class SnsPostResponse(SnsPostBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    author: str | None = Field(
+        None, description="작성자 표시 이름(서버가 로그인 사용자명으로 채운다)"
+    )
+    author_id: str | None = Field(
+        None, description="작성자 사용자 ID — 소유자 판정 키(NULL 이면 슈퍼유저만 수정)"
+    )
     like_count: int
     created_at: datetime = Field(description="생성 시각(UTC, 오프셋 포함 ISO 8601)")
     updated_at: datetime = Field(description="수정 시각(UTC, 오프셋 포함 ISO 8601)")

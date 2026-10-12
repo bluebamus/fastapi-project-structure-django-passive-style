@@ -15,6 +15,7 @@ from app.core.redis import get_redis
 from app.features.user.models.models import User
 from config import jwt_settings
 from main import app
+from tests.auth_headers import admin_headers
 from tests.session_overrides import sqlite_session_overrides
 
 # 상한은 설정에서 읽는다 — 로컬 `.env` 의 값과 무관하게 같은 판정을 한다.
@@ -364,3 +365,42 @@ async def test_register_rate_limit_per_ip(client):
 
     assert blocked.status_code == 429
     assert "Retry-After" in blocked.headers
+
+
+# ---------------------------------------------------------------------------
+# 인가 연동 (service-hardening F2)
+# ---------------------------------------------------------------------------
+async def test_admin_deactivation_revokes_refresh_even_after_reactivation(env):
+    """관리자가 API 로 비활성화하면 ``revoke_user`` 가 family 를 폐기한다.
+
+    다시 활성화한 뒤 **소비되지 않은** refresh 로 회전해도 401 이다 — 회전 시점의 활성 검사가
+    아니라 비활성화 시점의 폐기가 막았음을 보인다.
+    """
+    client, _, redis = env
+    user_id = (await _register(client)).json()["id"]
+    refresh = (await _login(client)).json()["refresh_token"]
+    url = f"/api/v1/user/users/{user_id}"
+
+    off = await client.patch(url, json={"is_active": False}, headers=admin_headers())
+    on = await client.patch(url, json={"is_active": True}, headers=admin_headers())
+
+    assert (off.status_code, on.status_code) == (200, 200)
+    assert await _family_revoked(redis, refresh)
+    assert (await _refresh(client, refresh)).status_code == 401
+
+
+async def test_access_token_carries_the_superuser_flag(env):
+    client, maker, _ = env
+    await _register(client)
+    plain = (await _login(client)).json()["access_token"]
+    async with maker() as session:
+        await session.execute(update(User).values(is_superuser=True))
+        await session.commit()
+    root = (await _login(client)).json()["access_token"]
+
+    assert jwt.decode(plain, options={"verify_signature": False})["su"] is False
+    assert jwt.decode(root, options={"verify_signature": False})["su"] is True
+    me = await _me(client, root)
+    assert me.json()["is_superuser"] is True
+    listed = await client.get("/api/v1/user/users", headers={"Authorization": f"Bearer {root}"})
+    assert listed.status_code == 200

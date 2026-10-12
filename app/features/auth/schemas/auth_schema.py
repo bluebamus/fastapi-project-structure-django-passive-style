@@ -33,6 +33,7 @@ class AuthenticatedUserResponse(BaseModel):
     username: str
     email: str
     is_active: bool
+    is_superuser: bool
 
 
 class TokenResponse(BaseModel):

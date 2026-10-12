@@ -1,6 +1,7 @@
 """Catalog v1 API — 상품 CRUD (**ORM 예제**).
 
 View 는 HTTP 역할만 한다: 파라미터 수신 → 주입된 Service 호출 → 응답 DTO 변환.
+인가: 조회는 공개, 쓰기(생성·수정·삭제)는 슈퍼유저(``require_superuser`` 라우트 의존성).
 쓰기는 응답 DTO 를 검증한 **뒤**, 응답을 돌려주기 **전에** 한 번 커밋한다(ADR-008).
 
 Raw 예제의 View(`app/features/reports/api/routers/v1/sales_reports.py`)와 이 파일을
@@ -12,6 +13,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import (
+    ADMIN_FORBIDDEN_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+    require_superuser,
+)
 from app.features.catalog.dependencies.catalog_dependencies import (
     get_catalog_service,
     get_catalog_service_readonly,
@@ -32,13 +38,17 @@ _NOT_FOUND: dict[int | str, dict[str, Any]] = {
 _CONFLICT: dict[int | str, dict[str, Any]] = {
     409: {"model": ErrorResponse, "description": "이미 존재하는 SKU"}
 }
+#: 쓰기는 슈퍼유저만(service-hardening F2). 조회는 공개다.
+_ADMIN = {**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE}
+_ADMIN_ONLY = [Depends(require_superuser)]
 
 
 @router.post(
     "/products",
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
-    responses=_CONFLICT,
+    responses={**_CONFLICT, **_ADMIN},
+    dependencies=_ADMIN_ONLY,
     summary="상품 생성",
     description="새 상품을 등록합니다. `sku` 는 전역 고유해야 합니다.",
     operation_id="createProduct",
@@ -98,7 +108,8 @@ async def get_product(
 @router.patch(
     "/products/{product_id}",
     response_model=ProductResponse,
-    responses=_NOT_FOUND,
+    responses={**_NOT_FOUND, **_ADMIN},
+    dependencies=_ADMIN_ONLY,
     summary="상품 수정",
     description="상품을 부분 수정합니다(전달한 필드만).",
     operation_id="updateProduct",
@@ -117,7 +128,8 @@ async def update_product(
 @router.delete(
     "/products/{product_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_NOT_FOUND,
+    responses={**_NOT_FOUND, **_ADMIN},
+    dependencies=_ADMIN_ONLY,
     summary="상품 삭제",
     description="상품을 삭제합니다.",
     operation_id="deleteProduct",

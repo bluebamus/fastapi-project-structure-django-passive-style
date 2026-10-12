@@ -70,10 +70,10 @@
 - 이 목록의 시나리오에서의 실패는 "결함"이 아니다
 
 ## 3. 인수 기준 (Acceptance Criteria) — GATE 3 체크리스트
-- [ ] 전 테스트 실제 실행·통과 — `pytest -m "not mysql and not browser"` skip·xfail·xpass 0, 커버리지 `fail_under`(pyproject) 충족
-- [ ] `mysql` 마커 테스트는 로컬에서 `--collect-only` 로 수집 확인, 실행은 CI
-- [ ] `ruff check`·`ruff format --check`·`python -m mypy .` 클린
-- [ ] 단계별 단위 테스트(새 동작마다)와 fail-on-revert 결과가 run-log 에 있다:
+- [x] 전 테스트 실제 실행·통과 — `pytest -m "not mysql and not browser"` skip·xfail·xpass 0, 커버리지 `fail_under`(pyproject) 충족
+- [x] `mysql` 마커 테스트는 로컬에서 `--collect-only` 로 수집 확인, 실행은 CI
+- [x] `ruff check`·`ruff format --check`·`python -m mypy .` 클린
+- [x] 단계별 단위 테스트(새 동작마다)와 fail-on-revert 결과가 run-log 에 있다:
   - A: CI 계약 테스트, DSN 왕복(비밀번호 `p@ss:w/rd%#?`·IPv6·Alembic `%%`·Redis URL 파싱), 잠금 읽기 라우팅·거부(router on/off), 정렬 결정성·offset 페이지 비중복
   - B: 신뢰 홉 해석·위조 거부, 500 기록, query 마스킹, 컬럼 길이 자르기, null PATCH 422, 오류 코드별 변환, 날짜 상한
   - C: 공용 override 헬퍼의 read-only 세션 flush 거부, MySQL 스모크 수집
@@ -81,10 +81,11 @@
   - E: `/ready` Redis 실패 503, `get_redis`, 태스크 자동 발견 목록, 기능 제거 시 include
   - F1: 해시·레거시 이전, 토큰 claims·거부 사례, 회전·재사용 탐지·logout, 429+Retry-After·창 만료·성공 초기화, 엔드포인트 흐름
   - F2: 401·403·소유자 수정·슈퍼유저 우회·비활성화 후 refresh 실패·접속 로그 user_id·create_superuser
-- [ ] 불변식 구조 증거: INV-1 → CI 계약 테스트, INV-2 → DSN 왕복 테스트, INV-3 → `test_read_only_guard`·`test_db_router` 잠금 읽기 테스트, INV-4 → `test_repository_base` 정렬 테스트·공개 API 기준선, INV-7 → AST 계층 검사, 나머지 → 해당 단계 테스트
-- [ ] `ENV=test uv run python -m scripts.review_gate` 의 인프라·네트워크 불필요 단계 통과(생략한 단계는 run-log 에 사실로 적는다)
-- [ ] 질의 수준(design-baseline §0 = 보통)에 맞게 핵심 갈림길만 사용자 확정
+- [x] 불변식 구조 증거: INV-1 → CI 계약 테스트, INV-2 → DSN 왕복 테스트, INV-3 → `test_read_only_guard`·`test_db_router` 잠금 읽기 테스트, INV-4 → `test_repository_base` 정렬 테스트·공개 API 기준선, INV-7 → AST 계층 검사, 나머지 → 해당 단계 테스트
+- [x] `ENV=test uv run python -m scripts.review_gate` 의 인프라·네트워크 불필요 단계 통과(생략한 단계는 run-log 에 사실로 적는다)
+- [x] 질의 수준(design-baseline §0 = 보통)에 맞게 핵심 갈림길만 사용자 확정
 
 ## 4. 변경 이력
 - v0.1 (2026-10-12): 최초 작성.
 - v0.2 (2026-10-12): 단계 D — 인수 기준 D 항목 구체화. 마이그레이션 head 는 `e5a7c2d9f310`(시각 UTC·`DATETIME(6)`), 인벤토리 `app/core/models/types.py` 추가.
+- v0.3 (2026-10-12): 단계 F2 완료로 §3 인수 기준을 모두 닫았다 — 전 단계(A~F2) 테스트·fail-on-revert 기록은 run-log Round 1~7, `review_gate --fast` 7단계 통과(pip-audit 포함), 질의 수준 보통(사용자 확정 갈림길: Redis 필수·UTC 저장·SQLAdmin 정책 유지).

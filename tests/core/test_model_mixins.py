@@ -26,15 +26,24 @@ from app.core.models.models_base import (
 #: Phase 2 이전의 실제 컬럼 배치. MySQL 8.4 에 ``create_all`` 로 만든 테이블의
 #: ``SHOW CREATE TABLE`` 에서 그대로 옮겼다(2026-08-19 측정).
 EXPECTED_COLUMN_ORDER = {
-    "blog_posts": ["id", "title", "content", "author", "created_at", "updated_at"],
-    "replies": ["id", "content", "author", "post_id", "created_at", "updated_at"],
-    "sns_posts": ["id", "content", "author", "like_count", "created_at", "updated_at"],
+    "blog_posts": ["id", "title", "content", "author", "author_id", "created_at", "updated_at"],
+    "replies": ["id", "content", "author", "author_id", "post_id", "created_at", "updated_at"],
+    "sns_posts": [
+        "id",
+        "content",
+        "author",
+        "author_id",
+        "like_count",
+        "created_at",
+        "updated_at",
+    ],
     "users": [
         "id",
         "username",
         "email",
         "hashed_password",
         "is_active",
+        "is_superuser",
         "created_at",
         "updated_at",
     ],

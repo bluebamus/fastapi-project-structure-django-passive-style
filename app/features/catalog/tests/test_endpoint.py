@@ -18,6 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from app.core.db.session import Base
 from app.features.catalog.models.models import Product  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import admin_headers
 from tests.session_overrides import sqlite_session_overrides
 
 _NEW = {
@@ -36,7 +37,9 @@ async def client():
     # 조회는 read-only Dependency 를 쓴다 — 헬퍼가 두 의존성을 함께 오버라이드한다.
     async with sqlite_session_overrides(app):
         transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
+        async with AsyncClient(
+            transport=transport, base_url="http://test", headers=admin_headers()
+        ) as c:
             yield c
 
 
