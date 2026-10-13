@@ -127,9 +127,16 @@ from app.features.{name}.api.routers.v1 import {name} as {name}_v1
 
 
 def _v1_view(name: str) -> str:
-    return f'''"""{_pascal(name)} v1 엔드포인트."""
+    return f'''"""{_pascal(name)} v1 엔드포인트.
+
+뷰마다 접근 수준을 ``dependencies=[...]`` 에 하나 선언한다 — Public(공개 조회)·PublicWrite
+(인증 없는 쓰기)·LoginRequired·SuperuserRequired, 또는 ``principal: CurrentPrincipal`` 인자.
+**선언하지 않은 뷰가 있으면 서버가 기동하지 않는다**(app/core/security/access.py).
+"""
 
 from fastapi import APIRouter
+
+from app.core.security.access import Public
 
 router = APIRouter()
 
@@ -137,6 +144,7 @@ router = APIRouter()
 @router.get(
     "/ping",
     summary="{_pascal(name)} 헬스 확인",
+    dependencies=[Public],
     operation_id="ping{_pascal(name)}",
 )
 async def ping() -> dict[str, str]:

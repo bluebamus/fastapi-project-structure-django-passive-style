@@ -1,16 +1,21 @@
-"""인가 정책 표 — 모든 오퍼레이션의 접근 등급을 한 곳에 고정한다 (service-hardening F2).
+"""예시 인가 정책 회귀 표 (service-hardening F2 · access-policy).
+
+접근 수준의 정본은 **뷰 선언**이다(``app/core/security/access.py``). "모든 라우트가 수준을
+선언했는가" 는 기동 시 ``AccessPolicyGuard`` 가 막으므로 여기서 다시 세지 않는다. 이 표는
+예시 정책이 **의도한 수준**인지 고정하는 회귀용이다 — 가드의 판정과 대조한다.
 
 등급:
 
-* ``public`` — 토큰 없이 쓴다.
-* ``auth``   — 인증만 필요하다(``CurrentPrincipal``).
-* ``owner``  — 인증 + 소유자 또는 슈퍼유저(``OwnershipPolicy`` — 판정은 서비스 안).
-* ``self``   — 인증 + 본인 또는 슈퍼유저(user 단건 조회·수정).
-* ``admin``  — 슈퍼유저만(``require_superuser``).
+* ``public``       — 토큰 없이 조회한다(``Public``).
+* ``public_write`` — 토큰 없이 쓴다(``PublicWrite`` — 가입·로그인·refresh·logout).
+* ``auth``         — 인증만 필요하다(``CurrentPrincipal`` 인자).
+* ``owner``        — 인증 + 소유자 또는 슈퍼유저(``OwnershipPolicy`` — 판정은 서비스 안).
+* ``self``         — 인증 + 본인 또는 슈퍼유저(user 단건 조회·수정).
+* ``admin``        — 슈퍼유저만(``SuperuserRequired``).
 
-표가 OpenAPI 와 어긋나면 실패한다 — 새 라우트는 등급을 정해 이 표에 올려야 한다. 표의
-등급은 OpenAPI 의 ``security`` 와 교차 확인하고(공개 ⇔ security 없음), 실제 요청으로
-토큰 없음 → 401, 일반 사용자 → 관리자 경로 403 을 오퍼레이션마다 확인한다.
+``owner``·``self`` 는 선언으로는 ``auth`` 와 같다(본인 판정은 서비스가 한다). 표의 등급은
+OpenAPI 의 ``security`` 와 교차 확인하고(공개 ⇔ security 없음), 실제 요청으로 토큰 없음 →
+401, 일반 사용자 → 관리자 경로 403 을 오퍼레이션마다 확인한다.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.client_ip import ClientIPResolver
 from app.core.middlewares.user_info_middleware import UserInfoMiddleware
 from app.core.redis import get_redis
+from app.core.security.access import AccessLevel, AccessPolicyGuard
 from app.core.security.dependencies import CurrentPrincipal, get_token_service
 from config import jwt_settings
 from main import app
@@ -40,10 +46,10 @@ POLICY: dict[tuple[str, str], str] = {
     ("GET", "/health"): "public",
     ("GET", "/ready"): "public",
     # auth
-    ("POST", "/api/v1/auth/register"): "public",
-    ("POST", "/api/v1/auth/login"): "public",
-    ("POST", "/api/v1/auth/refresh"): "public",
-    ("POST", "/api/v1/auth/logout"): "public",
+    ("POST", "/api/v1/auth/register"): "public_write",
+    ("POST", "/api/v1/auth/login"): "public_write",
+    ("POST", "/api/v1/auth/refresh"): "public_write",
+    ("POST", "/api/v1/auth/logout"): "public_write",
     ("GET", "/api/v1/auth/me"): "auth",
     # blog / sns / reply
     ("GET", "/api/v1/blog/posts"): "public",
@@ -82,7 +88,18 @@ POLICY: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/home/access-logs/stats"): "admin",
 }
 
-PROTECTED = sorted(key for key, level in POLICY.items() if level != "public")
+#: 표 등급 → 뷰가 선언하는 접근 수준.
+DECLARED = {
+    "public": AccessLevel.PUBLIC,
+    "public_write": AccessLevel.PUBLIC_WRITE,
+    "auth": AccessLevel.LOGIN,
+    "owner": AccessLevel.LOGIN,
+    "self": AccessLevel.LOGIN,
+    "admin": AccessLevel.SUPERUSER,
+}
+OPEN = {"public", "public_write"}
+
+PROTECTED = sorted(key for key, level in POLICY.items() if level not in OPEN)
 ADMIN_ONLY = sorted(key for key, level in POLICY.items() if level == "admin")
 PUBLIC_READS = sorted(
     key
@@ -116,11 +133,19 @@ def _operations() -> dict[tuple[str, str], dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# 표 ↔ OpenAPI
+# 표 ↔ 뷰 선언(가드 판정) · OpenAPI
 # ---------------------------------------------------------------------------
-def test_policy_table_covers_every_operation():
-    """새 오퍼레이션은 등급을 정해 표에 올려야 한다(빠지거나 남은 항목이 없다)."""
-    assert set(_operations()) == set(POLICY)
+def test_example_views_declare_the_intended_access_level():
+    """예시 정책 회귀 — 뷰가 선언한 수준(가드 판정)이 표의 의도와 같다.
+
+    문서용 ``/docs``(DEBUG 에서만, 스키마 밖)는 표에 없으므로 비교에서 뺀다.
+    """
+    actual = {
+        key: levels
+        for key, levels in AccessPolicyGuard().levels(app).items()
+        if key != ("GET", "/docs")
+    }
+    assert actual == {key: {DECLARED[level]} for key, level in POLICY.items()}
 
 
 def test_policy_table_matches_openapi_security():
@@ -128,7 +153,7 @@ def test_policy_table_matches_openapi_security():
     mismatched = []
     for key, operation in _operations().items():
         secured = bool(operation.get("security"))
-        if secured != (POLICY[key] != "public"):
+        if secured != (POLICY[key] not in OPEN):
             mismatched.append((key, POLICY[key], secured))
         if secured and "401" not in operation["responses"]:
             mismatched.append((key, "401 미문서화", secured))

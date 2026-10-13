@@ -4,7 +4,7 @@ Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
 조회 전용이라 read-only 세션을 쓰고 커밋하지 않는다(별도 UnitOfWork 없음).
-접속 로그는 IP·User-Agent 같은 개인 정보라 슈퍼유저만 본다(라우터 의존성, ledger F-025).
+접속 로그는 IP·User-Agent 같은 개인 정보라 슈퍼유저만 본다(뷰마다 ``SuperuserRequired``, ledger F-025).
 """
 
 from typing import Any
@@ -12,10 +12,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.core.exception import ErrorResponse
+from app.core.security.access import SuperuserRequired
 from app.core.security.dependencies import (
     ADMIN_FORBIDDEN_RESPONSE,
     UNAUTHORIZED_RESPONSE,
-    require_superuser,
 )
 from app.features.home.dependencies.access_log_dependencies import get_access_log_service
 from app.features.home.schemas.user_access_log_schema import (
@@ -25,9 +25,9 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
-#: 모든 엔드포인트가 슈퍼유저 전용이다(service-hardening F2) — 라우터 의존성으로 한 번에 건다.
+#: 모든 엔드포인트가 슈퍼유저 전용이다(service-hardening F2) — 접근 수준은 뷰마다 선언한다
+#: (access-policy). 401/403 응답 문서만 라우터에서 한 번에 싣는다.
 router = APIRouter(
-    dependencies=[Depends(require_superuser)],
     responses={**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE},
 )
 
@@ -42,6 +42,7 @@ _ERR: dict[int | str, dict[str, Any]] = {
     responses=_ERR,
     summary="접속 로그 목록 조회",
     description="접속 로그 목록을 페이지네이션하여 조회합니다.",
+    dependencies=[SuperuserRequired],
     operation_id="getAccessLogs",
 )
 async def get_access_logs(
@@ -64,6 +65,7 @@ async def get_access_logs(
     responses=_ERR,
     summary="최근 접속 로그 조회",
     description="최근 접속 로그를 시간 역순으로 조회합니다.",
+    dependencies=[SuperuserRequired],
     operation_id="getRecentAccessLogs",
 )
 async def get_recent_access_logs(
@@ -80,6 +82,7 @@ async def get_recent_access_logs(
     responses=_ERR,
     summary="IP별 접속 로그 조회",
     description="특정 IP 주소의 접속 로그를 조회합니다.",
+    dependencies=[SuperuserRequired],
     operation_id="getAccessLogsByIp",
 )
 async def get_access_logs_by_ip(
@@ -98,6 +101,7 @@ async def get_access_logs_by_ip(
     responses=_ERR,
     summary="사용자별 접속 로그 조회",
     description="특정 사용자의 접속 로그를 조회합니다.",
+    dependencies=[SuperuserRequired],
     operation_id="getAccessLogsByUser",
 )
 async def get_access_logs_by_user(
@@ -116,6 +120,7 @@ async def get_access_logs_by_user(
     responses=_ERR,
     summary="접속 로그 통계",
     description="장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다.",
+    dependencies=[SuperuserRequired],
     operation_id="getAccessLogStats",
 )
 async def get_access_log_stats(

@@ -164,6 +164,13 @@ def test_generated_app_is_inactive_until_registered():
         # 직접 붙이지 않으면 "만든 즉시 게이트가 빨간" 골격이 된다.
         operation = app.openapi()["paths"][f"/api/v1/{name}/ping"]["get"]
         assert operation["operationId"] == f"ping{name.capitalize()}"
+
+        # 생성한 뷰는 접근 수준을 선언한다 — 아니면 설치하자마자 기동이 거부된다(access-policy).
+        from app.core.security.access import AccessLevel, AccessPolicyGuard
+
+        AccessPolicyGuard().verify(app)
+        levels = AccessPolicyGuard().levels(app)
+        assert levels[("GET", f"/api/v1/{name}/ping")] == {AccessLevel.PUBLIC}
     finally:
         for module in [n for n in _sys.modules if n.startswith(f"app.features.{name}")]:
             del _sys.modules[module]

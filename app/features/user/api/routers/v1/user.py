@@ -13,12 +13,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.access import SuperuserRequired
 from app.core.security.dependencies import (
     ADMIN_FORBIDDEN_RESPONSE,
     FORBIDDEN_RESPONSE,
     UNAUTHORIZED_RESPONSE,
     CurrentPrincipal,
-    require_superuser,
 )
 from app.features.user.dependencies.user_dependencies import (
     get_user_service,
@@ -42,7 +42,6 @@ _CONFLICT: dict[int | str, dict[str, Any]] = {
 }
 #: 목록·생성·삭제 — 슈퍼유저 전용.
 _ADMIN = {**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE}
-_ADMIN_ONLY = [Depends(require_superuser)]
 #: 단건 조회·수정 — 본인 또는 슈퍼유저. 권한 판정이 존재 확인보다 먼저다(ID 탐색 방지).
 _SELF_OR_ADMIN = {**_NOT_FOUND, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE}
 
@@ -52,7 +51,7 @@ _SELF_OR_ADMIN = {**_NOT_FOUND, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE}
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     responses={**_CONFLICT, **_ADMIN},
-    dependencies=_ADMIN_ONLY,
+    dependencies=[SuperuserRequired],
     summary="사용자 생성",
     description=(
         "새 사용자를 생성합니다(슈퍼유저 전용). 사용자명은 고유해야 하고 비밀번호는 필수입니다."
@@ -73,7 +72,7 @@ async def create_user(
     "/users",
     response_model=UserListResponse,
     responses=_ADMIN,
-    dependencies=_ADMIN_ONLY,
+    dependencies=[SuperuserRequired],
     summary="사용자 목록 조회",
     description="사용자 목록을 페이지네이션하여 조회합니다(슈퍼유저 전용).",
     operation_id="listUsers",
@@ -136,7 +135,7 @@ async def update_user(
     "/users/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={**_NOT_FOUND, **_ADMIN},
-    dependencies=_ADMIN_ONLY,
+    dependencies=[SuperuserRequired],
     summary="사용자 삭제",
     description="사용자를 삭제합니다(슈퍼유저 전용). 그 사용자의 refresh 토큰이 폐기됩니다.",
     operation_id="deleteUser",

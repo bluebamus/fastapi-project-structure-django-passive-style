@@ -5,11 +5,12 @@
 (``require_superuser``)를 둔다. 인증 기능도 같은 provider 를 쓴다 — 테스트가
 ``app.dependency_overrides`` 로 바꾸면 모든 기능에 한 번에 적용된다.
 
-라우트를 보호할 때::
+라우트의 접근 수준은 뷰마다 선언한다(``app.core.security.access`` — 선언이 없으면 기동 거부)::
 
-    async def create(payload: X, principal: CurrentPrincipal, ...)        # 인증
-    async def report(principal: SuperuserPrincipal, ...)                  # 슈퍼유저
-    router = APIRouter(dependencies=[Depends(require_superuser)])         # 라우터 전체
+    @router.get("/items", dependencies=[Public])                         # 공개 조회
+    @router.get("/report", dependencies=[SuperuserRequired])             # 슈퍼유저
+    async def create(payload: X, principal: CurrentPrincipal, ...)        # 인자 = 인증
+    async def report(principal: SuperuserPrincipal, ...)                  # 인자 = 슈퍼유저
 
 ``get_current_principal`` 은 DB 를 조회하지 않는다. 비활성화·강등은 refresh 폐기로 다음
 회전부터 막히고, 이미 발급된 access 는 만료(기본 15분)까지 유효하다(residual-risk R-002·R-014).

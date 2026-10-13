@@ -318,7 +318,19 @@ Redis 고정 창으로 세고 넘으면 429 + `Retry-After` 다. 기존 bcrypt �
 
 권한은 **슈퍼유저/일반 2단계**입니다. 인가는 core 의 `get_current_principal`(access 토큰만 검증, DB 조회 없음)·`require_superuser`·
 `OwnershipPolicy` 로 겁니다 — 세부는 [아키텍처 §7.1](docs/guides/ARCHITECTURE.md#71-인가--주체소유권슈퍼유저), 붙이는 법은
-[개발 가이드 §4.5](docs/guides/DEVELOPMENT.md#45-인증인가-붙이기). 표 전체는 `tests/test_authorization_policy.py` 가 OpenAPI 와 대조해 고정합니다.
+[개발 가이드 §4.5](docs/guides/DEVELOPMENT.md#45-인증인가-붙이기).
+
+**접근 수준은 뷰마다 선언합니다.** 경로 데코레이터의 `dependencies=[...]` 에 `Public`(공개 조회)·`PublicWrite`(인증 없는 쓰기)·
+`LoginRequired`·`SuperuserRequired`(`app/core/security/access.py`) 중 하나를 적거나, 핸들러 인자로 `principal: CurrentPrincipal`·
+`SuperuserPrincipal` 을 받습니다. **선언이 없는 라우트가 하나라도 있으면 서버가 기동하지 않습니다**(`AccessPolicyGuard` — 기본 거부).
+쓰기 메서드에 `Public` 을 적거나 수준을 둘 이상 적어도 기동이 멈춥니다. 아래 예시 정책은 `tests/test_authorization_policy.py` 가 가드의 판정과 대조해 고정합니다.
+
+```python
+@router.get("/posts", dependencies=[Public])                  # 공개 조회
+@router.post("/auth/login", dependencies=[PublicWrite])       # 인증 없는 쓰기는 명시적으로 연다
+@router.get("/users", dependencies=[SuperuserRequired])       # 슈퍼유저
+async def create_post(payload: PostCreate, principal: CurrentPrincipal): ...   # 인자 = 로그인
+```
 
 | 등급 | 오퍼레이션 |
 |---|---|

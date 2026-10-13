@@ -883,19 +883,37 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 | `CurrentPrincipal` / `SuperuserPrincipal` | 위 두 의존성의 `Annotated` 별칭 — 핸들러 인자 타입으로 쓴다 | — |
 | `OwnershipPolicy` | 서비스가 생성자로 받아 수정·삭제 전에 `ensure_can_modify(owner_id, principal)` 를 부른다. `owner_id` 가 `None` 이면 슈퍼유저만 | 403 FORBIDDEN |
 
+**접근 수준 선언과 기본 거부**(`app/core/security/access.py`, access-policy). 뷰는 경로 데코레이터의 `dependencies=[...]` 에 수준을 하나 적는다.
+
+| 선언 | 실체 | 쓰는 곳 |
+|---|---|---|
+| `Public` | 아무것도 하지 않는 표식 의존성 | 안전한 메서드(GET·HEAD·OPTIONS) 공개 |
+| `PublicWrite` | 아무것도 하지 않는 표식 의존성(다른 함수) | 인증 없는 쓰기를 명시적으로 연다 — auth register·login·refresh·logout |
+| `LoginRequired` | `Depends(get_current_principal)` — 인자 `CurrentPrincipal` 도 같은 선언으로 본다 | 401 |
+| `SuperuserRequired` | `Depends(require_superuser)` — 인자 `SuperuserPrincipal` 도 같은 선언으로 본다 | 401 · 403 |
+
+`create_app()` 의 마지막 단계(라우터·health·docs·admin 설치 뒤)에서 `AccessPolicyGuard().verify(app)` 가 서빙되는 모든 `APIRoute`
+(FastAPI 0.141 의 `_IncludedRouter` 중첩을 `effective_route_contexts()` 로 펼친 것, `include_in_schema=False` 포함)의 의존성 트리를
+재귀로 훑는다. 선언 없음 · 서로 다른 수준 동시 선언 · 쓰기 메서드에 `Public` · 안전한 메서드에 `PublicWrite` 가 하나라도 있으면
+위반 목록 전체를 담은 `ImproperlyConfigured` 로 기동을 멈춘다. `require_superuser` 는 안에서 `get_current_principal` 을 쓰므로
+슈퍼유저가 있으면 슈퍼유저 하나로 본다. 라우터 단위 `dependencies` 도 트리에 들어가므로 인정되지만 예시는 뷰 단위로 통일했다.
+FastAPI 가 붙이는 문서 경로(Starlette `Route`)와 `Mount`(`/admin` — 자체 세션 인증)는 대상이 아니다. 앱이 직접 등록한
+Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
+
 | 기능 | 공개 | 인증 | 소유자 또는 슈퍼유저 | 슈퍼유저 |
 |---|---|---|---|---|
 | blog · sns · reply | 목록·단건 조회 | 생성(작성자 `author_id`·`author` 는 서버가 주체로 채운다 — 본문 값은 무시) | 수정·삭제(존재 확인 404 가 먼저) | — |
 | catalog | 목록·단건 조회 | — | — | 생성·수정·삭제 |
 | reports | — | — | — | 일별 매출 |
-| home | — | — | — | 접속 로그 조회 5종(라우터 의존성) |
+| home | — | — | — | 접속 로그 조회 5종(뷰마다 `SuperuserRequired`) |
 | user | — | — | 단건 조회·수정(본인 — **권한 판정이 존재 확인보다 먼저**라 남의 ID 는 있든 없든 403) | 목록·생성(비밀번호 필수, `is_superuser` 지정 가능)·삭제, `is_active`·`is_superuser` 변경 |
 | auth | register·login·refresh·logout | `/me` | — | — |
 
 - 비활성화(`is_active=false`)·강등(`is_superuser=false`)·삭제는 그 사용자의 refresh family 를 모두 폐기한다(`RefreshTokenStore.revoke_user`).
   이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).
 - `author_id` 가 없는 행(인가 리비전 `a3c9e8f1b274` 이전 데이터)은 슈퍼유저만 수정·삭제한다.
-- 정책 표는 `tests/test_authorization_policy.py` 가 고정한다 — 새 오퍼레이션은 등급을 정해 표에 올려야 하고, OpenAPI `security` 와 교차 확인된다.
+- 정본은 뷰 선언이다. "모든 오퍼레이션이 분류됐는가" 는 기동 검사가 막고, `tests/test_authorization_policy.py` 의 표는 예시 정책이
+  의도한 수준인지 가드의 판정과 대조하는 회귀용이다(OpenAPI `security` 와도 교차 확인한다).
 - 첫 관리자는 `uv run python -m scripts.create_superuser --username <이름> --email <메일>` 로 만든다(이미 있으면 승격, 비밀번호는 `--set-password` 일 때만 바꾼다).
   사용법은 README 「첫 관리자 만들기」.
 

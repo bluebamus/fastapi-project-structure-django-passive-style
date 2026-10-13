@@ -175,6 +175,7 @@ async def get_<name>_service_readonly(
 
 # api/routers/v1/<name>.py — 커밋은 여기서
 @router.post("/items", response_model=ItemResponse, status_code=201,
+             dependencies=[LoginRequired],                 # 접근 수준 — 없으면 기동 거부(§4.5)
              summary="품목 생성", description="새 품목을 생성합니다.", operation_id="create<Name>Item")
 async def create_item(
     payload: ItemCreate,
@@ -199,6 +200,8 @@ async def create_item(
 - [ ] `config.INSTALLED_APPS` 끝에 config class 경로 추가
 - [ ] `app/core/tags_metadata.py` 에 태그 선언
 - [ ] Router: `<name>_router`, 버전 prefix, 고유 `operation_id`·`summary`·`description`·`response_model`
+- [ ] **뷰마다 접근 수준 선언** — `dependencies=[Public | PublicWrite | LoginRequired | SuperuserRequired]` 또는 인자
+      `CurrentPrincipal`·`SuperuserPrincipal`. 빠지면 서버가 기동하지 않는다(§4.5)
 - [ ] Dependency: 쓰기 `get_<name>_service` / 조회 `get_<name>_service_readonly`
 - [ ] 쓰기 핸들러는 응답 전에 한 번 `await service.commit()`
 - [ ] 모델: Mixin 조합, `models/__init__.py` 재노출, `admin.py` + `admin_views`, migration 생성·검토
@@ -409,10 +412,16 @@ async with background_session() as session:     # 요청 밖 — 커밋은 직�
 인가는 core 의 주입 경로(`app/core/security/dependencies.py`) 하나로 건다 — 기능이 인가를 위해 user·auth 기능을 import 하지 않는다.
 권한은 슈퍼유저/일반 2단계다. 정책 전체 표는 [아키텍처 §7.1](ARCHITECTURE.md#71-인가--주체소유권슈퍼유저).
 
+**모든 뷰는 접근 수준을 하나 선언한다**(`app/core/security/access.py`). 선언이 없거나, 둘 이상이거나, 쓰기 메서드에 `Public`·
+조회 메서드에 `PublicWrite` 를 적은 라우트가 있으면 `create_app()` 이 위반 목록 전체를 담은 `ImproperlyConfigured` 로 기동을 멈춘다
+(`AccessPolicyGuard` — 기본 거부). 사용자 정보가 필요한 뷰는 인자로 받으면 그것이 선언이다 — 데코레이터에 같은 수준을 또 적지 않는다.
+
 | 필요 | 쓰는 것 | 실패 |
 |---|---|---|
-| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal` | 401 |
-| 슈퍼유저 | 인자 `principal: SuperuserPrincipal`, 또는 결과가 필요 없으면 `dependencies=[Depends(require_superuser)]`(라우트·`APIRouter` 전체) | 401 · 403 |
+| 공개 조회(GET) | `dependencies=[Public]` | — |
+| 인증 없는 쓰기(가입·로그인 류) | `dependencies=[PublicWrite]` — 일부러 연다는 표시 | — |
+| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal`, 결과가 필요 없으면 `dependencies=[LoginRequired]` | 401 |
+| 슈퍼유저 | 인자 `principal: SuperuserPrincipal`, 결과가 필요 없으면 `dependencies=[SuperuserRequired]` | 401 · 403 |
 | 작성자만 수정 | 서비스가 생성자로 `OwnershipPolicy` 를 받고 `ensure_can_modify(row.author_id, principal)` | 403 |
 | 사용자 엔티티(활성 여부 포함) | auth 의 `get_current_user` — DB 를 읽는다. 인가만 필요하면 쓰지 않는다 | 401 |
 
@@ -434,10 +443,20 @@ async def update_item(self, item_id: str, data: ItemUpdate, principal: Principal
 @router.post("/items", ...)
 async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service: ItemService = Depends(get_item_service)):
     item = await service.create_item(payload, principal)   # author_id=principal.id
+
+@router.get("/items", dependencies=[Public], ...)              # 공개 조회도 선언한다
+@router.delete("/items/{item_id}", dependencies=[SuperuserRequired], ...)
 ```
 
+**함수를 감싸는 데코레이터(Django 식 `@login_required`)를 쓰지 않는 이유.** FastAPI 는 핸들러의 시그니처를 읽어 의존성 주입·요청
+검증·OpenAPI 를 만든다. 함수를 감싸면 그 시그니처가 래퍼 뒤로 숨어(`functools.wraps` 로 일부 되살려도 `Depends`·`Annotated` 해석과
+`security` 문서화가 어긋나기 쉽다) 주입이 깨지거나 문서에서 인증 표시가 사라진다. 경로 데코레이터의 `dependencies=[...]` 는 FastAPI 가
+원래 제공하는 "뷰 단위 선언" 이라 시그니처를 건드리지 않고, OpenAPI 의 Bearer 표시도 그대로 나온다. 다만 선언만으로는 "잊은 뷰" 가
+열린 채 배포되므로 기동 검사가 기본 거부를 맡는다.
+
 - 보호 라우트는 `responses` 에 `app/core/security/dependencies.py` 의 공용 401·403 응답 상수를 싣는다(OpenAPI 에 문서화된다).
-- 새 오퍼레이션은 `tests/test_authorization_policy.py` 의 정책 표에 등급(public·auth·owner·self·admin)을 올린다 — 빠지면 실패한다.
+- 예시 기능의 오퍼레이션을 바꾸면 `tests/test_authorization_policy.py` 의 회귀 표(public·public_write·auth·owner·self·admin)도 고친다 —
+  표는 가드의 판정과 대조된다. 새 기능의 "선언 여부" 는 표가 아니라 기동 검사가 본다.
 - 엔드포인트 테스트는 `get_current_principal` 을 override 하지 않고 `tests/auth_headers.py` 의 헤더(`admin_headers()`·`user_headers()`)로
   실제 토큰을 보낸다. 토큰 검증·`su` claim·`request.state.user_id` 기록까지 같이 시험된다.
 - `Principal` 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.
