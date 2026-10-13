@@ -218,7 +218,9 @@ async def docs_page(live_server: str) -> AsyncIterator:
         )
 
         try:
-            await page.goto(f"{live_server}/docs", wait_until="networkidle", timeout=30_000)
+            # networkidle 은 외부 CDN 요청이 한 번이라도 늘어지면 30초를 넘겨 실패한다(2026-10-13 CI
+            # 44681ee). 문서·스크립트가 다 내려온 load 까지만 기다리고, 그리기는 아래에서 본다.
+            await page.goto(f"{live_server}/docs", wait_until="load", timeout=30_000)
             await _wait_until_painted(page)
             yield page
         finally:

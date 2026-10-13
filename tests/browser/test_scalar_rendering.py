@@ -119,7 +119,7 @@ async def test_example_values_are_visible_in_the_catalog_section(docs_page, live
     것은 다르다 — 이 검사가 그 사이를 잇는다.
     """
     await docs_page.goto(
-        f"{live_server}/docs#tag/catalog", wait_until="networkidle", timeout=30_000
+        f"{live_server}/docs#tag/catalog", wait_until="domcontentloaded", timeout=30_000
     )
     expected_texts = ("상품 생성", "SKU-1001", "129000.00")
     body = await _body_when_rendered(docs_page, expected_texts)
@@ -131,7 +131,7 @@ async def test_example_values_are_visible_in_the_catalog_section(docs_page, live
 async def test_raw_example_section_renders(docs_page, live_server: str):
     """Raw 예제도 같은 수준으로 보인다 — 두 예제는 나란히 비교되라고 있다."""
     await docs_page.goto(
-        f"{live_server}/docs#tag/sales-reports", wait_until="networkidle", timeout=30_000
+        f"{live_server}/docs#tag/sales-reports", wait_until="domcontentloaded", timeout=30_000
     )
     body = await _body_when_rendered(docs_page, ("일별 매출 리포트",))
 
