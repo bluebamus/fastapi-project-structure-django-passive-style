@@ -74,7 +74,7 @@ async def test_superuser_logs_in_through_the_bootstrap_screen(live_server: str):
             pytest.fail(f"Chromium 을 띄우지 못했다: {exc}\n준비: {INSTALL_HINT}")
         try:
             page = await browser.new_page()
-            await page.goto(f"{live_server}/admin/", wait_until="networkidle")
+            await page.goto(f"{live_server}/admin/", wait_until="load")
             assert page.url.endswith("/admin/login"), f"로그인 화면으로 가지 않았다: {page.url}"
 
             color = await page.eval_on_selector(
@@ -85,7 +85,7 @@ async def test_superuser_logs_in_through_the_bootstrap_screen(live_server: str):
             await page.get_by_label("사용자명").fill(username)
             await page.get_by_label("비밀번호").fill("wrong-password")
             await page.get_by_role("button", name="로그인").click()
-            await page.wait_for_load_state("networkidle")
+            await page.wait_for_load_state("load")
             assert await page.locator(".alert-danger").count() == 1
 
             await page.get_by_label("사용자명").fill(username)
