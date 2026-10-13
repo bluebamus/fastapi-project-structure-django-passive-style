@@ -14,10 +14,11 @@
 5. registry 기반 Router 설치
 6. health · Scalar docs
 7. 허용된 경우에만 registry 기반 SQLAdmin 설치(슈퍼유저 로그인 백엔드 포함)
+8. 접근 정책 검사 — 접근 수준을 선언하지 않은 API 라우트가 있으면 기동을 멈춘다
 
 2번이 3번보다 먼저인 이유는 startup 테이블 생성과 migration metadata 가 같은 모델
-집합을 봐야 하기 때문이다. 7번이 마지막인 이유는 SEC-01 — ``ADMIN_DISABLED=true`` 면 sqladmin
-이 아예 import 되지 않아야 한다.
+집합을 봐야 하기 때문이다. 7번이 조립의 마지막인 이유는 SEC-01 — ``ADMIN_DISABLED=true`` 면 sqladmin
+이 아예 import 되지 않아야 한다. 8번은 라우트가 모두 붙은 뒤여야 빠짐없이 본다.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.redis import get_redis, ping_redis
 from app.core.resources import manage_application_resources
+from app.core.security.access import AccessPolicyGuard, Public
 from app.core.tags_metadata import tags_metadata
 from app.utils.logs import get_logger
 from config import INSTALLED_APPS, app_settings
@@ -240,6 +242,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
         tags=["Health"],
         summary="헬스체크",
         description="서버의 정상 동작 여부를 확인합니다.",
+        dependencies=[Public],
         operation_id="healthCheck",
     )
     async def health_check() -> HealthResponse:
@@ -270,6 +273,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
             f"`PING` 을 동시에 보내 각각 최대 {READINESS_TIMEOUT_SECONDS:.0f}초 안에 "
             "응답을 기다리고, 하나라도 실패하거나 시간을 넘기면 503 을 반환합니다."
         ),
+        dependencies=[Public],
         operation_id="readinessCheck",
         responses={
             503: {
@@ -310,7 +314,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
     # Scalar API 문서 (DEBUG 모드에서만 활성화)
     if app_settings.DEBUG:
 
-        @app.get("/docs", include_in_schema=False)
+        @app.get("/docs", include_in_schema=False, dependencies=[Public])
         async def scalar_docs():
             """
             Scalar API 문서 페이지
@@ -392,5 +396,9 @@ def create_app(
     else:
         # 경로를 싣지 않는다 — 끈 관리 화면의 위치를 로그로도 알리지 않는다(admin-login ADR-005).
         logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
+
+    # 8. 기본 거부 — 모든 라우트가 붙은 뒤에 본다(access-policy ADR-002). /admin Mount 는
+    # 자체 세션 인증이라 대상이 아니다.
+    AccessPolicyGuard().verify(app)
 
     return app

@@ -12,6 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exception import ErrorResponse
 from app.core.security import RateLimiter
+from app.core.security.access import PublicWrite
 from app.features.auth.dependencies.auth_dependencies import (
     get_auth_service,
     get_current_user,
@@ -52,7 +53,7 @@ _RATE_LIMITED: dict[int | str, dict[str, Any]] = {
     description="사용자명·이메일·비밀번호로 사용자를 생성합니다. ip 기준 레이트 리밋이 걸려 있습니다.",
     operation_id="authRegister",
     responses={**_CONFLICT, **_RATE_LIMITED},
-    dependencies=[Depends(register_rate_limit)],
+    dependencies=[PublicWrite, Depends(register_rate_limit)],
 )
 async def register(
     payload: RegisterRequest,
@@ -72,6 +73,7 @@ async def register(
         "username/password(form)로 access·refresh 토큰을 발급합니다. ip 기준과 ip+username "
         "기준 레이트 리밋이 걸려 있고, 성공하면 ip+username 카운터를 초기화합니다."
     ),
+    dependencies=[PublicWrite],
     operation_id="authLogin",
     responses={**_UNAUTH, **_RATE_LIMITED},
 )
@@ -96,6 +98,7 @@ async def login(
         "Refresh Token 으로 새 access·refresh 토큰을 발급합니다. 쓴 refresh 토큰은 소비되며, "
         "같은 토큰을 다시 쓰면 재사용으로 보고 그 family 전체를 폐기합니다."
     ),
+    dependencies=[PublicWrite],
     operation_id="authRefresh",
     responses=_UNAUTH,
 )
@@ -114,6 +117,7 @@ async def refresh(
         "Refresh Token 의 family 를 폐기합니다(멱등). access 토큰은 만료까지 유효하므로 "
         "클라이언트가 버립니다."
     ),
+    dependencies=[PublicWrite],
     operation_id="authLogout",
     responses=_UNAUTH,
 )
