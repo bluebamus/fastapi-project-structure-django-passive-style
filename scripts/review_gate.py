@@ -128,7 +128,7 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                 # SKIP_MARKERS 의 `skipped` 에 걸려 테스트 skip 0건인데도 단계가 실패했다(F-026).
                 "--cov-report=term-missing",
             ],
-            why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 하한이 모두 여기 들어 있다",
+            why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 측정(하한은 pyproject, 기본 0)이 여기 있다",
             # 저장소 루트의 `.coverage` 를 쓰면 병렬 실행끼리 데이터가 섞인다.
             env={"COVERAGE_FILE": str(cache_dir / ".coverage")},
             # 단위 단계에도 skip 을 실패로 본다(2026-10-07). 전에는 mysql·browser 단계에만 있어서

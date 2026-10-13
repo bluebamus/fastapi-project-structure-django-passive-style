@@ -155,6 +155,9 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 message=str(exc.detail) if exc.detail else "HTTP 오류가 발생했습니다.",
                 detail=None,
             ).model_dump(mode="json"),
+            # 405 의 Allow, 401 의 WWW-Authenticate, 429 의 Retry-After 같은 HTTP 의미 헤더는
+            # 예외가 들고 온다. 본문만 바꾸고 헤더를 버리면 그 의미가 사라진다(M-03).
+            headers=exc.headers,
         )
 
     @app.exception_handler(Exception)

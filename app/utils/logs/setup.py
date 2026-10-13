@@ -10,13 +10,20 @@ import logging
 from logging.config import dictConfig
 
 from app.utils.logs.config import LOG_FORMAT, _env, _level, build_dictconfig
+from app.utils.logs.redaction import install_record_redaction
 
 _configured = False
 
 
 def configure_logging(force: bool = False) -> None:
-    """환경별 로깅 구성을 root 로거에 적용한다(idempotent)."""
+    """환경별 로깅 구성을 root 로거에 적용한다(idempotent).
+
+    비밀값 가리기(:mod:`app.utils.logs.redaction`)도 여기서 건다 — 핸들러가 아니라
+    LogRecord factory 에 걸므로 uvicorn CLI·Celery 처럼 우리가 핸들러를 소유하지 않는
+    경로도 같은 규칙을 탄다.
+    """
     global _configured
+    install_record_redaction()
     if _configured and not force:
         return
     dictConfig(build_dictconfig())

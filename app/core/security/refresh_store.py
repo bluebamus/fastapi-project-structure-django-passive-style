@@ -6,7 +6,8 @@
     - ``auth:fam:{fam}:revoked``: 폐기된 family 표시. TTL = refresh 수명(그 family 의 어떤
       토큰도 그보다 오래 살지 못한다).
 
-회전은 ``GETDEL`` 하나로 jti 를 소비한다 — 두 요청이 같은 토큰으로 경쟁해도 한쪽만 값을
+회전은 ``GETDEL``(Redis 6.2+ — 저장소 최소 버전 7.0 은 ``rate_limit`` 의 ``EXPIRE NX`` 가 정한다,
+``app.core.redis.REDIS_MIN_VERSION``) 하나로 jti 를 소비한다 — 두 요청이 같은 토큰으로 경쟁해도 한쪽만 값을
 받는다. 값이 없으면 이미 쓴 토큰의 **재사용**이므로 호출자가 family 를 폐기한다.
 """
 

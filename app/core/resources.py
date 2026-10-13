@@ -40,6 +40,7 @@ from redis.asyncio import Redis
 from app.core.apps import Apps
 from app.core.db.session import create_db_tables, dispose_engine, owned_tables
 from app.core.middlewares.background_tasks import access_log_tasks
+from app.core.redis import ensure_redis_version
 from app.utils.logs import get_logger
 from config import app_settings, redis_settings
 
@@ -109,7 +110,7 @@ async def _dispose_db_engines() -> None:
 
 @asynccontextmanager
 async def _redis(app: FastAPI) -> AsyncIterator[None]:
-    """Redis 연결을 startup 에 검증하고 shutdown 에 닫는다."""
+    """Redis 연결과 최소 버전을 startup 에 검증하고 shutdown 에 닫는다."""
     client = Redis.from_url(
         redis_settings.REDIS_URL,
         socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
@@ -122,6 +123,7 @@ async def _redis(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.error("[startup] Redis 연결 실패: %s", type(exc).__name__)
             raise
+        await ensure_redis_version(client)
         app.state.redis = client
         logger.info("[startup] Redis 연결 확인 완료")
         yield

@@ -3,8 +3,8 @@
 # 판정 규칙의 정본은 `scripts/review_gate.py` 다. 두 곳에 같은 규칙을 손으로 적어 두면
 # 반드시 갈린다 — 실제로 `deselected` 를 위반으로 세는 실수를 로컬 게이트에서 고치고
 # CI 에 반영하지 않아 한 번 겪었다. 규칙을 바꾸는 사람은 두 파일을 **함께** 본다.
-# 같은 규칙: skip·xfail·xpass 금지, `--strict-markers`, 커버리지 하한(pyproject 의
-# `fail_under` 하나), OpenAPI fail-on-revert. CI 에만 있는 것: alembic 단일 head·SQLite
+# 같은 규칙: skip·xfail·xpass 금지, `--strict-markers`, 커버리지 측정과 하한(pyproject 의
+# `fail_under` 하나 — 기본 0), OpenAPI fail-on-revert. CI 에만 있는 것: alembic 단일 head·SQLite
 # 드리프트·MySQL 왕복(로컬에서는 tests/core/test_migration_chain.py 와 `-m mysql` 이 본다).
 #
 # 배포·빌드는 다루지 않는다. 이미지 빌드·푸시·릴리스는 별도 인프라 저장소 소관이다
@@ -109,8 +109,8 @@ jobs:
       # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
       # charter §3 은 "조용한 SKIP·xfail 0" 을 인수 기준으로 둔다 — 통과 개수만 보고
       # 넘어가면 비활성화된 테스트가 초록불 뒤에 숨는다. 그래서 요약을 직접 판정한다.
-      # 커버리지 하한은 pyproject `fail_under` 가 정본이다(85%). 임계값이 없으면 "테스트를
-      # 안 쓰고 기능을 늘리는" 방향으로 조용히 미끄러진다.
+      # 커버리지는 항상 측정·출력한다. 하한은 pyproject `fail_under` 하나가 정본이고 기본값은
+      # 0(하한 없음 — 사용자 결정, log-redaction-fixes ADR-005). 필요해지면 그 값만 올린다.
       # 커버리지 데이터·pytest tmp·로그를 실행별 경로로 보낸다. 저장소 루트의
       # `.coverage` 를 쓰면 앞선 실행의 병렬 데이터가 남아 combine 이 형식 충돌로
       # 터진다 — 경로를 격리하면 `rm -f` 로 지우는 습관 자체가 필요 없다.
@@ -257,7 +257,7 @@ jobs:
       - name: Chromium 설치
         run: uv run python -m playwright install --with-deps chromium
 
-      # 실제 uvicorn 을 띄우므로 startup ping 이 통과할 Redis 가 필요하다 — 위 compose 의
+      # 실제 uvicorn 을 띄우므로 startup ping·버전 확인(7.0 이상)이 통과할 Redis 가 필요하다 — 위 compose 의
       # redis-test 가 그 자리다. pipefail 이유는 mysql 단계와 같다.
       - name: pytest -m browser (skip 금지)
         run: |
