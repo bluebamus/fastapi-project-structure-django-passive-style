@@ -176,9 +176,11 @@ exclude_lines = [
     "if __name__ == .__main__.:",
 ]
 
-# 최소 커버리지 (%). 정본은 여기 하나다 — CI 와 로컬 게이트(`scripts/review_gate.py`)가
-# 모두 `--cov` 만 주고 이 값을 읽는다. 명령줄에 따로 적으면 두 값이 갈린다(ADR-038).
-fail_under = 85
+# 최소 커버리지 (%). 기본 0 = 하한 없음(측정·리포트만). 필요해지면 이 값 하나만 올린다 —
+# CI·로컬 게이트(`scripts/review_gate.py`)가 모두 `--cov` 만 주고 이 값을 읽는다. 명령줄에
+# `--cov-fail-under` 를 따로 적으면 두 값이 갈린다(orm-raw-repository ADR-038 의 단일 정본,
+# 값은 사용자 결정 log-redaction-fixes ADR-005).
+fail_under = 0
 
 
 # =============================================================================

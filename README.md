@@ -27,7 +27,8 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **읽기/쓰기 라우팅**(선택): primary/replica 분리. 끄면 바인딩만 단일 엔진으로 가고 위 두 계약은 그대로다.
 - **JWT 인증·인가**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
   슈퍼유저/일반 2단계 권한과 작성자 소유권(`CurrentPrincipal`·`require_superuser`·`OwnershipPolicy`), 첫 관리자 생성 스크립트.
-- **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500, SQL·비밀값 로그 차단, 종료 시 자원 정리 순서 보장.
+- **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500(예외 헤더 `Allow`·`WWW-Authenticate` 등은 보존), SQL·비밀값 로그 차단(메시지·traceback·`stack_info` 의
+  DSN 비밀번호·`password=`·Bearer·JWT 를 `***` 로 — uvicorn·Celery 핸들러 포함), 종료 시 자원 정리 순서 보장.
 - **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면 + 서명 세션 쿠키,
   매 요청 DB 재확인). 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true` 로 마운트·링크까지 없앤다.
 
@@ -40,7 +41,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | ORM / Migration | SQLAlchemy 2.0 async, Alembic |
 | Database | MySQL (aiomysql / 마이그레이션은 PyMySQL) |
 | Validation / Settings | Pydantic v2, pydantic-settings |
-| Redis | **필수** — startup 연결 검증, `get_redis` 주입, `/ready` 확인, refresh 회전·인증 레이트 리밋, Celery broker·result backend |
+| Redis | **필수, 7.0 이상** — 레이트 리밋이 `EXPIRE … NX`(7.0)를, refresh 회전이 GETDEL(6.2)을 쓴다. startup 연결·버전 검증, `get_redis` 주입, `/ready` 확인, Celery broker·result backend |
 | Task Queue | Celery 5 |
 | Auth | OAuth2 Password + PyJWT + pwdlib(Argon2) · 기존 bcrypt 해시 검증 · Redis(refresh 회전·레이트 리밋) |
 | Admin / Docs | SQLAdmin(슈퍼유저 세션 로그인 — starlette `SessionMiddleware` + itsdangerous 서명 쿠키, Bootstrap 5.3 로그인 화면) / Scalar |
@@ -136,11 +137,12 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마�
 
 ### 1단계 — Redis 만으로 HTTP 배선 확인
 
-앱은 기동할 때 `REDIS_HOST`/`REDIS_PORT` 로 `ping()` 하고, 실패하면 시작하지 않습니다(`DEBUG` 와 무관).
+앱은 기동할 때 `REDIS_HOST`/`REDIS_PORT` 로 `ping()` 하고, 실패하면 시작하지 않습니다(`DEBUG` 와 무관). 이어서 `INFO server` 의
+버전이 **7.0 미만이면 시작하지 않습니다**(INFO 를 막아 둔 관리형 Redis 는 WARNING 만 남기고 계속).
 MySQL 없이 배선을 보려면 `DEBUG=false` 로 개발용 테이블 생성을 끕니다.
 
 ```bash
-docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine
+docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine   # 7.0 이상 (EXPIRE NX)
 DEBUG=false uv run uvicorn main:app --port 8000
 curl http://127.0.0.1:8000/health
 # {"status":"healthy","version":"1.0.0"}   ← .env.example 의 VERSION
@@ -194,7 +196,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 |---|---|---|
 | `TRUSTED_PROXY_HOPS` | `0` | 앞단 신뢰 프록시 단 수. 프록시 뒤 배포면 반드시 설정 — [운영 배포 체크리스트](#운영-배포-체크리스트) |
 | `DEBUG` | `true` | true = 개발 테이블 생성 + `/docs` 노출 + DEBUG 로그 / false = 모두 끔(스키마는 Alembic) |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()` 대상. 연결 실패 시 서버가 뜨지 않는다 |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()`·버전 확인 대상. 연결 실패나 7.0 미만이면 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
 | `ADMIN_DISABLED` | `false` | false = `/admin` 마운트(**활성 슈퍼유저 로그인 필요**) / true = 관리 화면 자체가 없다(404, 응답 어디에도 경로·링크 없음, sqladmin 미로드). 예전 `ADMIN` 은 제거됐다 — 남아 있으면 기동 실패 |
 | `ENV` | `development` | production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 면 설정 로드가 실패하고, `/admin` 세션 쿠키에 `Secure` 가 붙는다(HTTPS 전용). 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
@@ -217,6 +219,8 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy .
 uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MySQL 통합·브라우저 테스트 제외)
 ```
 
+커버리지는 게이트·CI 가 항상 측정해 출력하지만 하한(`pyproject.toml` 의 `fail_under`)은 기본 **0** 입니다 — 처음에는 기능이 동작하는지가
+먼저이고, 필요해지면 그 값 하나만 올립니다(올리는 법은 개발 가이드 §6.1).
 `mysql`·`browser` 마커 테스트의 준비물과 CI 구성은 [개발 가이드 §6](docs/guides/DEVELOPMENT.md#6-테스트와-품질-게이트)에 있습니다.
 
 ### 자주 막히는 지점
@@ -224,6 +228,7 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 | 증상 | 원인 | 조치 |
 |---|---|---|
 | startup 에서 `Redis 연결 실패` | Redis 미기동·주소·인증 오류 | `REDIS_HOST` 등과 서버 확인. `DEBUG=false` 로 우회되지 않는다 |
+| startup 에서 `Redis 6.x 는 지원하지 않는다` | 서버가 7.0 미만 — 레이트 리밋의 `EXPIRE NX` 가 문법 오류가 된다 | Redis 7.0 이상으로 올린다 |
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 가 테이블 생성을 시도 | MySQL 을 띄우거나 `DEBUG=false` |
 | `/docs` 가 404 | `DEBUG=false` | `DEBUG=true` (MySQL 필요) |
 | 기능 API 만 500, `/ready` 503 | DB 없음 | 2단계 진행 |
@@ -363,6 +368,8 @@ uv run python -m scripts.create_superuser --username alice --set-password       
   남아 있으면 기동이 멈추니 `ADMIN_DISABLED` 로 옮깁니다.
 - `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY` 는 서로 다른 무작위 값이어야 합니다 — 키를 아는 사람은 `su=true` 토큰을 만들 수 있습니다.
 - 마이그레이션 `uv run alembic upgrade head` 로 `users.is_superuser`·게시물 `author_id` 를 추가합니다(리비전 `a3c9e8f1b274`).
+- **Redis 7.0 이상** — 레이트 리밋이 `EXPIRE … NX`(7.0)를 씁니다. 7.0 미만이면 기동이 멈추고, `INFO` 를 막아 둔 관리형 Redis 는 확인을
+  건너뛰고 WARNING 만 남기므로 버전을 직접 확인합니다.
 
 ## 문서 안내
 

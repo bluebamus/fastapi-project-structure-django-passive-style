@@ -115,7 +115,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 | `app/core/db/router.py` | `DatabaseRouter`·`RoutingSession`, `using_writer`·`mark_read_only`·`is_read_only_session`, `read_intent`·`write_intent` |
 | `app/core/db/errors.py` | `convert_db_error()` — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환 |
 | `app/core/exception.py` | `AppException` 계층(`headers` 를 핸들러가 응답에 싣는다 — 429 `Retry-After`)과 `ErrorResponse` |
-| `app/core/redis.py` | `get_redis()` 주입 provider, `ping_redis()` |
+| `app/core/redis.py` | `get_redis()` 주입 provider, `ping_redis()`, 최소 버전 `redis.REDIS_MIN_VERSION`(7.0)·`ensure_redis_version()` |
 | `app/core/security/` | 인증·인가 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`Principal`·`OwnershipPolicy`와 주입 경로 `dependencies.py`(`get_current_principal`·`require_superuser`, §7·§7.1) |
 | `app/core/models/models_base.py` | `Base` + `UUIDPrimaryKeyMixin`·`CreatedAtMixin`·`UpdatedAtMixin`·`TimestampMixin` |
 | `app/core/repositories/` | ORM: `CRUDBase`·`BaseRepository` / Raw: `RawCRUDBase`·`RawRepositoryBase` (두 계열은 상속 관계가 없다) |
@@ -317,7 +317,7 @@ DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성
 | NFR-02 / NFR-04 | populate 는 thread-safe·멱등·재진입 거부 / 실패 시 부분 상태를 남기지 않음 |
 | NFR-03 / NFR-07 | 모듈 부재와 내부 import 실패 구분(traceback 보존) / 오류 메시지에 고칠 위치 포함 |
 | NFR-05 / NFR-06 | 격리 `Apps()` 주입 가능 / registry core 는 FastAPI·SQLAdmin 에 의존하지 않음 |
-| NFR-08 | registry·adapter 커버리지 기준(프로젝트 전체 85% 는 `pyproject.toml` `fail_under` 가 정본이고 CI·로컬 게이트가 함께 강제) |
+| NFR-08 | registry·adapter 커버리지 기준(프로젝트 전체 하한은 `pyproject.toml` `fail_under` 하나가 정본이고 CI·로컬 게이트가 함께 읽는다 — 기본 0 = 측정만, 필요해지면 그 값만 올린다) |
 | SEC-01 | `ADMIN_DISABLED=true` 면 sqladmin·앱 `admin.py` 를 로드하지 않음 |
 | SEC-02 | allowlist(`INSTALLED_APPS`)만 import, 디렉터리 스캔 금지 |
 | SEC-03 / SEC-04 | 생성기 경로 이탈 차단 / 부분 생성·덮어쓰기 금지 |
@@ -348,7 +348,7 @@ flowchart TD
     B --> C["로깅·엔진 객체 준비 (아직 접속 아님)"]
     C --> D["create_app — registry population·미들웨어·예외·Router·/health·/ready·Admin"]
     D --> E["lifespan 진입 → manage_application_resources"]
-    E --> F["Redis ping (실패 시 기동 중단)"]
+    E --> F["Redis ping + 버전 >= 7.0 (실패 시 기동 중단)"]
     F --> G{"소유 테이블 > 0 이고 DEBUG?"}
     G -- 예 --> H["create_db_tables (개발용 DDL)"]
     G -- 아니오 --> I["DDL 생략"]
@@ -453,6 +453,11 @@ async with AsyncExitStack() as cleanup:
 
 **Redis 검증** — `Redis.from_url(redis_settings.REDIS_URL, socket_connect_timeout=5, socket_timeout=5)` 후 `ping()`.
 실패하면 오류 타입만 ERROR 로 남기고 다시 raise 한다 → yield 에 도달하지 않아 서버가 시작되지 않는다.
+이어서 `ensure_redis_version()`(`app/core/redis.py`)이 `INFO server` 의 `redis_version` 을 `redis.REDIS_MIN_VERSION`(**7.0**)과 비교해
+낮으면 `UnsupportedRedisVersion` 으로 기동을 멈춘다. 7.0 은 근거가 있는 값이다 — 레이트 리밋이 `EXPIRE … NX`(7.0)를, refresh 회전이
+GETDEL(6.2)을 쓰고 최소 버전은 그 최댓값이다(6.x 서버는 `EXPIRE NX` 를 문법 오류로 거부해 로그인·가입이 첫 요청부터 500).
+INFO 를 막아 둔 관리형 Redis·버전을 알려 주지 않는 서버(테스트의 fakeredis 포함)는 WARNING 만 남기고 계속한다.
+`tests/core/test_redis_version.py` 가 소스의 명령과 상수를 대조한다.
 `DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 `app.state.redis` 에 보관되고,
 요청 코드는 주입 provider `get_redis(request) -> Redis`(`app/core/redis.py`) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
 `ServiceUnavailableException`(503). 기능이 `Redis.from_url` 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 `/ready` 가 다시 본다(§3.5).
@@ -493,7 +498,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | `GET /ready` | readiness. `ping_writer_db()`(writer 에 `SELECT 1`)와 `ping_redis()`(`get_redis` 로 주입한 client 에 `ping()`)를 `asyncio.gather` 로 동시에, 각각 2초 안에 실행. 하나라도 실패·timeout 이면 원인을 숨긴 503(대상과 원인 타입만 서버 WARNING — 예: `[Readiness] Redis 준비 확인 실패: TimeoutError`). 준비 안 된 인스턴스는 재시작이 아니라 LB 에서 뺀다 |
 | `/docs`, `/openapi.json` | `DEBUG=true` 일 때만. Swagger UI·ReDoc 은 끔 |
 | 설정·registry 오류 | lifespan 이전 조립 실패 |
-| Redis ping·개발 DDL 오류 | startup 실패 |
+| Redis ping·Redis 7.0 미만·개발 DDL 오류 | startup 실패 |
 | 요청 중 오류 | 전역 예외 핸들러 |
 | background 저장 오류 | 이미 나간 응답과 무관(로그만) |
 
@@ -503,7 +508,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 |---|---|
 | `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`). 로그는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR |
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록 |
-| Starlette `HTTPException` | `HTTP_<status>` error code |
+| Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow`·401 `WWW-Authenticate` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`) |
 | 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
 
 ---
@@ -733,6 +738,11 @@ Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → �
 - 포맷(`app/utils/logs/config.py` 의 상수): `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}`.
   `app=` 은 로거 이름이 아니라 **소스 경로**에서 산출된다(`ContextFilter`) — 새 기능이 로깅 설정을 건드릴 필요가 없다.
 - `SqlNoiseFilter` 가 모든 핸들러에서 SQLAlchemy·드라이버 로거의 SQL 본문·바인딩 값을 막는다. `LOG_SQL_ECHO_ENABLED=true` 로만 열 수 있고, production/staging 에서는 설정 로드가 거부한다.
+- **비밀값 가리기** — `app/utils/logs/redaction.py` 의 `SecretRedactor` 가 규칙의 정본이다(DSN·URL 의 비밀번호, `password`·`secret`·`token`·`api_key`·
+  `authorization` 으로 끝나는 키의 값, Bearer 토큰, JWT → `***`). `configure_logging()` 이 이것을 **LogRecord factory** 로 걸어, 렌더된 메시지·
+  traceback 본문(`exc_text` 로 미리 포맷해 고정)·`stack_info` 를 레코드가 만들어질 때 가린다. 핸들러·포매터가 아니라 factory 라서
+  우리가 포매터를 소유하지 않는 `uvicorn main:app` CLI 의 `uvicorn.error`(Starlette 가 500 뒤에 예외를 다시 올려 uvicorn 이 traceback 을
+  자기 핸들러로 남긴다)·Celery 워커 핸들러도 같은 규칙을 탄다. 예외 타입·체인·파일·줄은 남는다. 접속 로그(DB 저장)는 대상이 아니다(§6).
 - 세션 롤백 로그(`app/core/db/session.py`)는 ERROR 에 예외 **타입과 소요시간만** 남긴다 — DB 예외의 `str()` 에 실행된 SQL 과 바인딩 값이 들어 있고, 앱 로거 이름은 `SqlNoiseFilter` 를 통과하기 때문이다.
   추적이 필요하면 DEBUG 레벨에서 같은 지점의 `exc_info=True` 상세 레코드가 트레이스백 전문을 남긴다. 그래서 production/staging 은 debug 모드 자체를 거부한다(§3.2).
 - Service 는 `LoggerMixin` 을 상속해 `self.log` 를 쓴다. Uvicorn 은 직접 실행 시 `setup_uvicorn_logging()` 의 같은 헤더 형식을 쓴다.
@@ -977,7 +987,7 @@ config.set_main_option(                                              # URL → �
 | 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 관리 화면을 내부망으로만 쓰려면 프록시에서 `/admin` 을 제한한다 |
 | 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 쿠키 서명)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
 | 5 | CORS 는 실제 frontend origin 만 | `CORS_ALLOW_ORIGINS=["*"]` 와 `CORS_ALLOW_CREDENTIALS=true` 조합은 설정 로드가 거부한다 |
-| 6 | Redis 는 인증·사설망 | startup 필수 자원이자 Celery broker |
+| 6 | Redis 는 **7.0 이상**, 인증·사설망 | startup 필수 자원이자 Celery broker. 7.0 미만이면 기동이 거부된다(`EXPIRE NX`). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다 |
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
 | 8 | 오케스트레이터가 `/health` 를 liveness, `/ready` 를 readiness 로 연결 | DB 흔들림에 프로세스 재시작 |
 | 9 | 로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록 | — |
@@ -1031,6 +1041,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-13 | **log-redaction-fixes**: 로그 메시지·traceback·`stack_info` 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette `HTTPException` 핸들러가 `headers` 를 보존(405 `Allow`), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 `session_id`·Referer·XFF 원문 저장은 사용자 결정으로 유지 (`docs/crp/groups/log-redaction-fixes/`). |
 | 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](admin-auth-guide.html) (`docs/crp/groups/admin-login/`). |
 | 2026-10-12 | **service-hardening**: DSN `URL.create`, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 `/ready`, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(`Principal`·`OwnershipPolicy`·슈퍼유저·`scripts/create_superuser.py`, §7.1) (`docs/crp/groups/service-hardening/`). |
 | 2026-09-21 ~ 2026-10-02 | **읽기 전용 강제를 라우터와 분리 + 게이트·문서 위생**: 읽기 전용 세션의 쓰기 차단을 `get_bind()` 안에서 `Session` 전역 이벤트(`before_flush`·`do_orm_execute`)로 옮겨 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하게 했다 — 이전에는 **기본 설정(라우터 off)에서 차단이 통째로 없었다**(§4.4, `tests/core/test_read_only_guard.py`). `ValidationException` 을 `HTTP_422_UNPROCESSABLE_CONTENT` 로 옮겼다(값은 그대로 422, starlette 1.x 폐기 예고). 게이트에 `pip-audit` 단계를 넣어 9단계가 됐고, 게이트를 가리키는 문서 포인터를 번호에서 **스텝 이름**으로 바꿨다(번호는 단계가 끼면 밀린다). `filterwarnings` 를 `error::` 로 올리고 파일 핸들 누수를 없앴다. `redis 6.4.0`·`uvicorn 0.54.0` 상향, pyjwt 권고 10건 해소. 문서가 인용한 비밀값이 배포 안전 검사에 걸리는지 보는 `tests/test_docs_secret_examples.py` 를 신설했다. |

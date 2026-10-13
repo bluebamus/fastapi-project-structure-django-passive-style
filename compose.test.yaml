@@ -62,6 +62,7 @@ services:
       start_period: 30s
 
   redis-test:
+    # 7.0 이상이어야 앱이 뜬다 — 레이트 리밋이 EXPIRE NX(7.0)를 쓴다(app/core/redis.py REDIS_MIN_VERSION).
     image: redis:7.4-alpine
     container_name: fastapi-passive-redis-test
     # 테스트용이라 디스크에 남기지 않는다(RDB·AOF 끔).

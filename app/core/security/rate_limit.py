@@ -1,6 +1,7 @@
 """고정 창 레이트 리밋 — Redis (service-hardening ADR-016).
 
-창마다 키 하나를 ``INCR`` 하고, 창의 첫 hit 에만 만료를 건다(``EXPIRE NX``). 이후 hit 이
+창마다 키 하나를 ``INCR`` 하고, 창의 첫 hit 에만 만료를 건다(``EXPIRE NX`` — **Redis 7.0** 부터 있는
+옵션이라 이 저장소의 최소 버전을 정한다, ``app.core.redis.REDIS_MIN_VERSION``). 이후 hit 이
 만료를 늘리면 창이 미끄러져 공격자가 끝없이 막히는 대신 정상 사용자도 풀리지 않는다 —
 고정 창은 첫 hit 시각으로 고정한다. 세 명령을 MULTI 로 묶어 INCR 만 되고 만료가 빠지는
 (영원히 막히는) 키가 생기지 않게 한다.
