@@ -7,7 +7,7 @@
 | ID | 항목 | Severity | 왜 비범위인가(계약 근거) | 수용일 | 재평가 조건 |
 |---|---|---|---|---|---|
 | R-001 | ~~`/admin` 에 인증 백엔드가 없다~~ **해소 (2026-10-12, admin-login F-001)** — `/admin` 은 활성 슈퍼유저 세션 로그인이 필요하다 | MED | 영구 비목표(ADR-020, charter §2-4). 배포 환경은 `ADMIN_UNAUTHENTICATED_ACK` 확인과 기동 WARNING 으로 막는다 | 2026-10-12 | 관리 화면 인증이 별도 요청으로 들어오면 |
-| R-002 | access 토큰은 만료 전에 즉시 폐기할 수 없다 | LOW | 비목표(charter §2-4). 만료 15분 + refresh 폐기로 대신한다 | 2026-10-12 | 즉시 차단이 필요한 운영 사고 요구가 생기면 |
+| R-002 | access 토큰은 만료 전에 즉시 폐기할 수 없다 | LOW | 비목표(charter §2-4). 만료 15분 + refresh 폐기로 대신한다 | 2026-10-12 | 즉시 차단이 필요한 운영 사고 요구가 생기면 — **사용자 결정으로 수용(2026-10-19, security-ops-hardening ADR-006)**: access 15분 유지 |
 | R-003 | 레이트 리밋은 고정 창이라 창 경계에서 순간적으로 한도의 2배까지 허용된다 | LOW | ADR-016 — 단순성 우선. 크리덴셜 스터핑의 규모를 막는 데는 충분하다 | 2026-10-12 | 슬라이딩 창 정밀도가 요구되면 |
 | R-004 | `get_all` 의 보조 정렬 키 `id` 는 랜덤 UUID 라 동률 행의 순서는 결정적이지만 시간순은 아니다 | LOW | ADR-004 — 페이지 안정성이 목적이다. 시간 정밀도는 단계 D(마이크로초 저장)가 줄인다 | 2026-10-12 | 정렬 의미가 계약에 들어오면 |
 | R-005 | `auth` → `user` 기능 의존이 `AppConfig` 에 선언되지 않았다(리뷰 R-17) | MED | REQ-001 의 단계 A~F2 범위 밖이다. 계층 검사는 이 의존을 문서화된 예외로 허용한다 | 2026-10-12 | 앱 간 의존 선언(`requires`) 요청이 들어오면 |
@@ -19,7 +19,7 @@
 | R-011 | 기능 `tasks.py` 내부의 import 오류는 API 기동이 아니라 Celery 워커가 include 를 import 할 때 드러난다(router·models·admin 은 기동 시 실패) | LOW | ADR-028 — 발견 단계에서 import 하면 `celery_app` 과 순환 import 다. 존재 판정만 `find_spec` 으로 한다. `tests/core/test_celery_app.py::test_including_the_task_modules_registers_the_tasks` 가 프로젝트의 include 를 실제로 import 해 CI 에서 잡는다 | 2026-10-12 | 워커 없이 배포되는 태스크 module 이 생기거나, 기동 시점 검증이 요구되면 |
 | R-012 | bcrypt 해시가 남은 사용자의 로그인은 bcrypt 비용으로 검증돼, 없는 사용자(Argon2 더미)와 응답 시간이 다를 수 있다 | LOW | ADR-013·ADR-029 — 점진 이전의 대가다. 그 사용자가 한 번 로그인하면 Argon2 로 바뀌어 차이가 사라진다 | 2026-10-12 | 이전되지 않은 bcrypt 사용자가 많이 남아 열거 위험이 실재하면 — 일괄 재설정 또는 bcrypt 더미 추가 |
 | R-013 | 인증 레이트 리밋의 ip 는 `TRUSTED_PROXY_HOPS` 로 정한다 — 프록시 뒤에서 0 으로 두면 모든 요청이 프록시 ip 하나로 세어져 ip 한도(로그인 20/60초·가입 5/시간)를 모두가 나눠 쓴다 | MED | ADR-023·ADR-029 — 신뢰 홉 수는 배포 사실이라 코드가 추측할 수 없다(R-007 과 같은 설정). `.env.example`·ARCHITECTURE §7 에 적었다 | 2026-10-12 | 배포 체크리스트(F2)에서 홉 수 확인을 필수 항목으로 올릴 때 — **결정 종결(2026-10-12, Round 7)**: README 「운영 배포 체크리스트」와 ARCHITECTURE §11.1 #10 에 "프록시 뒤 배포 시 `TRUSTED_PROXY_HOPS` 를 프록시 단 수로 설정하지 않으면 IP 레이트 리밋이 프록시 IP 하나로 공유된다" 를 배포자 확인 항목으로 올렸다. 코드는 배포 사실을 추측하지 않는다 — 수용 유지 |
-| R-014 | 강등·비활성화·삭제 뒤에도 이미 발급된 access 토큰은 만료(기본 15분)까지 이전 권한(`su`)으로 통한다 — `Principal` 은 토큰 claims 로 만든다 | LOW | ADR-017·ADR-030 — 상태 없는 판정(DB 조회 없음)의 대가. refresh 는 즉시 폐기되므로(`revoke_user`) 창은 access 수명으로 묶인다(R-002 와 같은 축) | 2026-10-12 | 권한 회수의 즉시성이 요구되면 — access 수명 단축 또는 사용자별 권한 버전 claim + Redis 대조 |
+| R-014 | 강등·비활성화·삭제 뒤에도 이미 발급된 access 토큰은 만료(기본 15분)까지 이전 권한(`su`)으로 통한다 — `Principal` 은 토큰 claims 로 만든다 | LOW | ADR-017·ADR-030 — 상태 없는 판정(DB 조회 없음)의 대가. refresh 는 즉시 폐기되므로(`revoke_user`) 창은 access 수명으로 묶인다(R-002 와 같은 축) | 2026-10-12 | 권한 회수의 즉시성이 요구되면 — access 수명 단축 또는 사용자별 권한 버전 claim + Redis 대조 — **사용자 결정으로 수용(2026-10-19, security-ops-hardening ADR-006)**: 권한 회수는 access 만료(15분)까지 지연을 유지 |
 | R-015 | 리비전 `a3c9e8f1b274` 의 새 컬럼(`is_superuser`·`author_id`)은 MySQL 에서 테이블 끝에 붙어, `create_all` 로 만든 개발 DB(모델 배치: 도메인 컬럼 뒤·`created_at` 앞)와 물리 순서가 다르다 | LOW | ADR-030 ⑧ — 이름으로 접근하므로 동작 차이는 없다. `users.hashed_password`(`b2f1a9c0d3e4`)와 같은 방식이고, MySQL 컬럼 순서 테스트는 새 테이블(catalog·sales_orders)만 고정한다 | 2026-10-12 | 물리 순서에 기대는 도구(`SELECT *` 덤프 비교 등)를 들이면 — `AFTER` 절 리비전 |
 
 ## 최종 상태 (2026-10-12, Round 7 · 그룹 CONVERGED)

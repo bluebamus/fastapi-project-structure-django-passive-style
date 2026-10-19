@@ -28,9 +28,11 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **JWT 인증·인가**: OAuth2 password flow + access/refresh(회전·재사용 탐지·로그아웃), Argon2(pwdlib, 기존 bcrypt 해시는 로그인 시 이전), Redis 레이트 리밋.
   슈퍼유저/일반 2단계 권한과 작성자 소유권(`CurrentPrincipal`·`require_superuser`·`OwnershipPolicy`), 첫 관리자 생성 스크립트.
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500(예외 헤더 `Allow`·`WWW-Authenticate` 등은 보존), SQL·비밀값 로그 차단(메시지·traceback·`stack_info` 의
-  DSN 비밀번호·`password=`·Bearer·JWT 를 `***` 로 — uvicorn·Celery 핸들러 포함), 종료 시 자원 정리 순서 보장.
-- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면 + 서명 세션 쿠키,
-  매 요청 DB 재확인). 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true` 로 마운트·링크까지 없앤다.
+  DSN 비밀번호·`password=`·Bearer·JWT 를 `***` 로 — uvicorn·Celery 핸들러 포함), DB 오류 메시지의 바인드 값 숨김(모든 엔진 `hide_parameters=True`),
+  접속 로그 보존 기간(`ACCESS_LOG_RETENTION_DAYS`, 기본 1년 — Celery beat 가 매일 삭제), 종료 시 자원 정리 순서 보장.
+- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면 + 로그인 폼 CSRF 토큰 +
+  서명 세션 쿠키, 매 요청 DB 재확인), 목록의 `created_at` 날짜 필터(`TIME_ZONE` 기준 같은 날·이후·이전).
+  관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true` 로 마운트·링크까지 없앤다.
 
 ## 기술 스택
 
@@ -195,6 +197,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `TRUSTED_PROXY_HOPS` | `0` | 앞단 신뢰 프록시 단 수. 프록시 뒤 배포면 반드시 설정 — [운영 배포 체크리스트](#운영-배포-체크리스트) |
+| `ACCESS_LOG_RETENTION_DAYS` | `365` | 접속 로그 보존 일수. 매일 03:30(`TIME_ZONE`) Celery beat 가 이보다 오래된 행을 5,000행씩 지운다. `0` = 지우지 않음, 음수는 기동 실패. beat 를 띄워야 돈다 — [운영 배포 체크리스트](#운영-배포-체크리스트) |
 | `DEBUG` | `true` | true = 개발 테이블 생성 + `/docs` 노출 + DEBUG 로그 / false = 모두 끔(스키마는 Alembic) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | startup `ping()`·버전 확인 대상. 연결 실패나 7.0 미만이면 서버가 뜨지 않는다 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / 빈 값 / `fastapi_db` | primary DB |
@@ -206,6 +209,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 
 > **`/admin` 은 활성 슈퍼유저만 들어갑니다.** 로그인 화면(Bootstrap)에서 `scripts/create_superuser.py` 로 만든 계정으로
 > 로그인하면 `admin_session` 쿠키(path `/admin`·SameSite=Strict·HttpOnly·8시간)가 발급되고, 권한은 매 요청 DB 로 다시 확인합니다.
+> 로그인 폼은 세션에 둔 CSRF 토큰을 hidden 입력으로 싣고, 토큰이 없거나 다르면 자격 확인 전에 403 으로 막습니다.
 > 세션은 **`/admin` 전용**이며 API 인증(JWT Bearer)과 섞이지 않습니다. 설계·흐름도·문제 해결은
 > [관리 화면 인증 가이드](docs/guides/admin-auth-guide.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
 
@@ -382,6 +386,9 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 - 마이그레이션 `uv run alembic upgrade head` 로 `users.is_superuser`·게시물 `author_id` 를 추가합니다(리비전 `a3c9e8f1b274`).
 - **Redis 7.0 이상** — 레이트 리밋이 `EXPIRE … NX`(7.0)를 씁니다. 7.0 미만이면 기동이 멈추고, `INFO` 를 막아 둔 관리형 Redis 는 확인을
   건너뛰고 WARNING 만 남기므로 버전을 직접 확인합니다.
+- **접속 로그 보존** — `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `0` = 삭제 안 함)를 개인정보 정책에 맞춥니다. 삭제는 Celery **beat** 가
+  매일 03:30(`TIME_ZONE`)에 `home.purge_expired_access_logs` 를 워커로 보내야 돈다 — worker 와 함께 beat 를 **하나만** 띄웁니다:
+  `uv run celery -A app.celery.app worker --loglevel=info` · `uv run celery -A app.celery.app beat --loglevel=info`.
 
 ## 문서 안내
 
