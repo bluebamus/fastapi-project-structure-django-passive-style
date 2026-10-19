@@ -28,6 +28,7 @@ from app.core.bootstrap import create_app
 from app.core.db.session import Base
 from app.features.user.models.models import User
 from scripts import create_superuser
+from tests.admin_login import admin_login
 
 PASSWORD = "Flow-admin-pw-123"
 BOOTSTRAP_CSS = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
@@ -70,7 +71,7 @@ async def _create_superuser(factory, username: str) -> int:
 
 
 async def _login(client: AsyncClient, username: str, password: str = PASSWORD):
-    return await client.post("/admin/login", data={"username": username, "password": password})
+    return await admin_login(client, username, password)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,9 @@ async def test_login_page_is_the_bootstrap_screen(env):
         assert f'<label for="{field}"' in html, f"{field} 레이블이 입력에 연결되지 않았다"
     assert "autofocus" in re.search(r"<input[^>]*name=\"username\"[^>]*>", html, re.DOTALL).group(0)
     assert "Admin</h1>" in html, "제목(admin.title)이 없다"
+    # CSRF 토큰은 폼 안의 hidden 입력이다(security-ops-hardening ADR-004).
+    form = re.search(r"<form.*?</form>", html, re.DOTALL).group(0)
+    assert re.search(r'<input type="hidden" name="csrf_token" value="[A-Za-z0-9_-]{43,}">', form)
 
 
 async def test_login_page_escapes_the_error_message(env):
@@ -157,6 +161,8 @@ async def test_login_page_escapes_the_error_message(env):
     templates = client._transport.app.state.admin.templates  # type: ignore[attr-defined]
 
     class _Request(dict):
+        session: dict = {}
+
         def url_for(self, name: str, **_: object) -> str:
             return "/admin/login"
 

@@ -21,6 +21,7 @@ from typing import Any
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter, OperationColumnFilter
 
+from app.core.admin_filters import LocalDateFilter
 from app.features.home.models.models import UserAccessLog
 
 
@@ -93,7 +94,8 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     # 필터 가능한 컬럼
     # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넘기면 sqladmin 0.32 목록 처리가
     # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다(admin-login F-007).
-    # 시각 컬럼(UTCDateTime)은 넣지 않는다 — 연산 필터가 날짜로 인식하지 못해 문자열을 바인딩한다.
+    # 시각 컬럼(UTCDateTime)은 sqladmin 연산 필터 대신 ``LocalDateFilter`` 로 건다 — 연산 필터는
+    # UTCDateTime 을 날짜로 인식하지 못해 문자열을 바인딩한다(security-ops-hardening ADR-005).
     column_filters = [
         OperationColumnFilter(UserAccessLog.ip_address),
         OperationColumnFilter(UserAccessLog.os_name),
@@ -103,6 +105,7 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
         OperationColumnFilter(UserAccessLog.response_status),
         OperationColumnFilter(UserAccessLog.request_method),
         OperationColumnFilter(UserAccessLog.country),
+        LocalDateFilter(UserAccessLog.created_at, title="접속일"),
     ]
 
     # =========================================================================

@@ -27,7 +27,7 @@ if config.config_file_name is not None:
 # 전역 상태를 만들지 않는다.
 # ---------------------------------------------------------------------------
 from app.core.apps import Apps  # noqa: E402
-from app.core.db.session import Base  # noqa: E402
+from app.core.db.session import ENGINE_SAFETY_OPTIONS, Base  # noqa: E402
 from app.core.models.types import render_item  # noqa: E402
 from config import INSTALLED_APPS, db_settings  # noqa: E402
 
@@ -86,6 +86,8 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # 마이그레이션 오류 메시지에도 바인드 값을 싣지 않는다 — 앱 엔진과 같은 정본.
+        **ENGINE_SAFETY_OPTIONS,
     )
 
     with connectable.connect() as connection:

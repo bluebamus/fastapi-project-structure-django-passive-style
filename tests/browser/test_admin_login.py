@@ -2,9 +2,11 @@
 
 HTTP 테스트(``tests/core/test_admin_login_flow.py``)는 폼을 직접 POST 한다. 여기서는 사람이
 하는 그대로 — Chromium 으로 로그인 화면을 열고, 입력란에 쓰고, 버튼을 누른다. 그래야
-레이블·``required``·폼 ``action``·쿠키(``SameSite=Strict``·``path=/admin``)가 브라우저에서
-실제로 맞물리는지, Bootstrap CSS 가 SRI 검증을 통과해 적용되는지, 로그인 뒤 모든 관리 뷰의 목록이
-열리는지 보인다.
+레이블·``required``·폼 ``action``·CSRF hidden 입력·쿠키(``SameSite=Strict``·``path=/admin``)가
+브라우저에서 실제로 맞물리는지, Bootstrap CSS 가 SRI 검증을 통과해 적용되는지, 로그인 뒤 모든 관리
+뷰의 목록과 ``created_at`` 날짜 필터가 열리는지 보인다.
+
+대기는 ``load`` 로 한다 — ``networkidle`` 은 외부 CDN(Bootstrap) 지연에 묶여 CI 가 실패한 적이 있다.
 
 계정은 ``python -m scripts.create_superuser --password-stdin`` 을 live server 와 같은 환경으로
 실행해 만든다(사용자명은 매번 새로).
@@ -82,6 +84,10 @@ async def test_superuser_logs_in_through_the_bootstrap_screen(live_server: str):
             )
             assert color == BOOTSTRAP_PRIMARY, f"Bootstrap CSS 가 적용되지 않았다(SRI?): {color}"
 
+            # 폼이 CSRF 토큰을 싣는다 — 브라우저는 hidden 입력을 그대로 보낸다(security-ops-hardening ADR-004).
+            token = await page.get_attribute("form input[name=csrf_token]", "value")
+            assert token and len(token) >= 43, f"CSRF hidden 입력이 비었다: {token!r}"
+
             await page.get_by_label("사용자명").fill(username)
             await page.get_by_label("비밀번호").fill("wrong-password")
             await page.get_by_role("button", name="로그인").click()
@@ -91,20 +97,23 @@ async def test_superuser_logs_in_through_the_bootstrap_screen(live_server: str):
             await page.get_by_label("사용자명").fill(username)
             await page.get_by_label("비밀번호").fill(PASSWORD)
             await page.get_by_role("button", name="로그인").click()
-            await page.wait_for_url(f"{live_server}/admin/")
+            await page.wait_for_url(f"{live_server}/admin/", wait_until="load")
 
             # 등록된 모든 관리 뷰의 목록이 열린다 — 필터 정의가 깨지면 목록이 500 이다(F-007).
+            # created_at 날짜 필터(지역 날짜 → UTC 범위)도 모든 목록에서 200 이다(ADR-005).
             for identity in _admin_identities():
-                listing = await page.goto(f"{live_server}/admin/{identity}/list")
-                assert listing is not None and listing.status == 200, f"{identity} 목록: {listing}"
+                for query in ("", "?created_at=2026-10-12&created_at_op=on"):
+                    url = f"{live_server}/admin/{identity}/list{query}"
+                    listing = await page.goto(url, wait_until="load")
+                    assert listing is not None and listing.status == 200, f"{url}: {listing}"
 
             cookies = {c["name"]: c for c in await page.context.cookies()}
             assert cookies["admin_session"]["path"] == "/admin"
             assert cookies["admin_session"]["httpOnly"] is True
             assert cookies["admin_session"]["sameSite"] == "Strict"
 
-            await page.goto(f"{live_server}/admin/logout")
-            await page.goto(f"{live_server}/admin/")
+            await page.goto(f"{live_server}/admin/logout", wait_until="load")
+            await page.goto(f"{live_server}/admin/", wait_until="load")
             assert page.url.endswith("/admin/login"), "로그아웃 뒤에도 관리 화면이 열린다"
         finally:
             await browser.close()

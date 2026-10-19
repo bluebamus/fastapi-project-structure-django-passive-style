@@ -48,7 +48,7 @@ import asyncio
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from sqlalchemy import URL, Table, text
 from sqlalchemy.ext.asyncio import (
@@ -74,6 +74,14 @@ if TYPE_CHECKING:
 
 logger = get_logger("database")
 
+#: 모든 엔진이 함께 받는 로그 안전 옵션 — 이 저장소의 엔진 옵션 정본이다.
+#: ``hide_parameters=True`` 는 DB 오류(``IntegrityError`` 등)의 메시지와 SQLAlchemy 로그에서
+#: **바인드 값**(비밀번호 해시·토큰·이메일 같은 개인정보)을 빼고 SQL 문만 남긴다. 없으면 고유 제약
+#: 위반 하나로 값이 예외 문자열에 실려 traceback·로그 수집기로 흘러간다. 엔진을 새로 만드는 곳
+#: (writer·reader·background·Alembic)은 모두 이것을 펼쳐 넣는다
+#: (계약 테스트: ``tests/core/test_engine_hide_parameters.py``).
+ENGINE_SAFETY_OPTIONS: Final[dict[str, Any]] = {"hide_parameters": True}
+
 
 # =============================================================================
 # 메인 엔진 (FastAPI 요청용) = primary(writer)
@@ -94,6 +102,7 @@ engine = create_async_engine(
     pool_recycle=db_settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
     pool_reset_on_return="rollback",  # 반환 시 롤백으로 세션 초기화
+    **ENGINE_SAFETY_OPTIONS,
     connect_args={
         "connect_timeout": 10,  # DB 연결 타임아웃 (초)
         "charset": "utf8mb4",  # 이모지 등 4바이트 UTF-8 지원
@@ -123,6 +132,7 @@ def _create_read_engine(url: URL) -> AsyncEngine:
         pool_recycle=db_settings.DB_POOL_RECYCLE,
         pool_pre_ping=True,
         pool_reset_on_return="rollback",
+        **ENGINE_SAFETY_OPTIONS,
         connect_args={
             "connect_timeout": 10,
             "charset": "utf8mb4",
@@ -182,6 +192,7 @@ background_engine = create_async_engine(
     pool_recycle=db_settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
     pool_reset_on_return="rollback",
+    **ENGINE_SAFETY_OPTIONS,
     connect_args={
         "connect_timeout": 10,
         "charset": "utf8mb4",

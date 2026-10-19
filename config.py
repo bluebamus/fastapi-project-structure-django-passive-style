@@ -864,6 +864,14 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
+    # 접속 로그 보존 기간(일). 매일 03:30(TIME_ZONE) Celery beat 가 이보다 오래된 행을 지운다
+    # (app/features/home/tasks.py). 0 = 지우지 않는다. 음수는 기동 시 검증 오류다.
+    ACCESS_LOG_RETENTION_DAYS: int = Field(
+        default=365,
+        ge=0,
+        description="접속 로그 보존 일수 (0 = 삭제하지 않음). 이보다 오래된 행을 매일 삭제한다",
+    )
+
     # 신뢰 프록시 홉 수 — 0 이면 X-Forwarded-For·X-Real-IP 를 보지 않는다(ClientIPResolver).
     # **배포 전 확인:** 프록시(로드밸런서·nginx) 뒤에 배포하면 앞단 프록시 단 수로 설정한다.
     # 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋

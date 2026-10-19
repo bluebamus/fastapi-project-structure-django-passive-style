@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -38,6 +40,39 @@ LOG_USERNAME_MAX = 64
 #: 자격 실패는 ``False`` 만 돌려준다 — sqladmin 이 같은 문구로 400 을 그린다. 없는 사용자·틀린
 #: 비밀번호·비슈퍼유저·비활성을 구분하지 않는다(계정 열거 차단).
 RATE_LIMITED_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요."
+
+#: CSRF 토큰이 없거나 맞지 않을 때의 문구 — 자격 확인을 하지 않았으므로 자격 이야기는 하지 않는다.
+CSRF_FAILED_MESSAGE = "요청이 만료되었습니다. 다시 시도하세요."
+
+
+class AdminLoginCsrf:
+    """로그인 폼 CSRF 토큰 — synchronizer token 패턴 (security-ops-hardening ADR-004).
+
+    토큰은 관리 세션(서명 쿠키 ``admin_session``)에 두고, 로그인 화면이 hidden 입력으로 싣는다.
+    세션 쿠키는 서명돼 있어 공격자가 값을 심을 수 없고, 다른 사이트는 이 화면을 읽을 수 없으므로
+    토큰을 모른다. 로그인에 성공하면 ``session.clear()`` 가 토큰을 지운다 — 다음 로그인 화면이 새
+    토큰을 만든다(회전).
+    """
+
+    SESSION_KEY = "csrf_token"
+    FORM_FIELD = "csrf_token"
+
+    @classmethod
+    def token_for(cls, request: Request) -> str:
+        """세션의 토큰을 돌려준다 — 없으면 만들어 세션에 둔다. 로그인 템플릿이 부른다."""
+        token = request.session.get(cls.SESSION_KEY)
+        if not isinstance(token, str) or not token:
+            token = secrets.token_urlsafe(32)
+            request.session[cls.SESSION_KEY] = token
+        return token
+
+    @classmethod
+    def is_valid(cls, request: Request, submitted: object) -> bool:
+        """폼 값이 세션 토큰과 같은지 상수 시간으로 비교한다. 둘 중 하나라도 없으면 거부."""
+        expected = request.session.get(cls.SESSION_KEY)
+        if not isinstance(expected, str) or not expected or not isinstance(submitted, str):
+            return False
+        return hmac.compare_digest(submitted.encode("utf-8"), expected.encode("utf-8"))
 
 
 @dataclass(frozen=True)
@@ -103,14 +138,31 @@ class AdminAuthBackend(AuthenticationBackend):
         self.rate_limiter = rate_limiter
         self.ip_resolver = ip_resolver
         self.limits = limits
-        #: 429 화면을 그릴 템플릿 — ``Admin`` 이 만든 것을 조립 지점이 넣는다(생성 순서상 사후 주입).
-        self.templates: Any = None
+        self._templates: Any = None
+
+    @property
+    def templates(self) -> Any:
+        """429·403 화면을 그릴 템플릿 — ``Admin`` 이 만든 것을 조립 지점이 넣는다(생성 순서상 사후 주입)."""
+        return self._templates
+
+    @templates.setter
+    def templates(self, templates: Any) -> None:
+        # 로그인 화면(GET 은 sqladmin 이 컨텍스트 없이 그린다)이 ``csrf_token(request)`` 로 토큰을
+        # 얻게 전역 함수를 건다 — 템플릿을 넣는 순간 함께 걸려 빠뜨릴 수 없다.
+        self._templates = templates
+        if templates is not None:
+            templates.env.globals["csrf_token"] = AdminLoginCsrf.token_for
 
     async def login(self, request: Request) -> Response | bool:
         form = await request.form()
+        ip = self.ip_resolver.resolve(request)
+        # CSRF 는 레이트 리밋보다 먼저 본다 — 위조 요청이 피해자의 시도 한도를 깎지 못한다.
+        if not AdminLoginCsrf.is_valid(request, form.get(AdminLoginCsrf.FORM_FIELD)):
+            logger.warning("[AdminLogin] CSRF 토큰 불일치 ip=%s", ip)
+            return await self._render_login(request, CSRF_FAILED_MESSAGE, 403)
+
         username = str(form.get("username") or "")
         password = str(form.get("password") or "")
-        ip = self.ip_resolver.resolve(request)
         shown = username[:LOG_USERNAME_MAX]
 
         limiter = self.rate_limiter()
@@ -152,13 +204,14 @@ class AdminAuthBackend(AuthenticationBackend):
         return True
 
     async def _rate_limited(self, request: Request, retry_after: int) -> Response:
-        response: Response = await self.templates.TemplateResponse(
-            request,
-            "sqladmin/login.html",
-            {"error": RATE_LIMITED_MESSAGE},
-            status_code=429,
-        )
+        response = await self._render_login(request, RATE_LIMITED_MESSAGE, 429)
         response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    async def _render_login(self, request: Request, error: str, status_code: int) -> Response:
+        response: Response = await self.templates.TemplateResponse(
+            request, "sqladmin/login.html", {"error": error}, status_code=status_code
+        )
         return response
 
 
