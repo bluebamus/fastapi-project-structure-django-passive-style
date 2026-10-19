@@ -15,6 +15,7 @@
     3. Field의 default 값
 """
 
+import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
@@ -25,7 +26,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from dotenv import dotenv_values
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
@@ -684,16 +685,25 @@ class CORSSettings(BaseSettings):
 # =============================================================================
 # 로깅 설정
 # =============================================================================
+# 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
+# LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT 의 기본값(app/utils/logs 의 LOG_FORMAT 도 이 값이다).
+DEFAULT_LOG_FORMAT = (
+    "[{asctime} {tzname}] {levelname:5} [app={appname}] "
+    "[{module}:{classname}:{funcName}:{lineno}] {message}"
+)
+
+
 class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()`` 다. 콘솔 핸들러는 항상 붙고,
-    파일 핸들러는 ENV 가 staging/production 이고 ``LOG_FILE_ENABLED`` 일 때만 붙는다.
-    레벨을 명시하지 않으면 DEBUG 모드에 따라 자동 결정됩니다.
+    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()``(앱·Celery 워커)와
+    ``app/utils/logs/setup.py`` 의 ``setup_uvicorn_logging()``(``python main.py``)다.
+    콘솔 핸들러는 ``LOG_CONSOLE_ENABLED`` 일 때만, 파일 핸들러는 ENV 가 staging/production 이고
+    ``LOG_FILE_ENABLED`` 일 때만 붙는다. 레벨을 명시하지 않으면 DEBUG 모드에 따라 자동 결정됩니다.
 
-    ``LOG_CONSOLE_ENABLED``·``LOG_CONSOLE_FORMAT``·``LOG_FILE_FORMAT``·``LOG_DATE_FORMAT`` 는
-    선언만 있고 현재 로깅 구성에서 읽지 않는다(포맷은 ``app/utils/logs/config.py`` 의 상수).
+    포맷(``LOG_CONSOLE_FORMAT``·``LOG_FILE_FORMAT``)은 ``str.format`` 스타일이며 로드할 때 샘플
+    레코드로 한 번 렌더해 본다 — 모르는 필드·괄호 불일치는 기동을 멈춘다.
 
     로그 레벨:
         - DEBUG: 디버깅용 상세 정보
@@ -710,10 +720,10 @@ class LogSettings(BaseSettings):
     )
 
     # === 출력 대상 설정 ===
-    # 콘솔(stdout) 로그 출력 스위치 — 현재 build_dictconfig 가 읽지 않는다(콘솔 핸들러는 항상 붙는다).
+    # 콘솔(stdout) 로그 출력 스위치 — 앱·uvicorn(python main.py)·Celery 워커의 콘솔 핸들러를 함께 끈다.
     LOG_CONSOLE_ENABLED: bool = Field(
         default=True,
-        description="콘솔 로그 활성화 (현재 미사용 — 콘솔 핸들러는 항상 붙는다)",
+        description="콘솔 로그 활성화 (false 면 콘솔 핸들러를 붙이지 않는다)",
     )
 
     # 파일 로그 출력 활성화 (ENV 가 staging/production 일 때만 효과가 있다)
@@ -784,22 +794,41 @@ class LogSettings(BaseSettings):
     )
 
     # === 포맷 설정 ===
-    # 아래 세 필드는 선언만 있고 현재 로깅 구성에서 읽지 않는다. 실제 포맷은
-    # app/utils/logs/config.py 의 LOG_FORMAT 상수다.
+    # str.format 스타일. 표준 LogRecord 속성 외에 tzname(KST/UTC)·appname·classname 을 쓸 수 있다.
     LOG_CONSOLE_FORMAT: str = Field(
-        default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="콘솔 로그 포맷 (현재 미사용)",
+        default=DEFAULT_LOG_FORMAT,
+        description="콘솔 로그 포맷 (앱·uvicorn default·Celery 워커)",
     )
 
     LOG_FILE_FORMAT: str = Field(
-        default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="파일 로그 포맷 (현재 미사용)",
+        default=DEFAULT_LOG_FORMAT,
+        description="파일 로그 포맷 (app·error 파일)",
     )
 
+    # strftime 형식. ENV=development 에서는 뒤에 .밀리초 가 붙는다.
     LOG_DATE_FORMAT: str = Field(
         default="%Y-%m-%d %H:%M:%S",
-        description="날짜 포맷 (현재 미사용)",
+        description="로그 시각({asctime}) 형식",
     )
+
+    @field_validator("LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT")
+    @classmethod
+    def _format_renders(cls, value: str, info: ValidationInfo) -> str:
+        """샘플 레코드로 한 번 렌더한다 — 잘못된 포맷이 첫 로그 줄에서야 터지지 않게."""
+        record = logging.LogRecord("app", logging.INFO, __file__, 1, "sample", (), None, "f")
+        record.tzname, record.appname, record.classname = "KST", "app", "-"
+        try:
+            logging.Formatter(value, style="{").format(record)
+        except (ValueError, KeyError, IndexError, AttributeError) as exc:
+            raise ValueError(f"{info.field_name} 형식이 잘못됐습니다: {exc}") from exc
+        return value
+
+    @field_validator("LOG_DATE_FORMAT")
+    @classmethod
+    def _date_format_not_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("LOG_DATE_FORMAT 은 비울 수 없습니다")
+        return value
 
     def get_log_dir(self) -> Path:
         """로그 디렉토리 경로 반환 (없으면 생성)"""
@@ -1047,30 +1076,6 @@ class JWTSettings(BaseSettings):
 
 
 # =============================================================================
-# API 설정
-# =============================================================================
-class ApiSettings(BaseSettings):
-    """REST API 관련 설정.
-
-    Note:
-        선언만 있고 소비처가 없다. 버전 prefix(``/v1``)는 각 기능의
-        ``api/routers/router.py`` 가 직접 정한다 — 이 값을 바꿔도 URL 은 바뀌지 않는다.
-    """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # REST API 버전 (현재 미사용 — URL prefix 는 라우터 파일이 정한다)
-    API_VERSION: str = Field(
-        default="v1",
-        description="REST API 버전 (현재 미사용)",
-    )
-
-
-# =============================================================================
 # 세션 설정
 # =============================================================================
 class SessionSettings(BaseSettings):
@@ -1181,12 +1186,6 @@ def get_jwt_settings() -> JWTSettings:
 
 
 @lru_cache
-def get_api_settings() -> ApiSettings:
-    """API 설정 인스턴스 반환 (캐싱)"""
-    return ApiSettings()
-
-
-@lru_cache
 def get_session_settings() -> SessionSettings:
     """세션 설정 인스턴스 반환 (캐싱)"""
     return SessionSettings()
@@ -1205,7 +1204,6 @@ log_settings = get_log_settings()
 redis_settings = get_redis_settings()
 middleware_settings = get_middleware_settings()
 jwt_settings = get_jwt_settings()
-api_settings = get_api_settings()
 session_settings = get_session_settings()
 
 

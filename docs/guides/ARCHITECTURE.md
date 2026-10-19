@@ -385,14 +385,13 @@ flowchart TD
 | `AppSettings` (`app_settings`) | 앱 메타데이터, `DEBUG`·`ENV`·`ADMIN_DISABLED`, 직접 실행 host/port |
 | `DatabaseSettings` (`db_settings`) | DSN·라우팅·풀, `session.py`, Alembic URL |
 | `CORSSettings` (`cors_settings`) | `CustomCORSMiddleware` |
-| `LogSettings` (`log_settings`) | `build_dictconfig()` |
+| `LogSettings` (`log_settings`) | `build_dictconfig()`(앱·Celery 워커)·`setup_uvicorn_logging()`(`python main.py`) |
 | `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
 | `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
 | `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(§8). 관리 세션 만료는 `ADMIN_SESSION_*` 가 정한다(미사용이 절대보다 크면 기동 실패, 값은 [README 세션·토큰 만료](../../README.md#세션토큰-만료)) |
-| `ApiSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
 
-`LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` 도 현재 로깅 구성에서 읽지 않는다(§5).
+API 버전 prefix(`/v1`)는 설정이 아니라 각 기능 `router.py` 가 정한다 — 버전 설정 클래스는 config-cleanup-2 에서 지웠다(`.env` 에 남은 줄은 무시된다, §12).
 
 **설정 검증(fail-fast)**
 
@@ -740,11 +739,19 @@ Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → �
 | test | console | 로컬 타임존 |
 | staging / production | console + `RotatingFileHandler` 2개(`LOG_FILE_ENABLED=true` 일 때) | UTC |
 
+console 은 `LOG_CONSOLE_ENABLED=true`(기본)일 때만 붙는다. 이 값 하나를 앱 root·`setup_uvicorn_logging()`(`python main.py`)·Celery 워커가
+함께 따른다(`app/utils/logs/config.py` 의 `console_enabled()`). 끄면 uvicorn 로거는 자기 핸들러 없이 root(파일)로 전파한다.
+콘솔도 파일도 없으면 root 에 `NullHandler` 를 달아 `logging.lastResort` 가 stderr 로 새지 않게 하고, `configure_logging()` 이 stderr 에 경고 한 줄을 남긴다.
+Celery 워커는 `setup_logging` 시그널 수신자(`app/celery/app.py` 의 `use_app_logging`)가 있어 root 를 가로채지 않고 이 구성을 쓴다 — `--loglevel` 은 root 레벨로 따르고 `--logfile` 은 쓰지 않는다.
+`uvicorn main:app`·`fastapi dev` CLI 의 `uvicorn.*` 로거는 uvicorn 자체 dictConfig 를 쓰므로 이 설정들과 무관하다(가리기만 적용).
+
 - 파일 로그는 **staging/production 에서만** 생긴다: `LOG_DIR/{date}_app.log`(레벨 `LOG_FILE_LEVEL`),
   `LOG_DIR/{date}_error.log`(ERROR 이상). 크기 `LOG_MAX_SIZE_MB`, 백업 `LOG_BACKUP_COUNT`. 파일 I/O 는 호출 흐름에서 동기 수행된다.
 - 핸들러는 root 에만 붙고 앱별 로거 설정은 없다. `get_logger(name)` 은 전파만 하는 자식 로거다. 앱별·서드파티별 레벨 조정은 할 수 없다(수용된 제약).
-- 포맷(`app/utils/logs/config.py` 의 상수): `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}`.
-  `app=` 은 로거 이름이 아니라 **소스 경로**에서 산출된다(`ContextFilter`) — 새 기능이 로깅 설정을 건드릴 필요가 없다.
+- 포맷: console 은 `LOG_CONSOLE_FORMAT`, 파일은 `LOG_FILE_FORMAT`, 시각은 `LOG_DATE_FORMAT`(development 는 뒤에 `.밀리초`). 기본값은
+  `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}` / `%Y-%m-%d %H:%M:%S`
+  (`config.DEFAULT_LOG_FORMAT` = `app.utils.logs.LOG_FORMAT`). 설정 로드 때 샘플 레코드로 한 번 렌더해 모르는 필드·괄호 불일치면 기동을 멈춘다.
+  uvicorn access 줄은 요청 라인 전용 형식으로 고정이다. `app=` 은 로거 이름이 아니라 **소스 경로**에서 산출된다(`ContextFilter`) — 새 기능이 로깅 설정을 건드릴 필요가 없다.
 - `SqlNoiseFilter` 가 모든 핸들러에서 SQLAlchemy·드라이버 로거의 SQL 본문·바인딩 값을 막는다. `LOG_SQL_ECHO_ENABLED=true` 로만 열 수 있고, production/staging 에서는 설정 로드가 거부한다.
 - **비밀값 가리기** — `app/utils/logs/redaction.py` 의 `SecretRedactor` 가 규칙의 정본이다(DSN·URL 의 비밀번호, `password`·`secret`·`token`·`api_key`·
   `authorization` 으로 끝나는 키의 값, Bearer 토큰, JWT → `***`). `configure_logging()` 이 이것을 **LogRecord factory** 로 걸어, 렌더된 메시지·
@@ -1125,7 +1132,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
 - **레이트 리밋**: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.
 - **자동 앱 탐색**: 없음(설계 원칙).
-- **미사용 설정**: `ApiSettings`, 일부 로그 설정(§3.2). 메일·업로드 설정과 SESSION_EXPIRE_SECONDS 는 지웠다(config-cleanup — `.env` 에 남아도 무시된다). 새 설정이 읽히지 않으면 `tests/core/test_settings_contract.py` 가 막는다.
+- **미사용 설정**: 없다. 메일·업로드 설정과 SESSION_EXPIRE_SECONDS(config-cleanup), API 버전 설정(config-cleanup-2)은 지웠다(`.env` 에 남아도 무시된다). 로그 포맷·콘솔 스위치는 로깅 구성에 연결했다(§5). 새 설정이 읽히지 않으면 `tests/core/test_settings_contract.py` 가 막는다.
 - **검증하지 않은 것**: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.
 
 ---
@@ -1136,6 +1143,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-19 | **config-cleanup-2**: `API_VERSION`·`ApiSettings` 를 지웠다(`.env` 에 남아도 무시). `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT`·`LOG_CONSOLE_ENABLED` 를 로깅 구성에 연결했다 — 앱·`python main.py` 의 uvicorn·Celery 워커(`setup_logging` 수신자)가 같은 값을 따른다. 기본값은 기존 하드코딩 형식과 같아 기본 출력은 그대로다. 잘못된 포맷은 설정 로드에서 거부, 출력이 모두 꺼지면 stderr 경고 한 줄. 설정 계약 테스트의 예외 목록을 없앴다(§3.2·§5) |
 | 2026-10-19 | **config-cleanup**: 읽는 곳이 없던 `SMTPSettings`(`smtp_settings`)·`UploadSettings`(`upload_settings`)·`SESSION_EXPIRE_SECONDS` 를 지웠다(배포 안전 검사의 `SMTP_PASSWORD` 항목 포함). 남은 `.env` 줄은 `extra="ignore"` 로 무시된다. 세션·토큰 만료는 README 표 한 곳으로 모았고, 설정 필드가 운영 코드에서 읽히는지 보는 계약 테스트를 더했다 |
 | 2026-10-19 | **admin-session-hardening (판정을 한 함수로 — 집합은 `UserService` 와 같다)**: 폐기 판정을 `revocation_for_change`·`revocation.REVOKE_ON_DELETE`·`revocation.REVOKE_ON_PASSWORD_CHANGE` 한 곳으로 모았다 — API·관리 화면·`create_superuser --set-password` 가 같은 판정을 쓴다. 집합은 `UserService` 가 원래 지우던 것과 같다(비활성화·강등·삭제 = refresh + 관리 세션, service-hardening 동작 유지)에 비밀번호 변경(둘 다)을 더했다. 비밀번호 변경 스크립트는 관리 세션과 refresh 를 함께 지운다(`revoke_sessions_in_redis`). 폐기는 커밋 전(fail-closed, §7.1·§8, ADR-010) |
 | 2026-10-19 | **admin-session-hardening**: `/admin` 세션을 서명 쿠키(starlette `SessionMiddleware` + itsdangerous)에서 Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 쿠키에는 세션 ID 만, 절대·미사용 만료 `ADMIN_SESSION_*`)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(`UserSessionRevoker` — API·`UserAdmin` 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, `create_superuser --set-password` 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(`AdminCsrfMiddleware`, 덮어쓴 `sqladmin/base.html`), 로그아웃 POST 전용(GET 405). `LocalDateFilter` 에 기간(`S~E`) 연산. `itsdangerous` 직접 의존 제거. 405 `Allow` 불완전은 사용자 결정으로 현행 유지(§8·§11) |

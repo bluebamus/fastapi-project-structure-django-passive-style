@@ -204,9 +204,10 @@ def test_uvicorn_config_isolates_three_loggers():
         assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
         assert spec["handlers"], f"{name} 에 핸들러가 없다"
 
-    # access 로그만 전용 포맷(요청 라인)을 쓴다.
+    # access 로그만 전용 포맷을 쓴다 — 요청 라인은 uvicorn 이 넘기는 메시지 그대로({message}).
+    # 렌더 결과는 test_log_settings.test_uvicorn_direct_run_access_line_renders 가 본다.
     assert cfg["loggers"]["uvicorn.access"]["handlers"] == ["access"]
-    assert "request_line" in cfg["formatters"]["access"]["fmt"]
+    assert "[app=uvicorn] {message}" in cfg["formatters"]["access"]["fmt"]
     for handler in cfg["handlers"].values():
         assert handler["filters"] == ["context"]
 

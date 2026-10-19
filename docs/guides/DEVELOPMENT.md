@@ -128,7 +128,7 @@ AppConfig.router_prefix      "/api"
 → POST /api/v1/catalog/products
 ```
 
-`API_VERSION` 설정은 prefix 에 쓰이지 않는다. 버전은 `router.py` 의 선언이 정한다.
+버전 prefix 는 설정이 아니라 `router.py` 의 선언이 정한다.
 `operation_id` 는 앱 전체에서 유일해야 하고, `summary`·`description`·`response_model`·`responses` 를 실제 반환과 맞춘다(OpenAPI 계약 검사).
 
 ### 2.8 작성 예시
