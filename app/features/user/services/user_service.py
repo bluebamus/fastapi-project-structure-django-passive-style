@@ -9,8 +9,8 @@ User Service
 판정해 남의 ID 를 넣어 404/403 차이로 존재 여부를 알아내지 못하게 한다. 권한 필드
 (``is_active``·``is_superuser``) 변경은 슈퍼유저만 한다. 비활성화·강등·삭제는 그 사용자의
 관리 세션·refresh family 를 폐기한다 — 무엇을 지울지는 ``revocation_for_change``·``REVOKE_ON_DELETE`` 가 정하고
-(강등은 관리 세션만, 비활성화·삭제는 둘 다), 관리 화면의 ``UserAdmin`` 훅과 같은 판정이다(admin-session-hardening
-ADR-009). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
+(비활성화·강등·삭제는 둘 다), 관리 화면의 ``UserAdmin`` 훅과 같은 판정이다(admin-session-hardening
+ADR-010). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
 """
 
 import asyncio
@@ -89,7 +89,7 @@ class UserService(BaseService):
         """사용자를 부분 수정한다.
 
         본인·슈퍼유저가 아니면 403(존재 확인 전), 권한 필드를 일반 사용자가 바꾸면 403,
-        없으면 404. 비활성화면 refresh family 와 관리 세션을, 강등이면 관리 세션을 폐기한다
+        없으면 404. 비활성화·강등이면 refresh family 와 관리 세션을 폐기한다
         (변경 전 값과 비교 — ``revocation_for_change``).
         """
         self.log.debug("사용자 수정: id=%s", user_id)

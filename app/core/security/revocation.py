@@ -1,4 +1,4 @@
-"""사용자 단위 세션 폐기 — 무엇을 지울지 판정 + refresh family·관리 세션 폐기 (admin-session-hardening ADR-008·ADR-009).
+"""사용자 단위 세션 폐기 — 무엇을 지울지 판정 + refresh family·관리 세션 폐기 (admin-session-hardening ADR-008·ADR-010).
 
 판정은 ``revocation_for_change``·``REVOKE_ON_DELETE`` 한 곳에서 두 집합을 함께 돌려준다 — API 경로(``UserService``)와
 관리 화면 경로(``UserAdmin`` 훅)·비밀번호 변경 스크립트가 같은 판정을 쓰므로 조건이 갈리지 않는다.
@@ -7,16 +7,15 @@
 변경                     관리 세션          refresh
 =====================  ==============  ==========
 비활성화(True→False)     지운다             지운다
-슈퍼유저 해제(True→False)  지운다             **유지**
+슈퍼유저 해제(True→False)  지운다             지운다
 비밀번호 해시 변경          지운다             지운다
 삭제                     지운다             지운다
 그 밖(이름·이메일 등)       유지              유지
 =====================  ==============  ==========
 
-강등에서 refresh 를 남기는 이유: 강등된 사용자는 일반 사용자로 API 를 계속 쓴다. refresh 회전
-(``AuthService.refresh``)은 DB 에서 사용자를 다시 읽어 그때의 ``is_superuser`` 로 access 를 발급하므로
-(비활성이면 거부), 다음 회전부터 슈퍼유저 권한이 빠진다. 이미 발급된 access 는 만료(15분)까지 유효하다 —
-security-ops-hardening ADR-006(사용자 결정)과 같다.
+원칙: 관리 화면 경로 = API 경로. refresh 집합은 이 저장소의 ``UserService`` 가 원래 지우던 것(비활성화·강등·삭제,
+service-hardening — ``test_demotion_revokes_refresh_families`` 가 고정)에 비밀번호 변경을 더한 것이다. 지금은 두
+집합이 같지만 판정은 두 집합을 따로 돌려준다 — 한쪽만 바꿀 일이 생겨도 조건은 이 함수 한 곳에만 있다.
 
 폐기 로직 자체는 각 저장소(``RefreshTokenStore.revoke_user``·``AdminSessionStore.revoke_user``)에 있다 —
 ``UserSessionRevoker`` 는 판정 결과대로 부르기만 한다. 호출은 모두 **커밋 전**이다. 폐기가 실패하면(Redis 장애)
@@ -62,7 +61,7 @@ def revocation_for_change(before: Any, changes: Mapping[str, Any]) -> Revocation
     )
     return Revocation(
         admin_sessions=deactivated or demoted or password_changed,
-        refresh=deactivated or password_changed,
+        refresh=deactivated or demoted or password_changed,
     )
 
 

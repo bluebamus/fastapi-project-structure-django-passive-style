@@ -342,8 +342,8 @@ async def _boss_index(redis: FakeRedis) -> set[bytes]:
 @pytest.mark.parametrize(
     ("form", "refresh_revoked"),
     [
-        # 슈퍼유저 해제 — 관리 세션만. refresh 는 회전 때 DB 의 새 권한으로 재발급된다(ADR-009)
-        ({"username": "boss", "email": "b@x.com", "is_active": "y"}, False),
+        # 슈퍼유저 해제 — 관리 세션 + refresh(API 경로 UserService 와 같다, ADR-010)
+        ({"username": "boss", "email": "b@x.com", "is_active": "y"}, True),
         # 비활성화 — 관리 세션 + refresh
         ({"username": "boss", "email": "b@x.com", "is_superuser": "y"}, True),
     ],

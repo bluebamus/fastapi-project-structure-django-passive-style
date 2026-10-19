@@ -138,10 +138,10 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 세션 즉시 폐기 (admin-session-hardening ADR-008·ADR-009)
+    # 세션 즉시 폐기 (admin-session-hardening ADR-008·ADR-010)
     # =========================================================================
-    # 무엇을 지울지는 API 서비스(UserService)와 같은 판정 함수가 정한다 — 비활성화·비밀번호 변경·삭제는
-    # 관리 세션과 refresh family 를, 슈퍼유저 해제는 관리 세션만(refresh 회전이 DB 의 새 권한으로 재발급한다).
+    # 무엇을 지울지는 API 서비스(UserService)와 같은 판정 함수가 정한다 — 비활성화·슈퍼유저 해제·비밀번호
+    # 변경·삭제는 관리 세션과 refresh family 를 지운다(관리 화면 경로 = API 경로).
     # 이름·이메일 같은 일반 수정은 지우지 않는다. 저장소는 관리 세션 미들웨어가 요청 scope 에 둔 것이다.
     # 폐기는 **커밋 전** 훅에서 한다 — sqladmin 0.32 는 on_model_change·on_model_delete 를 세션 안에서 커밋
     # 전에 부르므로(_queries._update_async·_delete_async), Redis 가 실패하면 예외가 커밋을 막는다(fail-closed).

@@ -242,9 +242,7 @@ async def test_deactivation_revokes_refresh_families(env):
     assert await _revoked(redis)
 
 
-async def test_demotion_keeps_refresh_families(env):
-    """강등은 refresh 를 남긴다 — 회전이 DB 의 새 권한으로 재발급한다(admin-session-hardening ADR-009).
-    관리 세션은 지운다(``test_deactivation_demotion_and_deletion_revoke_admin_sessions``)."""
+async def test_demotion_revokes_refresh_families(env):
     client, _, redis = env
     user_id = (await _create(client, "demote", is_superuser=True))["id"]
     await _seed_family(redis, user_id)
@@ -252,7 +250,7 @@ async def test_demotion_keeps_refresh_families(env):
     resp = await client.patch(f"/api/v1/user/users/{user_id}", json={"is_superuser": False})
 
     assert resp.status_code == 200
-    assert not await _revoked(redis)
+    assert await _revoked(redis)
 
 
 async def test_plain_update_keeps_refresh_families(env):
