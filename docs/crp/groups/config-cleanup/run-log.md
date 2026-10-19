@@ -95,5 +95,5 @@
 - **TDD:** `test_uvicorn_access_line_survives_redaction`(2 경로 × 6 경우)를 먼저 써 6건 실패 확인 → 접기 전에 문자열 인자 하나씩 `***` 로 바꿔 보고 깨끗해지는 첫 모양으로 고정. 
   인자 하나로 안 되면(진짜로 여러 곳에 걸친 비밀값) 예전처럼 접는다. `password=%s` 처럼 키가 템플릿·값이 인자인 기존 경우는 그 인자가 가려진다(기존 테스트 통과).
 - **fail-on-revert:** `redaction.py` 를 main 으로 되돌리면 새 테스트 6건 실패 → 복원(`cmp` 확인).
-- **검사:** `.env` 없는 저장소 밖 클론 결과는 아래 Round 3 검사 줄. 작업 사본 1262 passed · 36 deselected. mypy 222 파일·ruff·bandit(0건) 통과.
+- **검사:** `.env` 없는 저장소 밖 클론(`b127a9a`) 1262 passed · 36 deselected · skip/xfail/xpass 0, `-m "mysql or browser" --collect-only` 36 수집(실행 안 함). 작업 사본 1262 passed · 36 deselected. mypy 222 파일·ruff·bandit(0건) 통과.
 - **신규 finding:** MED 1 → ledger F-007(Fixed)
