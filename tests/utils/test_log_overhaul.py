@@ -394,3 +394,27 @@ def test_secret_values_never_reach_any_output(restore_logging, monkeypatch, tmp_
     for out in outputs:
         assert "ValueError" in out and MASK in out
         assert SECRET_PW not in out and SECRET_USER not in out, out
+
+
+@pytest.mark.parametrize(
+    ("argv0", "files"),
+    [
+        ("C:/venv/Scripts/celery", ("celery.log", "celery-error.log")),
+        ("/venv/bin/celery.exe", ("celery.log", "celery-error.log")),
+        ("/venv/lib/site-packages/celery/__main__.py", ("celery.log", "celery-error.log")),
+        ("/venv/bin/uvicorn", ("app.log", "error.log")),
+        ("main.py", ("app.log", "error.log")),
+    ],
+)
+def test_import_time_lines_of_worker_go_to_worker_files(monkeypatch, tmp_path, argv0, files):
+    """워커는 ``setup_logging`` 시그널 전(모듈 import 중)에도 로그를 남긴다 — 그 줄이 웹 app.log 로 가면
+    웹과 워커가 같은 파일을 회전시킨다. 진입 명령(``celery``)으로 기본 프로세스 종류를 정한다."""
+    monkeypatch.setattr("sys.argv", [argv0, "-A", "app.celery.app", "worker"])
+    _set(monkeypatch, tmp_path, LOG_FILE_ENABLED=True)
+    captured = []
+    monkeypatch.setattr(logs_setup, "dictConfig", captured.append)
+
+    logs_setup.configure_logging(force=True)
+
+    names = tuple(Path(captured[0]["handlers"][h]["filename"]).name for h in ("file", "error_file"))
+    assert names == files

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import sys
 from logging.config import dictConfig
+from pathlib import Path
 
 from app.utils.logs.config import build_dictconfig
 from app.utils.logs.filters import FIXED_HEADERS
@@ -19,13 +20,14 @@ _configured = False
 
 
 def configure_logging(
-    force: bool = False, process: str = "web", logfile: str | None = None
+    force: bool = False, process: str | None = None, logfile: str | None = None
 ) -> None:
     """환경별 로깅 구성을 root 로거에 적용한다(idempotent).
 
     비밀값 가리기(:mod:`app.utils.logs.redaction`)도 여기서 건다 — 핸들러가 아니라
     LogRecord factory 에 걸므로 Celery 처럼 우리가 핸들러를 소유하지 않는 경로도 같은 규칙을 탄다.
-    ``process`` 는 진입점이 정한다 — 기본은 웹, Celery 는 ``setup_logging`` 수신자가 ``celery`` 로 부른다.
+    ``process``(``web``/``celery``)는 진입점이 정한다 — Celery ``setup_logging`` 수신자가 ``celery`` 로
+    부르고, 주지 않으면 :func:`entry_process` 가 진입 명령으로 정한다.
     """
     global _configured
     install_record_redaction()
@@ -35,7 +37,7 @@ def configure_logging(
     access = logging.getLogger("uvicorn.access")
     # uvicorn --no-access-log 은 handlers=[]·propagate=False 로 끈다 — 다시 켜지 않는다.
     access_off = not access.handlers and not access.propagate
-    cfg = build_dictconfig(process, logfile)
+    cfg = build_dictconfig(process or entry_process(), logfile)
     dictConfig(cfg)
     if access_off:
         access.propagate = False
@@ -54,6 +56,16 @@ def configure_logging(
             "LOG_APP_LEVELS 에 모르는 헤더가 있습니다(오타가 아니면 — 아직 없는 기능 등 — 무시해도 됩니다): %s",
             ", ".join(unknown),
         )
+
+
+def entry_process() -> str:
+    """진입 명령이 ``celery``(워커·beat)면 ``celery``, 아니면 ``web``.
+
+    워커는 ``setup_logging`` 시그널 **전**, ``-A app.celery.app`` 을 import 하는 동안에도 로그를 남긴다.
+    그 줄이 웹 ``app.log`` 로 가면 웹과 워커가 한 파일을 회전시킨다 — 그래서 첫 구성부터 나눈다.
+    """
+    entry = Path(sys.argv[0]) if sys.argv and sys.argv[0] else Path()
+    return "celery" if "celery" in (entry.stem.lower(), entry.parent.name.lower()) else "web"
 
 
 def _known_headers() -> set[str]:
