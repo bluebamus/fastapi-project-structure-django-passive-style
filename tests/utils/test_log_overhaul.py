@@ -341,7 +341,10 @@ def test_retention_deletes_only_older_files(tmp_path, retention):
         # 사용자명만 있는 꼴 — 계정명도 id 다
         ("mysql://dbuser@h/db", f"mysql://{MASK}@h/db"),
         # userinfo 가 아닌 @ 는 건드리지 않는다
-        ("http://example.com/a@b mail admin@example.com", "http://example.com/a@b mail admin@example.com"),
+        (
+            "http://example.com/a@b mail admin@example.com",
+            "http://example.com/a@b mail admin@example.com",
+        ),
     ],
 )
 def test_dsn_user_and_password_are_masked(text, expected):
