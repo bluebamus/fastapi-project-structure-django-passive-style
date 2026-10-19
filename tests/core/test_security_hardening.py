@@ -36,7 +36,6 @@ _VALID_SECRETS = {
     "MYSQL_PASSWORD": "Wz4Xa7Bc0De3Fg6Hi9Jk2Lm5No8Pq1Rs-mysql",
     "MYSQL_DATABASE": "app",
     "REDIS_PASSWORD": "",
-    "SMTP_PASSWORD": "",
 }
 
 

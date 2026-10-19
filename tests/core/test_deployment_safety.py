@@ -27,8 +27,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECRET_KEYS = ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY")
 
-# 비밀번호 3종. MySQL 은 빈 값도 위반이고, Redis·SMTP 는 빈 값이 정당한 구성이다.
-PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD", "SMTP_PASSWORD")
+# 비밀번호 2종. MySQL 은 빈 값도 위반이고, Redis 는 빈 값이 정당한 구성이다.
+PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD")
 
 # 테스트용 강한 값 — 서로 다르고 placeholder 규칙에 걸리지 않는다.
 # 비밀번호까지 명시하는 이유: 로컬 `.env` 에 예시값이 남아 있어도 결과가 흔들리지 않게 한다.
@@ -38,7 +38,6 @@ STRONG = {
     "SESSION_SECRET_KEY": "Pq9Rs2Tu5Vw8Xy1Za4Bc7De0Fg3Hi6Jk-session",
     "MYSQL_PASSWORD": "Wz4Xa7Bc0De3Fg6Hi9Jk2Lm5No8Pq1Rs-mysql",
     "REDIS_PASSWORD": "Tu6Vw9Xy2Za5Bc8De1Fg4Hi7Jk0Lm3No-redis",
-    "SMTP_PASSWORD": "Bc1De4Fg7Hi0Jk3Lm6No9Pq2Rs5Tu8Vw-smtp",
 }
 
 # `.env` 가 없는 환경(CI)에서 출처 검증을 통과시키는 나머지 필수 값. 비밀 키·MYSQL_PASSWORD 는
@@ -265,9 +264,8 @@ def test_env_example_passwords_are_rejected_in_production(load_config):
         load_config("production", values)
 
     message = str(excinfo.value)
-    for key in ("MYSQL_PASSWORD", "SMTP_PASSWORD"):
-        assert key in message, f"{key} 예시값이 placeholder 판정에 걸리지 않는다"
-        assert values[key] not in message, "오류 메시지에 비밀값이 실렸다"
+    assert "MYSQL_PASSWORD" in message, "MYSQL_PASSWORD 예시값이 placeholder 판정에 걸리지 않는다"
+    assert values["MYSQL_PASSWORD"] not in message, "오류 메시지에 비밀값이 실렸다"
     # `.env.example` 의 REDIS_PASSWORD 는 비어 있다 — 인증 없는 Redis 는 정당하다.
     assert "REDIS_PASSWORD" not in message
 
@@ -275,7 +273,7 @@ def test_env_example_passwords_are_rejected_in_production(load_config):
 @pytest.mark.parametrize("placeholder", ["your-password", "x-change-this-x", "  YOUR-Db-Pw  "])
 @pytest.mark.parametrize("key", PASSWORD_KEYS)
 def test_password_placeholders_are_rejected(load_config, key: str, placeholder: str):
-    """값이 들어 있는데 예시값 모양이면 세 비밀번호 모두 기동을 거부한다."""
+    """값이 들어 있는데 예시값 모양이면 두 비밀번호 모두 기동을 거부한다."""
     with pytest.raises(ValueError, match=key):
         load_config("production", dict(STRONG, **{key: placeholder}))
 
@@ -286,15 +284,13 @@ def test_empty_mysql_password_is_rejected(load_config):
         load_config("production", dict(STRONG, MYSQL_PASSWORD=""))
 
 
-@pytest.mark.parametrize("key", ["REDIS_PASSWORD", "SMTP_PASSWORD"])
-def test_empty_optional_passwords_are_allowed(load_config, key: str):
-    """인증 없는 Redis·SMTP 미사용은 정당한 구성이라 빈 값을 위반으로 보지 않는다.
+def test_empty_redis_password_is_allowed(load_config):
+    """인증 없는 Redis 는 정당한 구성이라 빈 값을 위반으로 보지 않는다.
 
     여기서 빈 값을 막으면 멀쩡한 배포가 기동하지 못한다 — `REDIS_URL` 은 비밀번호가
-    없으면 인증 없는 URL 을 만들도록 이미 분기하고, SMTP 는 발송 모듈이 없으면 쓰이지
-    않는다. 값이 들어 있을 때만 예시값인지 본다.
+    없으면 인증 없는 URL 을 만들도록 이미 분기한다. 값이 들어 있을 때만 예시값인지 본다.
     """
-    config_module = load_config("production", dict(STRONG, **{key: ""}))
+    config_module = load_config("production", dict(STRONG, REDIS_PASSWORD=""))
 
     assert config_module.app_settings.ENV == "production"
 

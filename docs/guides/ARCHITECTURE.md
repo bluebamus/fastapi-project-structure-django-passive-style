@@ -389,8 +389,8 @@ flowchart TD
 | `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
 | `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
-| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(§8). `ADMIN_SESSION_MAX_AGE_SECONDS`(절대)·`ADMIN_SESSION_IDLE_SECONDS`(미사용)는 관리 세션 만료다(미사용이 절대보다 크면 기동 실패). `SESSION_EXPIRE_SECONDS` 는 소비처가 없다(`/admin` 과 무관) |
-| `ApiSettings`·`SMTPSettings`·`UploadSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
+| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(§8). 관리 세션 만료는 `ADMIN_SESSION_*` 가 정한다(미사용이 절대보다 크면 기동 실패, 값은 [README 세션·토큰 만료](../../README.md#세션토큰-만료)) |
+| `ApiSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` 도 현재 로깅 구성에서 읽지 않는다(§5).
 
@@ -400,11 +400,10 @@ flowchart TD
 |---|---|
 | `DatabaseSettings._validate_routing` | 복제 on + 라우터 off, 복제 on + replica 목록 비어 있음, 잘못된 replica 표기(IPv6 는 대괄호 필수), `DB_MAX_SERVER_CONNECTIONS` 가 0이 아닐 때 최대 연결 수 초과 |
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
-| `SMTPSettings._reject_tls_with_ssl` | TLS·SSL 동시 활성 |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
 | `validate_removed_settings()` | 예전 `ADMIN` 설정이 환경 변수나 `.env` 에 남아 있다(대소문자 무시) — 뜻이 뒤집혀 `ADMIN_DISABLED` 로 바뀌었으므로 조용히 무시하지 않는다. test 는 검사하지 않는다 |
 | `validate_env_source()` | `.env` 가 없으면 필수 값(`ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다 |
-| `validate_deployment_safety()` | test 외 모든 ENV(개발 포함)에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis·미사용 SMTP 는 정당한 구성이라 빈 값을 막지 않는다). **또는** production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). test 는 검사하지 않는다 |
+| `validate_deployment_safety()` | test 외 모든 ENV(개발 포함)에서 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 placeholder(빈 값·`your-` 시작·`change-this` 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. `REDIS_PASSWORD` 는 **값이 있을 때만** 같은 판정을 받는다(인증 없는 Redis 는 정당한 구성이라 빈 값을 막지 않는다). **또는** production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL` 이 `DEBUG`(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 `ValueError` 로 알리고 메시지에는 설정 **이름만** 담는다(값은 싣지 않는다). test 는 검사하지 않는다 |
 
 `_validate_cross_settings()`·`validate_env_source()`·`validate_removed_settings()`·`validate_deployment_safety()` 는 모듈 함수라 `config` import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
 배포 환경에서 관리 화면을 켜는 것은 더 이상 거부하지 않는다 — `/admin` 은 슈퍼유저 로그인이 필요하다(§8). 쓰지 않는 배포는 `ADMIN_DISABLED=true`.
@@ -422,7 +421,8 @@ flowchart TD
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `localhost` / `6379` / `0` / 없음 | startup ping 대상이자 Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부 |
 | `SESSION_SECRET_KEY` | `change-this-...` | `/admin` 관리 세션 ID → Redis 키 HMAC 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
-| `ADMIN_SESSION_MAX_AGE_SECONDS` / `ADMIN_SESSION_IDLE_SECONDS` | `28800` / `1800` | `/admin` 세션 절대 만료(연장 불가)·미사용 만료(§8). 둘 다 60 이상, 미사용 ≤ 절대가 아니면 기동 실패 |
+
+세션·토큰 만료(`ADMIN_SESSION_*`·`ACCESS_TOKEN_EXPIRE_MINUTES`·`REFRESH_TOKEN_EXPIRE_DAYS`)는 [README 세션·토큰 만료](../../README.md#세션토큰-만료) 표 한 곳에 모았다.
 
 ### 3.3 `create_app()` 조립 순서
 
@@ -869,10 +869,10 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
    Redis 도 쓰기 세션도 쓰지 않는다.
 5. **register** — `register_rate_limit`(ip, `AUTH_REGISTER_MAX_ATTEMPTS`/`AUTH_REGISTER_WINDOW_SECONDS`) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.
 
+access·refresh 수명(`ACCESS_TOKEN_EXPIRE_MINUTES`·`REFRESH_TOKEN_EXPIRE_DAYS`)은 [README 세션·토큰 만료](../../README.md#세션토큰-만료) 표에 있다.
+
 | 설정 | 기본값 | 설명 |
 |---|---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | access 수명 |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | refresh 수명 = Redis 기록·폐기 표시 TTL |
 | `JWT_ALGORITHM` | `HS256` | HS256·HS384·HS512 만 허용. 검증은 이 값 하나만 받는다 |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | `fastapi-project` / `fastapi-project-api` | 검증 시 일치해야 한다 |
 | `JWT_LEEWAY_SECONDS` | `5` | exp·nbf·iat 시계 오차 허용 |
@@ -1086,7 +1086,7 @@ config.set_main_option(                                              # URL → �
 | 10 | 프록시 뒤 배포면 `TRUSTED_PROXY_HOPS` 를 **앞단 프록시 단 수**로 | 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋(API·`/admin`)이 전체 사용자를 한 사람으로 취급한다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 `X-Forwarded-For` 를 믿어 IP 위조가 가능하다(service-hardening R-013) |
 | 11 | 첫 관리자를 `scripts/create_superuser.py` 로 만들고(대화형 또는 `--password-stdin`), 관리 API 가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 도 `/admin` 로그인도 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
 | 12 | KST→UTC 리비전 `e5a7c2d9f310` 적용 전 백업, 기존 값의 시간대가 `+09:00` 이 아니면 `LEGACY_OFFSET` 수정 | 모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10) |
-| 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션은 Redis 서버 세션, `SESSION_SECRET_KEY` 는 세션 ID → Redis 키 HMAC 키. `ADMIN_SESSION_MAX_AGE_SECONDS`(절대 8시간)·`ADMIN_SESSION_IDLE_SECONDS`(미사용 30분)를 정책에 맞춘다 | 키를 바꾸면 모든 관리 세션이 끊긴다(다시 로그인). Redis 를 읽을 수 있는 사람은 세션 내용(사용자 id·CSRF 토큰)을 본다 — Redis 접근을 통제한다 (쿠키는 HMAC 때문에 Redis 키로 만들 수 없다, admin-session-hardening R-008) |
+| 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션은 Redis 서버 세션, `SESSION_SECRET_KEY` 는 세션 ID → Redis 키 HMAC 키. `ADMIN_SESSION_MAX_AGE_SECONDS`(절대)·`ADMIN_SESSION_IDLE_SECONDS`(미사용)를 정책에 맞춘다([README 세션·토큰 만료](../../README.md#세션토큰-만료)) | 키를 바꾸면 모든 관리 세션이 끊긴다(다시 로그인). Redis 를 읽을 수 있는 사람은 세션 내용(사용자 id·CSRF 토큰)을 본다 — Redis 접근을 통제한다 (쿠키는 HMAC 때문에 Redis 키로 만들 수 없다, admin-session-hardening R-008) |
 | 14 | `ACCESS_LOG_RETENTION_DAYS` 를 개인정보 정책에 맞추고(기본 365일), Celery worker 와 **beat 한 개**를 띄운다 | beat 가 없으면 보존 삭제가 돌지 않아 접속 로그가 무기한 쌓인다(§6·§9) |
 
 ### 11.2 배포 절차와 확인
@@ -1125,7 +1125,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
 - **레이트 리밋**: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.
 - **자동 앱 탐색**: 없음(설계 원칙).
-- **미사용 설정**: `ApiSettings`·`SMTPSettings`·`UploadSettings`, `SESSION_EXPIRE_SECONDS`, 일부 로그 설정(§3.2).
+- **미사용 설정**: `ApiSettings`, 일부 로그 설정(§3.2). 메일·업로드 설정과 SESSION_EXPIRE_SECONDS 는 지웠다(config-cleanup — `.env` 에 남아도 무시된다). 새 설정이 읽히지 않으면 `tests/core/test_settings_contract.py` 가 막는다.
 - **검증하지 않은 것**: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.
 
 ---
@@ -1136,6 +1136,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-19 | **config-cleanup**: 읽는 곳이 없던 `SMTPSettings`(`smtp_settings`)·`UploadSettings`(`upload_settings`)·`SESSION_EXPIRE_SECONDS` 를 지웠다(배포 안전 검사의 `SMTP_PASSWORD` 항목 포함). 남은 `.env` 줄은 `extra="ignore"` 로 무시된다. 세션·토큰 만료는 README 표 한 곳으로 모았고, 설정 필드가 운영 코드에서 읽히는지 보는 계약 테스트를 더했다 |
 | 2026-10-19 | **admin-session-hardening (판정을 한 함수로 — 집합은 `UserService` 와 같다)**: 폐기 판정을 `revocation_for_change`·`revocation.REVOKE_ON_DELETE`·`revocation.REVOKE_ON_PASSWORD_CHANGE` 한 곳으로 모았다 — API·관리 화면·`create_superuser --set-password` 가 같은 판정을 쓴다. 집합은 `UserService` 가 원래 지우던 것과 같다(비활성화·강등·삭제 = refresh + 관리 세션, service-hardening 동작 유지)에 비밀번호 변경(둘 다)을 더했다. 비밀번호 변경 스크립트는 관리 세션과 refresh 를 함께 지운다(`revoke_sessions_in_redis`). 폐기는 커밋 전(fail-closed, §7.1·§8, ADR-010) |
 | 2026-10-19 | **admin-session-hardening**: `/admin` 세션을 서명 쿠키(starlette `SessionMiddleware` + itsdangerous)에서 Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 쿠키에는 세션 ID 만, 절대·미사용 만료 `ADMIN_SESSION_*`)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(`UserSessionRevoker` — API·`UserAdmin` 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, `create_superuser --set-password` 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(`AdminCsrfMiddleware`, 덮어쓴 `sqladmin/base.html`), 로그아웃 POST 전용(GET 405). `LocalDateFilter` 에 기간(`S~E`) 연산. `itsdangerous` 직접 의존 제거. 405 `Allow` 불완전은 사용자 결정으로 현행 유지(§8·§11) |
 | 2026-10-19 | **security-ops-hardening**: 모든 엔진에 `hide_parameters=True`(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). `/admin` 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 `created_at` 날짜 필터 `LocalDateFilter`(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (`docs/crp/groups/security-ops-hardening/`). |

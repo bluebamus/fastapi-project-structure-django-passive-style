@@ -11,12 +11,18 @@
    설정이 필요한 모듈은 `from config import ...` 로 가져다 쓴다. `os.environ` /
    `os.getenv` 가 코드 여기저기 흩어지면 "이 값이 어디서 오는가"를 추적할 수 없고,
    `.env.example` 에 문서화되지 않은 숨은 설정이 생긴다.
+
+3. **설정 필드는 운영 코드가 읽는다 — 지운 설정이 남아 있어도 기동은 깨지지 않는다.**
+   선언만 있는 설정은 값을 바꿔도 아무 일도 없다(config-cleanup 에서 ``SMTP_*``·``UPLOAD_*``·
+   ``SESSION_EXPIRE_SECONDS`` 를 지운 이유). 지운 키가 `.env` 에 남아도 ``extra="ignore"`` 로 무시된다.
 """
 
+import ast
 import inspect
 import re
 from pathlib import Path
 
+import pytest
 from pydantic_settings import BaseSettings
 
 import config as config_module
@@ -124,3 +130,97 @@ def test_environment_access_check_scans_real_files():
     sources = _python_sources()
     assert len(sources) > 10
     assert any(path.name == "env.py" and "migrations" in path.parts for path in sources)
+
+
+# =============================================================================
+# 3. 설정 필드는 운영 코드가 읽는다 · 지운 설정은 무시된다
+# =============================================================================
+#: 필드를 "읽는지" 볼 운영 코드 — 테스트는 제외한다(테스트만 읽는 설정은 소비처가 아니다).
+#: config.py 도 넣는다(DSN 조립·교차 검증처럼 config 안에서 읽는 필드가 있다).
+READ_SCAN_FILES = (
+    PROJECT_ROOT / "config.py",
+    PROJECT_ROOT / "main.py",
+    *(path for root in SOURCE_ROOTS for path in (PROJECT_ROOT / root).rglob("*.py")),
+)
+
+#: 읽는 곳이 없지만 이번 정리 범위 밖이라 남겨 둔 필드 — 사유와 함께. 비우는 것이 목표다.
+UNREAD_ALLOWED = {
+    # ARCHITECTURE §3.2 가 "현재 로깅 구성에서 읽지 않는다" 고 밝힌 로그 설정. 삭제는 따로 결정한다.
+    "LOG_CONSOLE_ENABLED": "로깅 구성 미사용(문서화됨), 삭제 미결정",
+    "LOG_CONSOLE_FORMAT": "로깅 구성 미사용(문서화됨), 삭제 미결정",
+    "LOG_FILE_FORMAT": "로깅 구성 미사용(문서화됨), 삭제 미결정",
+    "LOG_DATE_FORMAT": "로깅 구성 미사용(문서화됨), 삭제 미결정",
+    # URL 의 /v1 은 라우터 파일이 정한다 — 값을 바꿔도 동작이 같다(문서화됨). 삭제는 따로 결정한다.
+    "API_VERSION": "소비처 없음(문서화됨), 삭제 미결정",
+}
+
+#: 지운 설정 — 로컬·운영 `.env` 에 남아 있어도 무시돼야 한다(레거시 ADMIN 과 달리 기동 거부 대상이 아니다).
+REMOVED_KEYS = {
+    "SMTP_SERVER": "localhost",
+    "SMTP_PASSWORD": "your-app-password",
+    "UPLOAD_DIR": "uploads",
+    "UPLOAD_ALLOWED_EXTENSIONS": '[".jpg"]',
+    "SESSION_EXPIRE_SECONDS": "86400",
+}
+
+SETTINGS_CLASSES = [
+    obj
+    for obj in vars(config_module).values()
+    if inspect.isclass(obj) and issubclass(obj, BaseSettings) and obj is not BaseSettings
+]
+
+
+def _names_read_by_source() -> set[str]:
+    """운영 코드가 **읽는** 이름 — 속성 접근(``settings.X``·``self.X``)과 ``getattr(obj, "X")``.
+
+    주석·docstring·문자열 목록은 세지 않는다 — 이름을 적는 것은 읽는 것이 아니다.
+    """
+    names: set[str] = set()
+    for path in READ_SCAN_FILES:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Attribute):
+                names.add(node.attr)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) > 1
+                and isinstance(node.args[1], ast.Constant)
+            ):
+                names.add(str(node.args[1].value))
+    return names
+
+
+def test_every_setting_field_is_read_by_source_code():
+    """설정 필드는 운영 코드 어딘가에서 읽혀야 한다 — 선언만 있는 설정은 값을 바꿔도 아무 일도 없다."""
+    read = _names_read_by_source()
+    fields = _config_setting_fields()
+    assert len(READ_SCAN_FILES) > 10 and len(fields) > 20, "검사 대상이 비어 헛통과한다"
+
+    unread = sorted(fields - read - UNREAD_ALLOWED.keys())
+    assert not unread, f"읽는 곳이 없는 설정 필드: {unread} — 지우거나 쓰는 코드를 넣는다"
+
+    stale = sorted(UNREAD_ALLOWED.keys() - fields)
+    assert not stale, f"없는 필드가 예외 목록에 남아 있다(목록에서 지운다): {stale}"
+    now_read = sorted(UNREAD_ALLOWED.keys() & read)
+    assert not now_read, f"이제 읽히는 필드가 예외 목록에 있다(목록에서 지운다): {now_read}"
+
+
+@pytest.mark.parametrize("cls", SETTINGS_CLASSES, ids=lambda cls: cls.__name__)
+def test_removed_keys_left_in_environment_are_ignored(
+    monkeypatch: pytest.MonkeyPatch, cls: type[BaseSettings]
+):
+    """지운 키가 환경에 남아 있어도 설정 생성이 실패하지 않고, 속성으로 생기지도 않는다."""
+    for key, value in REMOVED_KEYS.items():
+        monkeypatch.setenv(key, value)
+
+    settings = cls(_env_file=None)  # type: ignore[call-arg]
+
+    for key in REMOVED_KEYS:
+        assert not hasattr(settings, key), f"{cls.__name__} 에 지운 설정 {key} 가 남아 있다"
+
+
+def test_removed_settings_singletons_are_gone():
+    """지운 설정 묶음의 전역 인스턴스·클래스가 다시 생기지 않는다."""
+    for name in ("smtp_settings", "upload_settings", "SMTPSettings", "UploadSettings"):
+        assert not hasattr(config_module, name), f"config.{name} 가 남아 있다"
