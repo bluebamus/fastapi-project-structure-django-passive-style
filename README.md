@@ -133,7 +133,6 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마�
 |---|---|
 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` | 위 명령으로 만든 값을 **서로 다르게** 넣는다(32자 이상) |
 | `MYSQL_PASSWORD` | 2단계에서 띄울 MySQL 의 비밀번호와 같은 값. 비워 두거나 예시 값이면 거부 |
-| `SMTP_PASSWORD` | 메일을 안 쓰면 **비운다**. 예시 값을 남겨 두면 거부 |
 
 `.env` 가 없으면 기동하지 않습니다. 파일 없이 환경 변수로 주입하는 경우(컨테이너)는 `ENV`·비밀 키 3종·
 `MYSQL_HOST/USER/PASSWORD/DATABASE` 가 모두 있어야 합니다. 테스트(`ENV=test`, pytest 가 지정)는 이 검증을 하지 않습니다.
@@ -205,10 +204,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 | `ADMIN_DISABLED` | `false` | false = `/admin` 마운트(**활성 슈퍼유저 로그인 필요**) / true = 관리 화면 자체가 없다(404, 응답 어디에도 경로·링크 없음, sqladmin 미로드). 예전 `ADMIN` 은 제거됐다 — 남아 있으면 기동 실패 |
 | `ENV` | `development` | production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 면 설정 로드가 실패하고, `/admin` 세션 쿠키에 `Secure` 가 붙는다(HTTPS 전용). 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access·refresh 수명. `JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·`JWT_LEEWAY_SECONDS` 와 레이트 리밋 `AUTH_LOGIN_*`·`AUTH_REGISTER_*` 는 `.env.example`·[아키텍처 §7](docs/guides/ARCHITECTURE.md#7-인증-jwt) |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(바꾸면 모든 관리 세션이 끊긴다). 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `ADMIN_SESSION_MAX_AGE_SECONDS` | `28800` | `/admin` 세션 절대 만료(초, 8시간). 로그인 시각부터 세며 연장되지 않는다. 60 미만은 기동 실패 |
-| `ADMIN_SESSION_IDLE_SECONDS` | `1800` | `/admin` 세션 미사용 만료(초, 30분). 요청마다 다시 센다. 60 미만이거나 절대 만료보다 크면 기동 실패 |
 
 > **`/admin` 은 활성 슈퍼유저만 들어갑니다.** 로그인 화면(Bootstrap)에서 `scripts/create_superuser.py` 로 만든 계정으로
 > 로그인하면 `admin_session` 쿠키(path `/admin`·SameSite=Strict·HttpOnly)가 발급되고, 권한은 매 요청 DB 로 다시 확인합니다.
@@ -220,6 +216,20 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 > [관리 화면 인증 가이드](docs/guides/admin-auth-guide.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
 
 선택 기능(Celery worker, replica 라우팅, Alembic)은 기본 실행에 필요 없습니다 — 필요할 때 [아키텍처 레퍼런스](docs/guides/ARCHITECTURE.md)를 봅니다.
+
+### 세션·토큰 만료
+
+세션·토큰의 만료는 아래 네 설정이 정한다 — 이 표가 정본이고, 다른 문서는 이 표를 가리킨다.
+
+| 대상 | 설정 | 기본값 | 뜻 |
+|---|---|---|---|
+| `/admin` 관리 세션 — 절대 만료 | `ADMIN_SESSION_MAX_AGE_SECONDS` | `28800` (8시간) | 로그인 시각부터 세며 요청이 있어도 연장되지 않는다(쿠키 Max-Age 도 이 값). 60 미만은 기동 실패 |
+| `/admin` 관리 세션 — 미사용 만료 | `ADMIN_SESSION_IDLE_SECONDS` | `1800` (30분) | 마지막 요청부터 다시 센다. 절대 만료를 넘지 않는다. 60 미만이거나 절대 만료보다 크면 기동 실패 |
+| API 접근 토큰 (access) | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` (분) | 발급 후 이 시간이 지나면 401. 즉시 폐기 목록은 없다 — 짧은 수명이 그 대신이다 |
+| API refresh 토큰 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` (일) | refresh 수명이자 Redis 기록·폐기 표시 TTL |
+
+JWT 검증 설정(`JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·`JWT_LEEWAY_SECONDS`)과 레이트 리밋
+`AUTH_LOGIN_*`·`AUTH_REGISTER_*` 는 `.env.example`·[아키텍처 §7](docs/guides/ARCHITECTURE.md#7-인증-jwt)에 있습니다.
 
 ### 테스트
 
@@ -247,7 +257,7 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 | 기동 실패 (`ADMIN 은 ADMIN_DISABLED 로 바뀌었다`) | 환경 변수나 `.env` 에 예전 `ADMIN` 줄이 남아 있다 | `ADMIN` 이 false 였다면 `ADMIN_DISABLED=true` 로 바꾸고, true 였다면 그 줄을 지운다 |
 | `/admin` 로그인 후 다시 로그인 화면 | staging/production 에서 HTTP 로 접속해 `Secure` 쿠키가 저장되지 않았다 / 계정이 슈퍼유저·활성이 아니다 | HTTPS 로 접속(프록시 TLS 종단 포함). 계정은 `scripts.create_superuser` 로 승격 |
 | `/admin` 로그인이 429 | ip 또는 ip+사용자명 시도 한도(`AUTH_LOGIN_*`) 초과. 프록시 뒤에서 `TRUSTED_PROXY_HOPS=0` 이면 모두가 한도를 나눠 쓴다 | `Retry-After` 초만큼 기다린다. 프록시 뒤라면 `TRUSTED_PROXY_HOPS` 설정 |
-| 기동 실패 (`설정이 안전하지 않습니다`) | 비밀키·비밀번호가 placeholder·빈 값·32자 미만이거나 access·refresh 키가 같다(개발 환경 포함) / 배포 환경의 `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, 안 쓰는 Redis·SMTP 비밀번호는 비운다, debug 모드는 끈다 |
+| 기동 실패 (`설정이 안전하지 않습니다`) | 비밀키·비밀번호가 placeholder·빈 값·32자 미만이거나 access·refresh 키가 같다(개발 환경 포함) / 배포 환경의 `DEBUG=true` 또는 `LOG_LEVEL=DEBUG` | 메시지에 나온 설정을 고친다 — 비밀키는 `secrets.token_urlsafe(48)` 로 만든 서로 다른 값으로 교체, 인증 없는 Redis 면 `REDIS_PASSWORD` 는 비운다, debug 모드는 끈다 |
 
 ## 앱 설치 — 목록에 한 줄
 
@@ -396,6 +406,9 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 - **접속 로그 보존** — `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `0` = 삭제 안 함)를 개인정보 정책에 맞춥니다. 삭제는 Celery **beat** 가
   매일 03:30(`TIME_ZONE`)에 `home.purge_expired_access_logs` 를 워커로 보내야 돈다 — worker 와 함께 beat 를 **하나만** 띄웁니다:
   `uv run celery -A app.celery.app worker --loglevel=info` · `uv run celery -A app.celery.app beat --loglevel=info`.
+- **업그레이드 노트 — 지운 설정** — 메일(SMTP_*)·업로드(UPLOAD_*)·SESSION_EXPIRE_SECONDS 는 읽는 코드가 없어 지웠습니다.
+  `.env`·환경 변수에 남은 이 줄들은 **지워도 되고, 남아도 무시됩니다**(기동은 멈추지 않는다 — 예전 `ADMIN` 과 다르다).
+  세션·토큰 만료는 [세션·토큰 만료](#세션토큰-만료) 표의 네 설정이 정합니다.
 
 ## 문서 안내
 
