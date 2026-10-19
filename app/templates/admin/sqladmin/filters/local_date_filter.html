@@ -1,7 +1,9 @@
 {#-
   관리 목록 날짜 필터 — app/core/admin_filters.py 의 LocalDateFilter 가 쓴다(security-ops-hardening ADR-005).
-  sqladmin 의 operation_filter.html 과 같은 쿼리 형식(<이름>=YYYY-MM-DD, <이름>_op=연산)이고, 입력만
-  브라우저의 날짜 선택(<input type="date">)이라 형식이 틀릴 일이 적다. 날짜는 TIME_ZONE 기준이다.
+  sqladmin 의 operation_filter.html 과 같은 쿼리 형식(<이름>=값, <이름>_op=연산)이다. 날짜는 TIME_ZONE 기준이다.
+  sqladmin 은 필터 값을 하나만 넘긴다 — 그래서 날짜 입력 두 개(시작일·종료일, 이름 없음)를 제출 직전에
+  hidden <이름> 하나로 합친다(admin-session-hardening ADR-004):
+    같은 날·이후·이전 → 시작일 하나 / 기간 → "시작일~종료일"(한쪽만 넣으면 열린 구간, 양 끝 포함).
 -#}
 {% extends "sqladmin/filters/base_filter.html" %}
 
@@ -9,6 +11,7 @@
   {% set name = filter.parameter_name %}
   {% set current_filter = request.query_params.get(name, '') %}
   {% set current_op = request.query_params.get(name + '_op', '') %}
+  {% set parts = current_filter.split('~', 1) if current_op == 'between' else [current_filter, ''] %}
 
   {% if current_filter %}
   <div class="mb-2 text-muted small">
@@ -23,7 +26,7 @@
     {% endfor %}
   </div>
 
-  <form method="get" class="d-flex flex-column filter-form">
+  <form method="get" class="d-flex flex-column filter-form" data-local-date-filter>
     {% for key, value in request.query_params.items() %}
       {% if key != name and key != name + '_op' and key != 'error' %}
       <input type="hidden" name="{{ key }}" value="{{ value }}">
@@ -36,8 +39,23 @@
       {% endfor %}
     </select>
 
-    <input type="date" name="{{ name }}" class="form-control form-control-sm" value="{{ current_filter }}" required>
+    <input type="date" data-date-start aria-label="시작일" class="form-control form-control-sm" value="{{ parts[0] }}">
+    <input type="date" data-date-end aria-label="종료일(기간만)" class="form-control form-control-sm" value="{{ parts[1] if parts | length > 1 else '' }}">
+    <input type="hidden" data-date-value name="{{ name }}" value="{{ current_filter }}">
 
     <button type="submit" class="btn btn-sm btn-outline-primary">{{ _("Apply Filter") }}</button>
   </form>
+  <script>
+  document.querySelectorAll('form[data-local-date-filter]').forEach(function (form) {
+    if (form.dataset.bound) { return; }
+    form.dataset.bound = '1';
+    form.addEventListener('submit', function () {
+      var op = form.querySelector('select').value;
+      var start = form.querySelector('[data-date-start]').value;
+      var end = form.querySelector('[data-date-end]').value;
+      form.querySelector('[data-date-value]').value =
+        op === 'between' ? start + '~' + end : start;
+    });
+  });
+  </script>
 {% endblock %}

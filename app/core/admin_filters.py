@@ -5,7 +5,9 @@ sqladmin 0.32 의 ``OperationColumnFilter`` 는 ``UTCDateTime``(TypeDecorator)�
 (admin-login ADR-009). 이 클래스는 같은 필터 프로토콜(``has_operator``·``template``·
 ``parameter_name``·``get_operation_options_for_model``·``get_filtered_query``)을 따르되, 값을
 ``TIME_ZONE`` 의 날짜로 읽어 지역 0시를 aware UTC 순간으로 바꾼 뒤 범위 조건으로 질의한다
-(security-ops-hardening ADR-005).
+(security-ops-hardening ADR-005). 한 필터에서 기간(시작일~종료일)도 지정한다 — sqladmin 은 필터 값을
+하나만 넘기므로 ``YYYY-MM-DD~YYYY-MM-DD`` 로 합쳐 보낸다(전용 템플릿이 날짜 입력 두 개를 합친다,
+admin-session-hardening ADR-004).
 
 sqladmin 을 import 하지 않는다 — 프로토콜은 이름으로 맞춘다. 그래서 ``ADMIN_DISABLED=true`` 에서
 이 모듈이 로드돼도 sqladmin 이 딸려오지 않는다(SEC-01). 쓰는 곳은 각 앱의 ``admin.py`` 다.
@@ -27,6 +29,9 @@ logger = get_logger("app.core.admin_filters")
 #: 입력 형식 — ``<input type="date">`` 가 보내는 값과 같다.
 DATE_FORMAT = "%Y-%m-%d"
 
+#: 기간 값의 구분자 — ``시작일~종료일``. 한쪽을 비우면 열린 구간이다(``2026-10-01~``, ``~2026-10-31``).
+RANGE_SEPARATOR = "~"
+
 
 class LocalDateFilter:
     """``created_at`` 같은 UTC 시각 컬럼을 지역 날짜로 거르는 sqladmin 필터.
@@ -35,9 +40,11 @@ class LocalDateFilter:
         * ``on``     — 그 날 하루 ``[D 0시, D+1 0시)``
         * ``from``   — 그 날 이후, 그 날 포함 ``>= D 0시``
         * ``before`` — 그 날 이전, 그 날 제외 ``< D 0시``
+        * ``between`` — 기간, **양 끝 포함** ``[S 0시, E+1 0시)``. 값은 ``S~E``. 한쪽만 주면 열린 구간
+          (``S~`` = S 이후, ``~E`` = E 까지)
 
-    형식이 틀린 값이나 모르는 연산은 **필터를 적용하지 않고** 목록을 그대로 보여 준다(WARNING 로그) —
-    잘못 친 날짜 하나로 관리 화면이 500 이 되지 않는다.
+    형식이 틀린 값·시작일 > 종료일·모르는 연산은 **필터를 적용하지 않고** 목록을 그대로 보여 준다
+    (WARNING 로그) — 잘못 친 날짜 하나로 관리 화면이 500 이 되지 않는다.
     """
 
     has_operator = True
@@ -46,6 +53,7 @@ class LocalDateFilter:
         ("on", "같은 날"),
         ("from", "이후(포함)"),
         ("before", "이전(미포함)"),
+        ("between", "기간"),
     )
 
     def __init__(
@@ -69,12 +77,12 @@ class LocalDateFilter:
         return []  # 연산 필터는 lookups 를 쓰지 않는다(sqladmin 이 연산 목록으로 그린다).
 
     def quick_ranges(self) -> list[tuple[str, str, str]]:
-        """빠른 선택 — (표시 이름, 연산, 지역 날짜). 오늘·최근 7일·최근 30일(오늘 포함)."""
+        """빠른 선택 — (표시 이름, 연산, 값). 오늘·최근 7일·최근 30일(오늘 포함, 기간 연산)."""
         today = self.today()
         return [
             ("오늘", "on", today.isoformat()),
-            ("최근 7일", "from", (today - timedelta(days=6)).isoformat()),
-            ("최근 30일", "from", (today - timedelta(days=29)).isoformat()),
+            ("최근 7일", "between", f"{today - timedelta(days=6)}{RANGE_SEPARATOR}{today}"),
+            ("최근 30일", "between", f"{today - timedelta(days=29)}{RANGE_SEPARATOR}{today}"),
         ]
 
     def today(self) -> date:
@@ -84,8 +92,10 @@ class LocalDateFilter:
     async def get_filtered_query(
         self, query: Select[Any], operation: str, value: Any, model: Any
     ) -> Select[Any]:
+        if operation == "between":
+            return self._between(query, str(value))
         try:
-            day = datetime.strptime(str(value).strip(), DATE_FORMAT).date()
+            day = _parse_day(str(value))
         except ValueError:
             logger.warning("[admin] 날짜 필터 값 무시 parameter=%s", self.parameter_name)
             return query
@@ -99,3 +109,30 @@ class LocalDateFilter:
             return query.where(self.column < start)
         logger.warning("[admin] 날짜 필터 연산 무시 parameter=%s", self.parameter_name)
         return query
+
+    def _between(self, query: Select[Any], value: str) -> Select[Any]:
+        """``S~E`` — ``S 0시 <= t < E+1 0시``(지역 날짜 → UTC). 한쪽이 비면 그쪽은 열려 있다."""
+        start_text, separator, end_text = value.strip().partition(RANGE_SEPARATOR)
+        try:
+            if not separator:
+                raise ValueError("구분자 없음")
+            start = _parse_day(start_text) if start_text.strip() else None
+            end = _parse_day(end_text) if end_text.strip() else None
+            if start is None and end is None:
+                raise ValueError("빈 기간")
+            if start is not None and end is not None and start > end:
+                raise ValueError("역순 기간")
+        except ValueError:
+            logger.warning("[admin] 날짜 필터 기간 무시 parameter=%s", self.parameter_name)
+            return query
+        if start is not None:
+            query = query.where(self.column >= self.timezone.local_midnight_utc(start))
+        if end is not None:
+            query = query.where(
+                self.column < self.timezone.local_midnight_utc(end + timedelta(days=1))
+            )
+        return query
+
+
+def _parse_day(text: str) -> date:
+    return datetime.strptime(text.strip(), DATE_FORMAT).date()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest_asyncio
@@ -52,7 +52,17 @@ SEED_IDS: dict[type, str] = {
 
 
 def _seed() -> list[object]:
-    """뷰마다 상세 페이지를 열 행 하나 — 로그인할 슈퍼유저도 ``User`` 행이다."""
+    """뷰마다 상세 페이지를 열 행 하나 — 로그인할 슈퍼유저도 ``User`` 행이다.
+
+    ``created_at`` 은 모두 ``NOW`` 로 고정한다 — 날짜·기간 필터가 실제로 좁히는지 볼 기준이다.
+    """
+    rows = _rows()
+    for row in rows:
+        row.created_at = NOW  # type: ignore[attr-defined]
+    return rows
+
+
+def _rows() -> list[object]:
     return [
         User(
             id="u-root",
@@ -147,7 +157,7 @@ async def test_every_admin_view_lists_filters_and_shows_details(admin_client):
 
 
 async def test_every_admin_view_with_created_at_lists_through_the_date_filter(admin_client):
-    """``created_at`` 이 있는 모든 뷰에 날짜 필터가 있고, 연산 3종·잘못된 입력 모두 200 이다."""
+    """``created_at`` 이 있는 모든 뷰에 날짜 필터가 있고, 연산 4종·잘못된 입력 모두 200 이다."""
     client, views = admin_client
     seeded_day = NOW.astimezone(timezone_settings.tz).date().isoformat()
 
@@ -163,6 +173,9 @@ async def test_every_admin_view_with_created_at_lists_through_the_date_filter(ad
             ("on", seeded_day),
             ("from", seeded_day),
             ("before", seeded_day),
+            ("between", f"{seeded_day}~{seeded_day}"),
+            ("between", f"{seeded_day}~"),
+            ("between", "2026-10-13~2026-10-01"),
             ("on", "not-a-date"),
         ):
             response = await client.get(
@@ -170,8 +183,12 @@ async def test_every_admin_view_with_created_at_lists_through_the_date_filter(ad
             )
             if response.status_code != 200:
                 failures.append(f"{view.identity} {operation}={value} → {response.status_code}")
-            elif 'type="date" name="created_at"' not in response.text:
-                failures.append(f"{view.identity}: 날짜 입력이 그려지지 않았다")
+            elif (
+                'type="date" data-date-start' not in response.text
+                or 'type="date" data-date-end' not in response.text
+                or 'data-date-value name="created_at"' not in response.text
+            ):
+                failures.append(f"{view.identity}: 날짜 입력(시작·종료·합친 값)이 그려지지 않았다")
 
     assert not failures, failures
 
@@ -187,3 +204,24 @@ async def test_date_filter_narrows_the_access_log_list(admin_client):
     assert on.status_code == before.status_code == 200
     assert "details/l-1" in on.text
     assert "details/l-1" not in before.text
+
+
+async def test_period_filter_narrows_every_created_at_list(admin_client):
+    """기간(``between``)이 모든 created_at 목록에서 실제로 좁힌다 — 시드 날짜를 넣으면 보이고 다음 날부터면 안 보인다."""
+    client, views = admin_client
+    day = NOW.astimezone(timezone_settings.tz).date()
+    inside = f"{day}~{day}"
+    outside = f"{day + timedelta(days=1)}~"
+
+    failures: list[str] = []
+    for view in views:
+        base = f"/admin/{view.identity}/list"
+        detail = f"details/{SEED_IDS[view.model]}"
+        hit = await client.get(base, params={"created_at": inside, "created_at_op": "between"})
+        miss = await client.get(base, params={"created_at": outside, "created_at_op": "between"})
+        if (hit.status_code, miss.status_code) != (200, 200):
+            failures.append(f"{view.identity}: {hit.status_code}/{miss.status_code}")
+        elif detail not in hit.text or detail in miss.text:
+            failures.append(f"{view.identity}: 기간으로 좁혀지지 않았다")
+
+    assert not failures, failures
