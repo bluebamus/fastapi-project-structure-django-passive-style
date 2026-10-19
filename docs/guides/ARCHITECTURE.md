@@ -925,7 +925,10 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 | user | — | — | 단건 조회·수정(본인 — **권한 판정이 존재 확인보다 먼저**라 남의 ID 는 있든 없든 403) | 목록·생성(비밀번호 필수, `is_superuser` 지정 가능)·삭제, `is_active`·`is_superuser` 변경 |
 | auth | register·login·refresh·logout | `/me` | — | — |
 
-- 비활성화(`is_active=false`)·강등(`is_superuser=false`)·삭제는 그 사용자의 refresh family 와 `/admin` 관리 세션을 모두 폐기한다(`UserSessionRevoker`, §8 — 커밋 전).
+- 비활성화(`is_active` True→False)·강등(`is_superuser` True→False)·비밀번호 변경·삭제는 그 사용자의 refresh family 와 `/admin` 관리 세션을 모두 폐기한다(커밋 전).
+  무엇을 지울지는 `revocation_for_change`(`app/core/security/revocation.py`, §8)가 변경 전 값과 비교해 정한다. 강등 시 refresh 폐기는 service-hardening 부터의
+  동작(`test_demotion_revokes_refresh_families`)이고, 관리 화면도 같은 규칙을 쓴다(admin-session-hardening ADR-010 — 관리 화면 경로 = API 경로). refresh 회전은
+  DB 를 다시 읽지만(비활성 거부·새 권한으로 발급) 기존 동작을 유지한다.
   이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).
 - `author_id` 가 없는 행(인가 리비전 `a3c9e8f1b274` 이전 데이터)은 슈퍼유저만 수정·삭제한다.
 - 정본은 뷰 선언이다. "모든 오퍼레이션이 분류됐는가" 는 기동 검사가 막고, `tests/test_authorization_policy.py` 의 표는 예시 정책이
@@ -967,17 +970,29 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
   - **Redis 장애는 fail-closed**: 세션을 읽지 못하면(lifespan 밖이라 클라이언트가 없는 경우 포함) 관리 화면은 503 이고 앱에 닿지 않는다. 응답 직전 저장 실패는 500.
   - 미들웨어 순서는 `RedisSessionMiddleware`(바깥) → `AdminCsrfMiddleware`(안쪽)이고 **SQLAdmin 하위 앱에만** 있다 — 메인 앱에는 세션 미들웨어가 없고
     API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
-- **즉시 폐기**(ADR-005·ADR-008): `UserSessionRevoker`(`app/core/security/revocation.py`)의 `revoke(user_id)` 가 refresh family(`RefreshTokenStore.revoke_user`)와
-  관리 세션(`AdminSessionStore.revoke_user` — 그 사용자의 세션 키와 인덱스)을 함께 지운다. API 와 관리 화면이 이 클래스 하나를 써서 **폐기 집합이 같다**.
-  - API: `UserService`(`app/features/user/services/user_service.py`)가 비활성화·강등·삭제 때 부른다. 생성자는 `revoker` 하나를 받고, provider 는
-    `get_user_session_revoker`(`app/core/security/dependencies.py`)다. 관리 화면이 꺼져 있으면 관리 세션 저장소가 `None` 이라 refresh 만 폐기한다.
-  - 관리 화면: `UserAdmin`(`app/features/user/admin.py`)의 커밋 **전** 훅이 `revoker_from_scope(request.scope)` 로 부른다. `on_model_change` 는 변경 전 객체와
-    폼 값을 비교해 비활성화(True→False)·슈퍼유저 해제(True→False)·비밀번호 해시 변경일 때만(생성 제외), `on_model_delete` 는 항상 폐기한다. 이름·이메일 같은
-    일반 수정은 폐기하지 않는다. 자기 자신을 강등·비활성화하면 현재 세션도 지워져 다음 요청에서 로그인 화면이 나온다(의도).
+- **즉시 폐기**(ADR-005·ADR-008·ADR-010): 판정 한 곳 — `revocation_for_change(before, changes)`(`app/core/security/revocation.py`)가 변경 **전** 값과 비교해
+  `Revocation(admin_sessions, refresh)` 를 돌려주고, 삭제는 `revocation.REVOKE_ON_DELETE`, 비밀번호 변경 스크립트는 `revocation.REVOKE_ON_PASSWORD_CHANGE`(둘 다 두 집합 모두)다.
+  `UserSessionRevoker.revoke(user_id, revocation)` 는 판정대로 refresh family(`RefreshTokenStore.revoke_user`)·관리 세션(`AdminSessionStore.revoke_user`)을 지운다.
+
+  | 변경(변경 전 값과 비교) | 관리 세션 | refresh family |
+  |---|---|---|
+  | 비활성화(`is_active` True→False) | 지운다 | 지운다 |
+  | 슈퍼유저 해제(`is_superuser` True→False) | 지운다 | 지운다 |
+  | 비밀번호 해시 변경 | 지운다 | 지운다 |
+  | 삭제 | 지운다 | 지운다 |
+  | 그 밖(이름·이메일 등), 이미 꺼진 값을 다시 끔 | 유지 | 유지 |
+
+  지금은 두 집합이 같지만 판정은 두 집합을 따로 돌려준다 — 한쪽만 바꿀 일이 생겨도 조건은 이 함수 한 곳에만 있다. 원칙은 관리 화면 경로 = API 경로(`UserService`)다.
+
+  - API: `UserService`(`app/features/user/services/user_service.py`)가 수정·삭제 때 판정해 부른다. 생성자는 `revoker` 하나를 받고, provider 는
+    `get_user_session_revoker`(`app/core/security/dependencies.py`)다. 관리 화면이 꺼져 있으면 관리 세션 저장소가 `None` 이라 refresh 쪽만 지운다.
+  - 관리 화면: `UserAdmin`(`app/features/user/admin.py`)의 커밋 **전** 훅이 같은 판정으로 `revoker_from_scope(request.scope)` 를 부른다 — `on_model_change`
+    (생성 제외)·`on_model_delete`(`revocation.REVOKE_ON_DELETE`). 자기 자신을 강등·비활성화하면 현재 세션도 지워져 다음 요청에서 로그인 화면이 나온다(의도).
   - **폐기는 커밋 전이다(fail-closed)**: sqladmin 0.32 의 `_queries._update_async`·`_delete_async` 가 `on_*` 훅을 세션 안에서 커밋 전에 부르고, API 는 핸들러가
     나중에 커밋한다. Redis 폐기가 실패하면 예외가 커밋을 막는다 — 관리 화면 수정은 400 오류 화면 + DB 변경 없음, 삭제는 목록 `error=` + 행 유지.
     반대로 폐기 뒤 커밋이 다른 이유로 실패하면 세션만 지워진다(다시 로그인하면 된다). 폐기와 커밋 사이에 다시 로그인한 세션은 매 요청 DB 확인이 막는다(R-005).
-  - 스크립트: `scripts/create_superuser.py --set-password` 는 별도 프로세스라 커밋 뒤 그 사용자의 관리 세션만 지운다. Redis 실패면 종료 코드 1 이다.
+  - 스크립트: `scripts/create_superuser.py --set-password` 는 별도 프로세스라 커밋 뒤 `revoke_sessions_in_redis` 로 관리 세션과 refresh 를 지운다
+    (`revocation.REVOKE_ON_PASSWORD_CHANGE`). Redis 실패면 종료 코드 1(`비밀번호는 바뀌었지만 세션을 지우지 못했습니다`)이다.
 - **CSRF**(ADR-002): `AdminCsrfMiddleware`(`app/core/security/admin_auth.py`)가 `/admin` 아래 POST·PUT·PATCH·DELETE 전부(로그인 포함 — 검사는 여기 하나)에서
   헤더 `X-CSRF-Token`, 없으면 폼 필드 `csrf_token` 을 세션 토큰(`AdminCsrf`)과 `hmac.compare_digest` 로 비교한다. 폼은 본문을 한 번 버퍼링해 파싱하고
   같은 본문을 다운스트림에 다시 흘려 준다. 실패는 403 이다 — 로그인은 로그인 화면, 로그인한 세션은 관리 화면 `error.html`, 로그인 전 요청은 문구만.
@@ -1100,10 +1115,10 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 - **API 인가의 세분**: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). `Principal` 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
   다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.
 - **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 상태를 바꾸는 관리 요청은 모두 CSRF 토큰을 요구하지만
-  sqladmin 사용자 정의 `@action`(GET 라우트)은 보호 밖이다 — 이 저장소는 쓰지 않는다(admin-session-hardening R-001). 관리 화면에서의 비활성화·강등·삭제도
-  API 와 같이 refresh 토큰과 관리 세션을 커밋 전에 폐기한다(R-007 해소). 같은 경로를 메서드별 라우트로 나눈 경우 405 의 `Allow` 가 불완전하다
+  sqladmin 사용자 정의 `@action`(GET 라우트)은 보호 밖이다 — 이 저장소는 쓰지 않는다(admin-session-hardening R-001). 관리 화면과 API 는
+  같은 판정(`revocation_for_change`)으로 같은 집합을 커밋 전에 폐기한다(R-007 해소). 같은 경로를 메서드별 라우트로 나눈 경우 405 의 `Allow` 가 불완전하다
   (사용자 결정으로 현행 유지, R-002). 익명 로그인 화면 방문도 Redis 세션(미사용 30분)을 만든다(R-003).
-- **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·삭제)로 대신한다.
+- **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·비밀번호 변경·삭제)로 대신한다.
 - **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
   `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장된다
   (사용자 결정). 보존 기간은 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)이고 beat 가 떠 있어야 삭제된다(§6). 개인정보 정책을 배포 측에서 정한다.
@@ -1121,6 +1136,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-19 | **admin-session-hardening (판정을 한 함수로 — 집합은 `UserService` 와 같다)**: 폐기 판정을 `revocation_for_change`·`revocation.REVOKE_ON_DELETE`·`revocation.REVOKE_ON_PASSWORD_CHANGE` 한 곳으로 모았다 — API·관리 화면·`create_superuser --set-password` 가 같은 판정을 쓴다. 집합은 `UserService` 가 원래 지우던 것과 같다(비활성화·강등·삭제 = refresh + 관리 세션, service-hardening 동작 유지)에 비밀번호 변경(둘 다)을 더했다. 비밀번호 변경 스크립트는 관리 세션과 refresh 를 함께 지운다(`revoke_sessions_in_redis`). 폐기는 커밋 전(fail-closed, §7.1·§8, ADR-010) |
 | 2026-10-19 | **admin-session-hardening**: `/admin` 세션을 서명 쿠키(starlette `SessionMiddleware` + itsdangerous)에서 Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 쿠키에는 세션 ID 만, 절대·미사용 만료 `ADMIN_SESSION_*`)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(`UserSessionRevoker` — API·`UserAdmin` 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, `create_superuser --set-password` 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(`AdminCsrfMiddleware`, 덮어쓴 `sqladmin/base.html`), 로그아웃 POST 전용(GET 405). `LocalDateFilter` 에 기간(`S~E`) 연산. `itsdangerous` 직접 의존 제거. 405 `Allow` 불완전은 사용자 결정으로 현행 유지(§8·§11) |
 | 2026-10-19 | **security-ops-hardening**: 모든 엔진에 `hide_parameters=True`(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). `/admin` 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 `created_at` 날짜 필터 `LocalDateFilter`(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (`docs/crp/groups/security-ops-hardening/`). |
 | 2026-10-13 | **log-redaction-fixes**: 로그 메시지·traceback·`stack_info` 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette `HTTPException` 핸들러가 `headers` 를 보존(405 `Allow`), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 `session_id`·Referer·XFF 원문 저장은 사용자 결정으로 유지 (`docs/crp/groups/log-redaction-fixes/`). |

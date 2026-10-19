@@ -351,7 +351,7 @@ async def create_post(payload: PostCreate, principal: CurrentPrincipal): ...   #
 | 슈퍼유저 | user 목록·생성(비밀번호 필수)·삭제, catalog 생성·수정·삭제, reports, home 접속 로그 5종 |
 
 토큰이 없으면 401(`WWW-Authenticate: Bearer`), 토큰이 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다.
-사용자를 비활성화·강등·삭제하면 그 사용자의 refresh 토큰이 모두 폐기됩니다(이미 받은 access 는 만료까지 유효).
+사용자를 비활성화·강등·삭제하면(또는 `--set-password` 로 비밀번호를 바꾸면) 그 사용자의 refresh 토큰과 `/admin` 관리 세션이 모두 폐기됩니다(이미 받은 access 는 만료까지 유효).
 
 ```bash
 curl -X POST localhost:8000/api/v1/blog/posts -H 'Authorization: Bearer <access_token>' \
@@ -371,7 +371,7 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 
 비밀번호는 명령행 인자로 받지 않습니다(셸 기록에 남는다). 종료 코드는 0 성공 · 1 입력 거부 · 2 인자 오류입니다.
 만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다. **같은 계정이 `/admin` 로그인 계정입니다** — 활성 슈퍼유저만
-들어갈 수 있고, API·관리 화면에서 강등·비활성화하면 그 사용자의 관리 세션과 refresh 토큰이 즉시 지워져 다음 요청부터 로그인 화면으로 돌아갑니다.
+들어갈 수 있고, API·관리 화면에서 강등·비활성화하면 그 사용자의 관리 세션이 즉시 지워져 다음 요청부터 로그인 화면으로 돌아갑니다(refresh 토큰도 함께 지운다).
 
 ## 운영 배포 체크리스트
 

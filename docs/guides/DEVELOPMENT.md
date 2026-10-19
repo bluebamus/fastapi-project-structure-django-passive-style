@@ -473,8 +473,8 @@ async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service:
 - 관리 화면에 상태를 바꾸는 사용자 정의 작업을 더하면 GET `@action` 으로 만들지 않는다 — CSRF 미들웨어는 POST·PUT·PATCH·DELETE 만 본다
   (admin-session-hardening R-001). POST 로 노출하고 원본 대조 테스트에 항목을 더한다.
 - 관리 세션은 Redis 서버 세션이다(`app/core/security/admin_session.py`). 사용자의 권한을 빼앗는 새 경로(비활성화·강등·삭제·비밀번호 변경)를
-  만들면 `UserSessionRevoker.revoke`(`app/core/security/revocation.py` — refresh family + 관리 세션)를 **커밋 전**에 불러 그 사용자의 로그인 상태를
-  즉시 지운다. Redis 오류는 삼키지 않는다 — 예외가 커밋을 막게 둔다. API 는 provider `get_user_session_revoker` 로 주입받고(`UserService` 생성자의
+  만들면 조건을 따로 쓰지 말고 `revocation_for_change(변경 전 객체, 바꿀 값)`(삭제는 `revocation.REVOKE_ON_DELETE`)로 판정해 `UserSessionRevoker.revoke(user_id, revocation)`
+  (`app/core/security/revocation.py`)를 **커밋 전**에 부른다 — 비활성화·강등·비밀번호 변경·삭제는 관리 세션 + refresh 를 지운다(관리 화면 경로 = API 경로). Redis 오류는 삼키지 않는다 — 예외가 커밋을 막게 둔다. API 는 provider `get_user_session_revoker` 로 주입받고(`UserService` 생성자의
   `revoker`), 관리 화면은 `UserAdmin` 의 `on_model_change`·`on_model_delete` 가 `revoker_from_scope(request.scope)` 로 부른다. `after_*` 훅(커밋 뒤)에서
   폐기하지 않는다. 요청 밖 스크립트는 `scripts/create_superuser.py` 가 예시다.
 - 관리 화면 테스트 헬퍼는 `tests/admin_login.py` 에 있다 — `admin_login()`(로그인 화면의 hidden 토큰을 실어 POST), `admin_page_token()`
@@ -579,8 +579,9 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | `ADMIN_DISABLED=true` 면 관리 화면 경로가 404 이고 응답·헤더·로그 어디에도 나오지 않음, 예전 `ADMIN` 잔존 시 기동 실패 | `tests/core/test_admin_disabled.py` |
 | `/admin` 슈퍼유저 로그인(성공·실패 400·429·강등·로그아웃·세션 고정·쿠키 속성), 로그인 화면, 세션은 `/admin` 전용 | `tests/core/security/test_admin_auth.py` · `app/features/auth/tests/test_admin_credentials.py` · `tests/core/test_admin_login_flow.py` · `tests/core/test_admin_wiring.py` |
 | 관리 세션 Redis 저장(절대·미사용 만료, 회전, 사용자별 폐기, Redis 장애 503), API 폐기 | `tests/core/security/test_admin_session.py` · `tests/core/security/test_admin_auth.py` · `app/features/user/tests/test_endpoint.py` |
-| 로그인 이후 CSRF(생성·수정·삭제·가져오기·로그아웃 POST, GET 로그아웃 405), `UserAdmin` 변경 전후 비교 폐기(refresh + 관리 세션)·자기 강등·폐기 실패 시 커밋 차단, sqladmin 원본 대조 | `tests/core/test_admin_csrf.py` |
-| `create_superuser --set-password` 뒤 관리 세션 폐기(Redis 실패면 종료 코드 1) | `tests/scripts/test_create_superuser.py` |
+| 로그인 이후 CSRF(생성·수정·삭제·가져오기·로그아웃 POST, GET 로그아웃 405), `UserAdmin` 변경 전후 비교 폐기·자기 강등·폐기 실패 시 커밋 차단, sqladmin 원본 대조 | `tests/core/test_admin_csrf.py` |
+| 폐기 판정 표(변경별 관리 세션·refresh 집합) | `tests/core/security/test_revocation.py` |
+| `create_superuser --set-password` 뒤 관리 세션·refresh 폐기(Redis 실패면 종료 코드 1) | `tests/scripts/test_create_superuser.py` |
 | `ready()` 에 I/O 없음 | `tests/core/apps/test_installed_apps.py` |
 | 공개 route 골든 목록 | `tests/test_route_inventory.py` |
 | OpenAPI 계약(operationId·태그·응답 모델·스키마 이름) | `tests/test_openapi_contract.py` · `tests/test_layering_and_openapi.py` |

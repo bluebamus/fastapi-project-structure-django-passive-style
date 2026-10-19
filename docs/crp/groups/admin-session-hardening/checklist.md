@@ -21,3 +21,13 @@
 - [x] (F-006) `UserSessionRevoker`(refresh + 관리 세션) · API·관리 화면 같은 집합 · 관리 화면 폐기를 커밋 전 훅(`on_model_change`·`on_model_delete`)으로 · 폐기 실패 시 수정·삭제가 커밋되지 않음 · fail-on-revert
 - [x] 문서 — 가이드 폐기 표·시퀀스, ARCHITECTURE·DEVELOPMENT 폐기 서술, residual-risk R-005·R-007
 - [x] 검사 — run-log Round 2
+
+## Round 3 — 2026-10-19 · 감독자 정정(REQ-004) · 구현 · 검증
+- [x] (F-007) 판정 `revocation_for_change` 하나 · 강등은 관리 세션만(refresh 회전이 DB 재조회 — 코드 확인) · 스크립트 비밀번호 변경도 refresh 폐기 · 판정·API·관리 화면·스크립트 테스트 · fail-on-revert
+- [x] 문서 — 가이드 폐기 표(변경별 두 집합), ARCHITECTURE·DEVELOPMENT·README
+- [x] 검사 — run-log Round 3
+
+## Round 4 — 2026-10-19 · 감독자 최종 정정(REQ-005) · 구현 · 검증
+- [x] UserService 의 강등 시 refresh 폐기 확인(코드·고정 테스트) → 관리 화면도 폐기, 판정 함수 하나 유지 · 고정 테스트 원복 · 변이 하나가 두 경로를 함께 깨는지 확인
+- [x] 문서 — 가이드·ARCHITECTURE·DEVELOPMENT·README·review 의 강등 규칙 원복
+- [x] 검사 — run-log Round 4

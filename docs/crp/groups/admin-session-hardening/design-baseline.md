@@ -26,6 +26,8 @@
 |---|---|---|---|---|
 | REQ-001 | 2026-10-19 | "관리 화면에 로그인한 뒤 쓰는 생성·수정·삭제 폼과, GET 방식 로그아웃 링크의 CSRF 토큰 / 관리 세션을 Redis로 옮기는 작업 / 필터 하나로 시작일~종료일 범위를 한 번에 지정하는 기능 — 이 작업들을 진행해줘. redis는 방법 2로 진행해줘. 405 문제는 현행 유지한다." | ① 관리 세션을 Redis 서버 세션으로(쿠키에는 세션 ID 만, 즉시 폐기). ② 로그인 이후 상태를 바꾸는 모든 관리 요청과 로그아웃에 CSRF 토큰, 로그아웃은 POST. ③ `LocalDateFilter` 에 기간 연산. ④ 405 `Allow` 불완전은 현행 유지(ADR-006) | Active |
 | REQ-002 | 2026-10-19 | (감독자 추가 지시) "관리 화면(UserAdmin)에서 사용자를 직접 수정(is_active=False·is_superuser 해제·비밀번호 변경)하거나 삭제했을 때도 그 사용자의 관리 세션을 즉시 전부 폐기하라 … 변경 전후를 비교해 … 일반 수정은 폐기 안 함. 자기 자신을 강등하면 현재 세션도 끊긴다 — 그대로 둔다." | `UserAdmin` 훅이 변경 전후를 비교해 서비스 계층과 같은 폐기 함수를 부른다(ADR-005 → 시점·집합은 ADR-008) | Active |
+| REQ-005 | 2026-10-19 | (감독자 최종 정정) "강등 시 refresh 처리의 원칙은 '이 저장소 안에서 관리 화면 경로 = API 경로(UserService)'. … UserService 가 강등 시 refresh 를 폐기하면 관리 화면도 폐기 … 같은 판정 함수 … 기존 동작을 고정하는 테스트는 깨지 말 것." | UserService 는 강등 시 refresh 를 폐기한다(코드·`test_demotion_revokes_refresh_families`) → 두 경로 모두 폐기(ADR-010, ADR-009 의 강등 규칙 대체) | Active |
+| REQ-004 | 2026-10-19 | (감독자 정정 지시) "refresh 토큰 폐기 집합은 … 비활성화·비밀번호 해시 변경·삭제만이다. 슈퍼유저 해제(강등)는 관리 세션만 폐기하고 refresh 는 유지한다 — 강등된 사용자는 일반 사용자로 API 를 계속 쓰고, refresh 회전 때 DB 값으로 권한이 재발급되기 때문이다 … 판정 함수 하나에서 두 집합을 돌려주게 하고 조건을 중복하지 말 것." | 판정 `revocation_for_change` 하나가 관리 세션·refresh 두 집합을 정한다(ADR-009) — 강등 규칙은 REQ-005 로 대체 | Superseded(부분) |
 | REQ-003 | 2026-10-19 | (감독자 정정 지시) "관리 화면 사용자 변경 시 폐기는 after_* 가 아니라 커밋 전 훅 on_model_change / on_model_delete 에서 하라 — Redis 폐기가 실패하면 예외로 커밋 자체를 막아 … 같은 조건에서 API refresh 토큰도 폐기하라 — 기존 refresh 저장소의 revoke_user 를 재사용 … API 경로와 관리 화면 경로가 같은 폐기 집합을 갖게 한다." | 폐기 시점을 커밋 전으로, 폐기 집합을 refresh family + 관리 세션으로 통일(ADR-008) | Active |
 
 ## 3. 설계 결정 (ADR)
@@ -106,7 +108,7 @@
 - C-5: 로그인 흐름(302·400·429·403·매 요청 DB 확인)은 그대로다.
 - C-6: 덮어쓰는 sqladmin 템플릿은 최소(`base.html` 하나 추가, 원본 확장) — 원본 대조 테스트로 업그레이드 어긋남을 잡는다.
 
-### ADR-008 폐기는 커밋 전, 집합은 refresh + 관리 세션 하나 (REQ-003, ADR-005 의 관리 화면 부분을 대체)
+### ADR-008 폐기는 커밋 전, 집합은 refresh + 관리 세션 하나 (REQ-003, ADR-005 의 관리 화면 부분을 대체 · 집합 판정은 ADR-009 로 대체)
 - `UserSessionRevoker`(`app/core/security/revocation.py`): `revoke(user_id)` = `RefreshTokenStore.revoke_user` + `AdminSessionStore.revoke_user`.
   폐기 로직은 각 저장소에 그대로 있고 이 클래스는 묶기만 한다(중복 구현 없음). API 는 provider `get_user_session_revoker` 로 주입받고
   (`UserService` 생성자는 `revoker` 하나), 관리 화면은 `revoker_from_scope(scope)` — 세션 미들웨어가 scope 에 둔 저장소의 Redis 로
@@ -119,3 +121,44 @@
   세션만 지워진 상태 — 다시 로그인하면 되는 안전한 쪽이다. 관리 화면에서 강등해도 API refresh 가 남으면 API 쪽 권한 회수가 늦어진다 —
   같은 집합으로 맞춘다.
 - 폐기와 커밋 사이 아주 짧은 틈에 그 사용자가 다시 로그인하면 새 세션이 생길 수 있다 — 커밋 뒤 매 요청 DB 확인(`authenticate`)이 막는다(R-005).
+
+### ADR-009 폐기 판정 하나, 두 집합 — 강등은 관리 세션만 (REQ-004 · **Superseded by ADR-010** — 판정 함수 구조는 유지, 강등 규칙만 대체)
+- `revocation_for_change(before, changes) -> Revocation(admin_sessions, refresh)`(`app/core/security/revocation.py`)가 변경 전 값과 바꿀 값을
+  비교해 두 집합을 함께 정한다. 상수 `REVOKE_ON_DELETE`·`REVOKE_ON_PASSWORD_CHANGE` 는 둘 다. `UserSessionRevoker.revoke(user_id, revocation)` 는
+  판정대로만 부른다. 조건은 이 한 곳에만 있다 — `UserService.update_user/delete_user`, `UserAdmin.on_model_change/on_model_delete`,
+  `scripts/create_superuser.revoke_sessions_in_redis` 가 같은 판정을 쓴다.
+
+  | 변경 | 관리 세션 | refresh |
+  |---|---|---|
+  | 비활성화(True→False) | 지운다 | 지운다 |
+  | 슈퍼유저 해제(True→False) | 지운다 | **유지** |
+  | 비밀번호 해시 변경 | 지운다 | 지운다 |
+  | 삭제 | 지운다 | 지운다 |
+  | 그 밖(이름·이메일, 이미 꺼진 값을 다시 끔) | 유지 | 유지 |
+
+- 강등에서 refresh 를 남기는 이유(코드 확인): `AuthService.refresh` 는 jti 를 소비한 뒤 `UserRepository.get_by_id` 로 사용자를 다시 읽어
+  비활성이면 거부하고, 아니면 그때의 `is_superuser` 로 access 를 발급한다(`_issue`). 강등된 사용자는 일반 사용자로 API 를 계속 쓰고, 다음 회전부터
+  슈퍼유저 권한이 빠진다. 이미 발급된 access 는 만료(15분)까지 이전 권한이다 — security-ops-hardening ADR-006(사용자 결정)과 같다.
+- **예전 동작 변경:** service-hardening 이후 API 강등(`PATCH is_superuser=false`)도 refresh 를 폐기했다(`test_demotion_revokes_refresh_families`).
+  이 결정으로 강등은 refresh 를 남긴다(`test_demotion_keeps_refresh_families`). 판정이 변경 전 값과 비교하므로 이미 비활성인 사용자에게
+  `is_active=false` 를 다시 보내도 폐기하지 않는다.
+- 비밀번호 변경 스크립트는 API 와 다른 프로세스라 커밋 뒤에 폐기한다(실패하면 종료 코드 1, 문구 "비밀번호는 바뀌었지만 세션을 지우지 못했습니다").
+
+### ADR-010 관리 화면 경로 = API 경로 — 강등도 refresh 를 폐기한다 (REQ-005, ADR-009 의 강등 규칙 대체)
+- 확인: 이 저장소의 `UserService.update_user` 는 service-hardening 부터 `is_active` 또는 `is_superuser` 를 False 로 바꾸면 refresh family 를 폐기했다
+  (`a3af9ac` 기준 코드, 고정 테스트 `test_demotion_revokes_refresh_families`). ADR-009 가 이 테스트를 바꾼 것을 되돌렸다 — 기존 동작을 고정하는
+  테스트는 그대로다(`git diff a3af9ac -- app/features/user/tests/test_endpoint.py` 에 지운 줄 없음).
+- 판정 `revocation_for_change` 는 그대로 두 집합을 돌려준다(ADR-009 의 구조 유지). 지금 두 집합은 같다:
+
+  | 변경 | 관리 세션 | refresh |
+  |---|---|---|
+  | 비활성화(True→False) | 지운다 | 지운다 |
+  | 슈퍼유저 해제(True→False) | 지운다 | 지운다 |
+  | 비밀번호 해시 변경 | 지운다 | 지운다 |
+  | 삭제 | 지운다 | 지운다 |
+  | 그 밖(이름·이메일, 이미 꺼진 값을 다시 끔) | 유지 | 유지 |
+
+- 참고(코드 확인): refresh 회전(`AuthService.refresh`)은 DB 를 다시 읽어 비활성이면 거부하고 그때의 `is_superuser` 로 발급한다 — 강등 뒤 refresh 를
+  남겨도 권한은 다음 회전에서 빠지지만, 두 경로를 같게 하는 원칙과 기존 동작 유지가 우선이다.
+- 한 판정을 두 경로가 쓰므로 변이 하나가 두 경로 테스트를 함께 깬다(확인: `demoted = False` → API `test_demotion_revokes_refresh_families` +
+  관리 화면 `test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions[demote]` 동시 실패, refresh 집합에서 강등 제거 → 같은 두 건 실패).
