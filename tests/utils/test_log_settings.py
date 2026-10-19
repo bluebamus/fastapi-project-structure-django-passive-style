@@ -50,7 +50,7 @@ def _set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, env: str = "production
 
 
 def _console_handlers(handlers: dict) -> list[str]:
-    return [name for name, h in handlers.items() if h["class"] == "logging.StreamHandler"]
+    return [name for name, h in handlers.items() if h.get("class") == "logging.StreamHandler"]
 
 
 # =============================================================================
@@ -117,7 +117,7 @@ def test_file_format_is_written_to_file(restore_logging, monkeypatch, tmp_path):
     for h in logging.getLogger().handlers:
         h.flush()
 
-    app_log = next(p for p in tmp_path.iterdir() if p.name.endswith("_app.log"))
+    app_log = tmp_path / "app.log"
     lines = app_log.read_text(encoding="utf-8").splitlines()
     assert any(line.endswith("|WARNING|to-file") and line.startswith("F|20") for line in lines)
 
@@ -131,8 +131,10 @@ def test_uvicorn_direct_run_follows_console_format_and_date(monkeypatch, tmp_pat
     )
     cfg = setup_uvicorn_logging()
 
-    assert _formatter(cfg["formatters"]["default"]).format(_record()) == "U|2026|hello"
-    assert cfg["formatters"]["access"]["datefmt"] == "%Y"
+    assert _formatter(cfg["formatters"]["app"]).format(_record()) == "U|2026|hello"
+    # 접속 줄 전용 포매터는 없다 — uvicorn 로거는 root(앱 콘솔·파일)로 전파된다.
+    assert set(cfg["formatters"]) == {"app", "file"}
+    assert all(f["datefmt"] == "%Y" for f in cfg["formatters"].values())
 
 
 def test_uvicorn_direct_run_access_line_renders(restore_logging, monkeypatch, tmp_path, capsys):
@@ -145,14 +147,19 @@ def test_uvicorn_direct_run_access_line_renders(restore_logging, monkeypatch, tm
     dictConfig(setup_uvicorn_logging())
     access = logging.getLogger("uvicorn.access")
     buf = io.StringIO()
-    access.handlers[0].setStream(buf)
+    next(h for h in logging.getLogger().handlers if type(h) is logging.StreamHandler).setStream(buf)
 
-    # uvicorn.protocols.http 의 호출과 같은 모양(5-튜플 args)
-    access.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", "/x?password=secret42", "1.1", 200)
+    # uvicorn.protocols.http 의 호출과 같은 모양(5-튜플 args, uvicorn 패키지 경로)
+    args = ("1.2.3.4:5", "GET", "/x?password=secret42", "1.1", 200)
+    path = "/py/site-packages/uvicorn/protocols/http/h11_impl.py"
+    access.handle(
+        access.makeRecord(access.name, logging.INFO, path, 1, '%s - "%s %s HTTP/%s" %d', args, None)
+    )
 
     assert capsys.readouterr().err == "", "접속 로그 포맷 오류가 stderr 로 나갔다"
     line = buf.getvalue().strip()
-    assert line.endswith('INFO  [app=uvicorn] 1.2.3.4:5 - "GET /x?password=*** HTTP/1.1" 200'), line
+    assert "INFO  [app=uvicorn] [h11_impl:-:" in line, line  # 앱과 같은 형식 — 헤더는 로거 이름에서
+    assert line.endswith('] 1.2.3.4:5 - "GET /x?password=*** HTTP/1.1" 200'), line
     assert line.startswith("[20") and " UTC] " in line and line[5] == "/"  # LOG_DATE_FORMAT·UTC
 
 
@@ -202,7 +209,7 @@ def test_console_disabled_removes_only_console_handlers(monkeypatch, tmp_path):
 def test_console_enabled_keeps_console_handlers(monkeypatch, tmp_path):
     _set(monkeypatch, tmp_path, LOG_FILE_ENABLED=False, LOG_CONSOLE_ENABLED=True)
     assert _console_handlers(logs_config.build_dictconfig()["handlers"]) == ["console"]
-    assert _console_handlers(setup_uvicorn_logging()["handlers"]) == ["default", "access"]
+    assert _console_handlers(setup_uvicorn_logging()["handlers"]) == ["console"]
 
 
 def test_all_outputs_off_warns_once_on_stderr(restore_logging, monkeypatch, tmp_path, capsys):
@@ -240,5 +247,60 @@ def test_empty_date_format_is_rejected(monkeypatch):
 
 
 def test_valid_custom_format_loads(monkeypatch):
-    monkeypatch.setenv("LOG_CONSOLE_FORMAT", "{asctime} {tzname} {appname} {classname} {message}")
+    monkeypatch.setenv(
+        "LOG_CONSOLE_FORMAT",
+        "{asctime} {levelname} {appname} {module} {classname} {funcName} {message}",
+    )
     assert LogSettings(_env_file=None).LOG_CONSOLE_FORMAT.startswith("{asctime}")  # type: ignore[call-arg]
+
+
+# =============================================================================
+# logging-overhaul — 필수 필드(L3) · 앱별 레벨(L4) · 보관일수(L6)
+# =============================================================================
+@pytest.mark.parametrize("key", ["LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT"])
+def test_format_without_required_fields_is_rejected(monkeypatch, key):
+    monkeypatch.setenv(key, "{asctime} {levelname} {message}")
+    with pytest.raises(ValidationError) as exc:
+        LogSettings(_env_file=None)  # type: ignore[call-arg]
+    text = str(exc.value)
+    for field in ("appname", "module", "classname", "funcName"):
+        assert field in text
+
+
+def test_default_formats_have_every_required_field():
+    from config import REQUIRED_LOG_FIELDS
+
+    for field in REQUIRED_LOG_FIELDS:
+        assert "{" + field in PREVIOUS_FORMAT
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", {}),
+        (
+            "blog=DEBUG, celery=info ,sqlalchemy=WARNING",
+            {"blog": 10, "celery": 20, "sqlalchemy": 30},
+        ),
+    ],
+)
+def test_app_levels_parse(monkeypatch, raw, expected):
+    monkeypatch.setenv("LOG_APP_LEVELS", raw)
+    assert LogSettings(_env_file=None).app_levels() == expected  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("raw", ["blog=LOUD", "blog", "=DEBUG", "blog=DEBUG,blog=INFO"])
+def test_invalid_app_levels_are_rejected(monkeypatch, raw):
+    monkeypatch.setenv("LOG_APP_LEVELS", raw)
+    with pytest.raises(ValidationError, match="LOG_APP_LEVELS"):
+        LogSettings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_retention_days_default_zero_and_negative(monkeypatch):
+    monkeypatch.delenv("LOG_RETENTION_DAYS", raising=False)
+    assert LogSettings(_env_file=None).LOG_RETENTION_DAYS == 30  # type: ignore[call-arg]
+    monkeypatch.setenv("LOG_RETENTION_DAYS", "0")
+    assert LogSettings(_env_file=None).LOG_RETENTION_DAYS == 0  # type: ignore[call-arg]
+    monkeypatch.setenv("LOG_RETENTION_DAYS", "-1")
+    with pytest.raises(ValidationError, match="LOG_RETENTION_DAYS"):
+        LogSettings(_env_file=None)  # type: ignore[call-arg]

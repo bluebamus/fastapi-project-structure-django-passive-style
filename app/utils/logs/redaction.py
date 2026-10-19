@@ -22,6 +22,9 @@ from typing import Any
 
 MASK = "***"
 
+#: 이보다 짧은 설정 비밀값은 원문 일치로 가리지 않는다(오탐 방지) — ``set_literals`` 참고.
+_LITERAL_MIN_LENGTH = 4
+
 # 키 이름이 이 단어로 **끝나면** 값을 가린다 — ``MYSQL_PASSWORD=…``·``"refresh_token": "…"``·
 # ``Authorization: Bearer …``. ``token_type`` 처럼 뒤에 다른 말이 붙으면 걸리지 않는다.
 _KEY_WORDS = (
@@ -29,8 +32,10 @@ _KEY_WORDS = (
 )
 
 _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    # DSN·URL 의 userinfo 비밀번호: scheme://user:PASSWORD@host
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s:/@]*:)[^\s@/]+(@)"), rf"\1{MASK}\2"),
+    # DSN·URL 의 userinfo: scheme://USER:PASSWORD@host — 계정명과 비밀번호를 모두 가린다.
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s:/@]+:[^\s@/]+@"), rf"\1{MASK}:{MASK}@"),
+    # 계정명 없는 userinfo: scheme://:PASSWORD@host (인증만 있는 Redis)
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://:)[^\s@/]+@"), rf"\1{MASK}@"),
     # key=value · key: value · "key": "value" (Authorization 은 scheme 까지 한 덩어리)
     (
         re.compile(
@@ -51,11 +56,29 @@ class SecretRedactor:
 
     def __init__(self, rules: tuple[tuple[re.Pattern[str], str], ...] = _RULES) -> None:
         self._rules = rules
+        self._literals: tuple[tuple[re.Pattern[str], str], ...] = ()
         # traceback 을 미리 렌더할 때만 쓴다. 표준 형식이라 어느 포매터의 결과와도 같다.
         self._exc_formatter = logging.Formatter()
 
+    def set_literals(self, values: list[str]) -> None:
+        """설정 비밀값 원문을 가린다(``config.LOG_REDACTED_SETTINGS``). 빈 값은 뺀다.
+
+        4글자 이상은 어디에 나오든 가린다. 그보다 짧은 값(주로 계정명)은 일반 단어와 겹치므로
+        ``user=``·``username=`` 뒤에 올 때만 가린다 — DSN 의 계정명은 DSN 규칙이 가린다.
+        """
+        unique = sorted({v for v in values if v.strip()}, key=len, reverse=True)
+        long_ = "|".join(re.escape(v) for v in unique if len(v) >= _LITERAL_MIN_LENGTH)
+        short = "|".join(re.escape(v) for v in unique if len(v) < _LITERAL_MIN_LENGTH)
+        rules: list[tuple[re.Pattern[str], str]] = []
+        if long_:
+            rules.append((re.compile(long_), MASK))
+        if short:
+            user_key = r"(?i:((?<![a-z0-9])user(?:name)?[\"']?\s*[:=]\s*[\"']?))"
+            rules.append((re.compile(rf"{user_key}(?:{short})(?!\w)"), rf"\1{MASK}"))
+        self._literals = tuple(rules)
+
     def redact(self, text: str) -> str:
-        for pattern, replacement in self._rules:
+        for pattern, replacement in self._literals + self._rules:
             text = pattern.sub(replacement, text)
         return text
 

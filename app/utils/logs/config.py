@@ -31,7 +31,9 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
 
 from __future__ import annotations
 
-from config import DEFAULT_LOG_FORMAT, app_settings, log_settings, timezone_settings
+import logging
+
+from config import DEFAULT_LOG_FORMAT, app_settings, log_settings
 
 # 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
 # 실제로 쓰는 형식은 LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT 이고, 이 값은 그 기본값이다.
@@ -62,11 +64,31 @@ def formatter_spec(fmt: str, use_utc: bool, with_ms: bool = False) -> dict:
     }
 
 
-def build_dictconfig() -> dict:
+#: 프로세스 종류 → (일반 파일, 에러 파일). 웹과 워커가 같은 파일을 회전시키지 않게 나눈다(ADR-003).
+LOG_FILES = {
+    "web": ("app.log", "error.log"),
+    "celery": ("celery.log", "celery-error.log"),
+}
+
+#: uvicorn 로거는 자기 핸들러 없이 root 로 보낸다 — ``python main.py``·``uvicorn main:app`` CLI 모두
+#: 앱 핸들러(콘솔·파일)·포맷·헤더·레벨을 그대로 탄다(ADR-001). 앱별 로거 등록이 아니다.
+UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+
+def build_dictconfig(process: str = "web", logfile: str | None = None) -> dict:
+    """앱·uvicorn·Celery 워커가 함께 쓰는 dictConfig.
+
+    Args:
+        process: ``web``(기본) 또는 ``celery`` — 파일 이름을 정한다. 정하는 곳은 진입점
+            (``configure_logging`` 기본값 = 웹, Celery ``setup_logging`` 수신자 = celery)이다.
+        logfile: Celery ``--logfile`` — 주면 그 파일에도 같은 형식으로 쓴다.
+    """
     env = _env()
     level = _level()
     use_utc = env in ("production", "staging")
     with_ms = env == "development"
+    app_levels = log_settings.app_levels()
+    filters = ["sql_noise", "context", "app_levels"]
 
     handlers: dict = {}
     root_handlers: list[str] = []
@@ -75,36 +97,41 @@ def build_dictconfig() -> dict:
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
             "formatter": "app",
-            "filters": ["sql_noise", "context"],
+            "filters": filters,
             "level": log_settings.get_effective_console_level(app_settings.DEBUG),
         }
         root_handlers.append("console")
 
     if env in ("production", "staging") and log_settings.LOG_FILE_ENABLED:
         log_dir = log_settings.get_log_dir()
-        today = timezone_settings.now().strftime("%Y-%m-%d")
-        max_bytes = log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
-        handlers["file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": str(log_dir / log_settings.LOG_APP_FILENAME.format(date=today)),
-            "maxBytes": max_bytes,
-            "backupCount": log_settings.LOG_BACKUP_COUNT,
+        for name, filename, file_level in zip(
+            ("file", "error_file"),
+            LOG_FILES[process],
+            (log_settings.LOG_FILE_LEVEL, "ERROR"),
+            strict=True,
+        ):
+            handlers[name] = {
+                "()": "app.utils.logs.handlers.DailySizeRotatingFileHandler",
+                "filename": str(log_dir / filename),
+                "max_bytes": log_settings.LOG_MAX_SIZE_MB * 1024 * 1024,
+                "retention_days": log_settings.LOG_RETENTION_DAYS,
+                # 파일은 staging/production 에서만 붙고 그 시각은 UTC 다 — 자정도 UTC 로 맞춘다(ADR-004).
+                "utc": use_utc,
+                "formatter": "file",
+                "filters": filters,
+                "level": file_level,
+            }
+            root_handlers.append(name)
+
+    if logfile:
+        handlers["logfile"] = {
+            "class": "logging.FileHandler",
+            "filename": logfile,
             "encoding": "utf-8",
             "formatter": "file",
-            "filters": ["sql_noise", "context"],
-            "level": log_settings.LOG_FILE_LEVEL,
+            "filters": filters,
         }
-        handlers["error_file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": str(log_dir / log_settings.LOG_ERROR_FILENAME.format(date=today)),
-            "maxBytes": max_bytes,
-            "backupCount": log_settings.LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": "file",
-            "filters": ["sql_noise", "context"],
-            "level": "ERROR",
-        }
-        root_handlers += ["file", "error_file"]
+        root_handlers.append("logfile")
 
     if not root_handlers:
         # 출력이 모두 꺼졌다. 핸들러 0개면 logging.lastResort 가 WARNING 이상을 stderr 로
@@ -112,6 +139,7 @@ def build_dictconfig() -> dict:
         handlers["null"] = {"class": "logging.NullHandler"}
         root_handlers.append("null")
 
+    level_no = logging.getLevelName(level.upper())
     return {
         "version": 1,
         "disable_existing_loggers": False,
@@ -123,11 +151,21 @@ def build_dictconfig() -> dict:
                 "()": "app.utils.logs.filters.SqlNoiseFilter",
                 "allow_sql_echo": log_settings.LOG_SQL_ECHO_ENABLED,
             },
+            # 헤더별 최소 레벨(LOG_APP_LEVELS). context 뒤에 있어야 appname 이 채워져 있다.
+            "app_levels": {
+                "()": "app.utils.logs.filters.AppLevelFilter",
+                "levels": app_levels,
+                "default": level_no,
+            },
         },
         "formatters": {
             "app": formatter_spec(log_settings.LOG_CONSOLE_FORMAT, use_utc, with_ms),
             "file": formatter_spec(log_settings.LOG_FILE_FORMAT, use_utc, with_ms),
         },
         "handlers": handlers,
-        "root": {"handlers": root_handlers, "level": level},
+        "loggers": {
+            name: {"handlers": [], "propagate": True, "level": "NOTSET"} for name in UVICORN_LOGGERS
+        },
+        # 레코드가 필터까지 오도록 root 는 전체 최솟값 — 실제 컷은 app_levels 필터가 한다.
+        "root": {"handlers": root_handlers, "level": min([level_no, *app_levels.values()])},
     }

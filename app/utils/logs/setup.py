@@ -10,32 +10,35 @@ import logging
 import sys
 from logging.config import dictConfig
 
-from app.utils.logs.config import (
-    _env,
-    _level,
-    build_dictconfig,
-    console_enabled,
-    formatter_spec,
-)
-from app.utils.logs.redaction import install_record_redaction
-from config import log_settings
+from app.utils.logs.config import build_dictconfig
+from app.utils.logs.filters import FIXED_HEADERS
+from app.utils.logs.redaction import install_record_redaction, redactor
+from config import INSTALLED_APPS, log_secret_values, log_settings
 
 _configured = False
 
 
-def configure_logging(force: bool = False) -> None:
+def configure_logging(
+    force: bool = False, process: str = "web", logfile: str | None = None
+) -> None:
     """환경별 로깅 구성을 root 로거에 적용한다(idempotent).
 
     비밀값 가리기(:mod:`app.utils.logs.redaction`)도 여기서 건다 — 핸들러가 아니라
-    LogRecord factory 에 걸므로 uvicorn CLI·Celery 처럼 우리가 핸들러를 소유하지 않는
-    경로도 같은 규칙을 탄다.
+    LogRecord factory 에 걸므로 Celery 처럼 우리가 핸들러를 소유하지 않는 경로도 같은 규칙을 탄다.
+    ``process`` 는 진입점이 정한다 — 기본은 웹, Celery 는 ``setup_logging`` 수신자가 ``celery`` 로 부른다.
     """
     global _configured
     install_record_redaction()
     if _configured and not force:
         return
-    cfg = build_dictconfig()
+    redactor.set_literals(log_secret_values())
+    access = logging.getLogger("uvicorn.access")
+    # uvicorn --no-access-log 은 handlers=[]·propagate=False 로 끈다 — 다시 켜지 않는다.
+    access_off = not access.handlers and not access.propagate
+    cfg = build_dictconfig(process, logfile)
     dictConfig(cfg)
+    if access_off:
+        access.propagate = False
     _configured = True
     if cfg["root"]["handlers"] == ["null"]:
         # 조용히 로그를 잃지 않게 — 로깅이 꺼졌으니 stderr 에 직접 한 줄 남긴다.
@@ -45,6 +48,18 @@ def configure_logging(force: bool = False) -> None:
             "LOG_FILE_ENABLED=true 일 때만 붙는다)",
             file=sys.stderr,
         )
+    unknown = sorted(set(log_settings.app_levels()) - _known_headers())
+    if unknown:
+        logging.getLogger(__name__).warning(
+            "LOG_APP_LEVELS 에 모르는 헤더가 있습니다(오타가 아니면 — 아직 없는 기능 등 — 무시해도 됩니다): %s",
+            ", ".join(unknown),
+        )
+
+
+def _known_headers() -> set[str]:
+    """``INSTALLED_APPS`` 의 기능명 + 고정 헤더."""
+    features = {path.split(".")[2] for path in INSTALLED_APPS if path.startswith("app.features.")}
+    return features | FIXED_HEADERS
 
 
 def get_logger(name: str = "app") -> logging.Logger:
@@ -58,57 +73,9 @@ def get_logger(name: str = "app") -> logging.Logger:
 
 
 def setup_uvicorn_logging() -> dict:
-    """Uvicorn(log_config)용 dictConfig. 앱 포맷과 동일한 헤더를 사용한다.
+    """``python main.py`` 의 ``uvicorn.run(log_config=...)`` 용 — 앱과 **같은** dictConfig 다.
 
-    ``default`` 는 ``LOG_CONSOLE_FORMAT``, 둘 다 ``LOG_DATE_FORMAT`` 을 따른다. access 줄은
-    요청 라인 전용 형식이라 고정이다. ``LOG_CONSOLE_ENABLED=false`` 면 콘솔 핸들러를 만들지
-    않고 root(파일 핸들러가 있으면 그쪽)로 전파한다.
+    uvicorn 로거는 자기 핸들러 없이 root 로 전파되므로 서버 줄·접속 줄이 앱 콘솔·파일에 같은 형식으로
+    나온다. 접속 줄의 요청 라인(``client - "GET /p HTTP/1.1" 200``)은 uvicorn 이 넘기는 메시지 그대로다.
     """
-    env = _env()
-    level = _level()
-    use_utc = env in ("production", "staging")
-    # {client_addr}·{request_line}·{status_code} 는 uvicorn AccessFormatter 만 채운다 — TzFormatter 에서
-    # 쓰면 줄마다 logging 오류. uvicorn 이 넘기는 메시지가 이미 `client - "METHOD path HTTP/v" status` 다.
-    access_fmt = "[{asctime} {tzname}] {levelname:5} [app=uvicorn] {message}"
-    console = console_enabled()
-    handlers: dict = {}
-    if console:
-        handlers = {
-            "default": {
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-                "formatter": "default",
-                "filters": ["context"],
-            },
-            "access": {
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-                "formatter": "access",
-                "filters": ["context"],
-            },
-        }
-
-    def _logger(handler: str) -> dict:
-        return {
-            "handlers": [handler] if console else [],
-            "level": level,
-            "propagate": not console,
-        }
-
-    return {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "filters": {
-            "context": {"()": "app.utils.logs.filters.ContextFilter"},
-        },
-        "formatters": {
-            "default": formatter_spec(log_settings.LOG_CONSOLE_FORMAT, use_utc),
-            "access": formatter_spec(access_fmt, use_utc),
-        },
-        "handlers": handlers,
-        "loggers": {
-            "uvicorn": _logger("default"),
-            "uvicorn.error": _logger("default"),
-            "uvicorn.access": _logger("access"),
-        },
-    }
+    return build_dictconfig()
