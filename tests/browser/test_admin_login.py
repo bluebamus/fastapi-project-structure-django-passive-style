@@ -112,7 +112,83 @@ async def test_superuser_logs_in_through_the_bootstrap_screen(live_server: str):
             assert cookies["admin_session"]["httpOnly"] is True
             assert cookies["admin_session"]["sameSite"] == "Strict"
 
-            await page.goto(f"{live_server}/admin/logout", wait_until="load")
+            # 로그아웃은 POST 전용이다 — 주소창 GET 은 405 이고 세션이 그대로다(admin-session-hardening ADR-003).
+            refused = await page.goto(f"{live_server}/admin/logout", wait_until="load")
+            assert refused is not None and refused.status == 405
+            await page.goto(f"{live_server}/admin/", wait_until="load")
+            assert page.url.endswith("/admin/"), "GET 로그아웃이 세션을 끊었다"
+            await page.get_by_role("link", name="Logout").click()
+            await page.wait_for_url("**/admin/login", wait_until="load")
+            await page.goto(f"{live_server}/admin/", wait_until="load")
+            assert page.url.endswith("/admin/login"), "로그아웃 뒤에도 관리 화면이 열린다"
+        finally:
+            await browser.close()
+
+
+async def test_create_delete_and_logout_carry_the_csrf_token_in_a_real_browser(live_server: str):
+    """로그인 이후 CSRF — 덮어쓴 ``sqladmin/base.html`` 의 스크립트가 실제로 토큰을 붙인다
+    (admin-session-hardening ADR-002·ADR-003).
+
+    생성(폼 POST → hidden ``csrf_token``)·삭제(모달 → ``$.ajax`` DELETE → ``X-CSRF-Token``)·로그아웃
+    (GET 링크 → 토큰을 실은 POST 폼)을 사람이 누르는 그대로 한다. 스크립트가 빠지면 셋 다 403/405 다.
+    대기는 ``load``·``domcontentloaded`` 로 한다(``networkidle`` 금지 — CDN 지연에 묶인다).
+    """
+    from playwright.async_api import async_playwright
+
+    username = f"browser-{uuid4().hex[:10]}"
+    sku = f"BR-{uuid4().hex[:10]}"
+    _create_superuser(username)
+
+    async with async_playwright() as playwright:
+        try:
+            browser = await playwright.chromium.launch()
+        except Exception as exc:  # pragma: no cover - 브라우저 미설치 시에만
+            pytest.fail(f"Chromium 을 띄우지 못했다: {exc}\n준비: {INSTALL_HINT}")
+        try:
+            page = await browser.new_page()
+            sent: list[tuple[str, str, str | None, str]] = []
+            page.on(
+                "request",
+                lambda r: sent.append(
+                    (r.method, r.url, r.headers.get("x-csrf-token"), r.post_data or "")
+                ),
+            )
+            await page.goto(f"{live_server}/admin/login", wait_until="load")
+            await page.get_by_label("사용자명").fill(username)
+            await page.get_by_label("비밀번호").fill(PASSWORD)
+            await page.get_by_role("button", name="로그인").click()
+            await page.wait_for_url(f"{live_server}/admin/", wait_until="load")
+            token = await page.get_attribute('meta[name="csrf-token"]', "content")
+            assert token and len(token) >= 43, f"관리 화면에 CSRF meta 가 없다: {token!r}"
+
+            # 생성 — 폼 제출에 hidden csrf_token 이 붙는다.
+            await page.goto(f"{live_server}/admin/product/create", wait_until="load")
+            await page.fill("#sku", sku)
+            await page.fill("#name", "브라우저 상품")
+            await page.fill("#price", "1.50")
+            await page.fill("#stock", "3")
+            await page.locator('input[type=submit][value="Save"]').click()
+            await page.wait_for_url("**/admin/product/list**", wait_until="load")
+            row = page.locator(f'tr:has-text("{sku}")')
+            assert await row.count() == 1, "생성이 반영되지 않았다(CSRF 403?)"
+            created = [s for s in sent if s[0] == "POST" and s[1].endswith("/admin/product/create")]
+            assert created and token in created[-1][3], "생성 폼에 토큰이 실리지 않았다"
+
+            # 삭제 — 모달의 $.ajax DELETE 에 X-CSRF-Token 헤더가 붙는다.
+            await row.locator('a[data-bs-target="#modal-delete"]').click()
+            await page.locator("#modal-delete-button").click()
+            await page.wait_for_load_state("domcontentloaded")
+            await page.goto(f"{live_server}/admin/product/list", wait_until="load")
+            assert await page.locator(f'tr:has-text("{sku}")').count() == 0, "삭제되지 않았다"
+            deletes = [s for s in sent if s[0] == "DELETE"]
+            assert deletes and deletes[-1][2] == token, f"삭제 요청에 토큰 헤더가 없다: {deletes}"
+
+            # 로그아웃 — 화면의 링크가 토큰을 실은 POST 가 된다.
+            await page.get_by_role("link", name="Logout").click()
+            await page.wait_for_url("**/admin/login", wait_until="load")
+            logouts = [s for s in sent if s[1].endswith("/admin/logout")]
+            assert logouts and logouts[-1][0] == "POST", f"로그아웃이 POST 가 아니다: {logouts}"
+            assert token in logouts[-1][3], "로그아웃 POST 에 토큰이 없다"
             await page.goto(f"{live_server}/admin/", wait_until="load")
             assert page.url.endswith("/admin/login"), "로그아웃 뒤에도 관리 화면이 열린다"
         finally:

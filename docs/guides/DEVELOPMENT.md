@@ -463,13 +463,27 @@ async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service:
 - 엔드포인트 테스트는 `get_current_principal` 을 override 하지 않고 `tests/auth_headers.py` 의 헤더(`admin_headers()`·`user_headers()`)로
   실제 토큰을 보낸다. 토큰 검증·`su` claim·`request.state.user_id` 기록까지 같이 시험된다.
 - `Principal` 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.
-- **API 에 세션(쿠키) 인증을 섞지 않는다.** `/admin` 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 `SessionMiddleware` 를 붙이거나
+- **API 에 세션(쿠키) 인증을 섞지 않는다.** `/admin` 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 세션 미들웨어를 붙이거나
   API 의존성이 `admin_session` 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 [관리 화면 인증 가이드](admin-auth-guide.html).
 - 새 기능의 `admin.py` ModelView 는 따로 인증을 붙이지 않는다 — `/admin` 전체가 `AdminAuthBackend` 뒤에 있다. 로그인 화면은
-  `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §12). 폼의 CSRF hidden 입력
-  (`csrf_token(request)`)을 지우면 모든 로그인이 403 이다. 테스트에서 로그인하려면 `tests/admin_login.py` 의 `admin_login()` 을 쓴다.
+  `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §16). 폼의 CSRF hidden 입력
+  (`csrf_token(request)`)을 지우면 모든 로그인이 403 이다. 로그인 이후 화면은 `app/templates/admin/sqladmin/base.html` 이 sqladmin 원본을 확장해
+  `<meta name="csrf-token">` 과 토큰을 붙이는 스크립트를 싣는다 — 이 파일을 지우거나 블록을 바꾸면 생성·수정·삭제·로그아웃이 403 이다.
+  sqladmin 을 올리면 `tests/core/test_admin_csrf.py`(원본 대조)가 먼저 깨진다 — 원본 블록·로그아웃 링크·`main.js` 요청 방식을 보고 스크립트를 맞춘다.
+- 관리 화면에 상태를 바꾸는 사용자 정의 작업을 더하면 GET `@action` 으로 만들지 않는다 — CSRF 미들웨어는 POST·PUT·PATCH·DELETE 만 본다
+  (admin-session-hardening R-001). POST 로 노출하고 원본 대조 테스트에 항목을 더한다.
+- 관리 세션은 Redis 서버 세션이다(`app/core/security/admin_session.py`). 사용자의 권한을 빼앗는 새 경로(비활성화·강등·삭제·비밀번호 변경)를
+  만들면 조건을 따로 쓰지 말고 `revocation_for_change(변경 전 객체, 바꿀 값)`(삭제는 `revocation.REVOKE_ON_DELETE`)로 판정해 `UserSessionRevoker.revoke(user_id, revocation)`
+  (`app/core/security/revocation.py`)를 **커밋 전**에 부른다 — 비활성화·강등·비밀번호 변경·삭제는 관리 세션 + refresh 를 지운다(관리 화면 경로 = API 경로). Redis 오류는 삼키지 않는다 — 예외가 커밋을 막게 둔다. API 는 provider `get_user_session_revoker` 로 주입받고(`UserService` 생성자의
+  `revoker`), 관리 화면은 `UserAdmin` 의 `on_model_change`·`on_model_delete` 가 `revoker_from_scope(request.scope)` 로 부른다. `after_*` 훅(커밋 뒤)에서
+  폐기하지 않는다. 요청 밖 스크립트는 `scripts/create_superuser.py` 가 예시다.
+- 관리 화면 테스트 헬퍼는 `tests/admin_login.py` 에 있다 — `admin_login()`(로그인 화면의 hidden 토큰을 실어 POST), `admin_page_token()`
+  (로그인 이후 화면의 meta 토큰 — 생성·수정 폼에는 `csrf_token`, 삭제 같은 XHR 흉내에는 `X-CSRF-Token` 헤더로 싣는다), `admin_logout()`
+  (meta 토큰을 실어 POST `/admin/logout`). 로그아웃을 GET 으로 부르면 405 다. 세션이 Redis 에 있으므로 관리 화면 테스트는 `app.state.redis` 에
+  fakeredis(`fakeredis.aioredis.FakeRedis`)를 넣는다(`tests/core/test_admin_login_flow.py` 참고) — 없으면 관리 화면이 503 이다.
 - ModelView 의 시각 컬럼(`UTCDateTime`) 필터는 `OperationColumnFilter` 가 아니라 `LocalDateFilter(Model.created_at, title="생성일")`
-  (`app/core/admin_filters.py`)로 단다 — 연산 필터는 문자열을 바인딩해 목록이 500 이 된다.
+  (`app/core/admin_filters.py`)로 단다 — 연산 필터는 문자열을 바인딩해 목록이 500 이 된다. 연산은 같은 날·이후·이전·기간(`YYYY-MM-DD~YYYY-MM-DD`,
+  양 끝 포함)이다.
 
 ---
 
@@ -564,6 +578,10 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | registry core 가 웹 스택에 의존하지 않음 / `ADMIN_DISABLED=true` 에서 sqladmin 미로드 | `tests/core/apps/test_core_independence.py` · `tests/core/test_admin_lazy_loading.py` |
 | `ADMIN_DISABLED=true` 면 관리 화면 경로가 404 이고 응답·헤더·로그 어디에도 나오지 않음, 예전 `ADMIN` 잔존 시 기동 실패 | `tests/core/test_admin_disabled.py` |
 | `/admin` 슈퍼유저 로그인(성공·실패 400·429·강등·로그아웃·세션 고정·쿠키 속성), 로그인 화면, 세션은 `/admin` 전용 | `tests/core/security/test_admin_auth.py` · `app/features/auth/tests/test_admin_credentials.py` · `tests/core/test_admin_login_flow.py` · `tests/core/test_admin_wiring.py` |
+| 관리 세션 Redis 저장(절대·미사용 만료, 회전, 사용자별 폐기, Redis 장애 503), API 폐기 | `tests/core/security/test_admin_session.py` · `tests/core/security/test_admin_auth.py` · `app/features/user/tests/test_endpoint.py` |
+| 로그인 이후 CSRF(생성·수정·삭제·가져오기·로그아웃 POST, GET 로그아웃 405), `UserAdmin` 변경 전후 비교 폐기·자기 강등·폐기 실패 시 커밋 차단, sqladmin 원본 대조 | `tests/core/test_admin_csrf.py` |
+| 폐기 판정 표(변경별 관리 세션·refresh 집합) | `tests/core/security/test_revocation.py` |
+| `create_superuser --set-password` 뒤 관리 세션·refresh 폐기(Redis 실패면 종료 코드 1) | `tests/scripts/test_create_superuser.py` |
 | `ready()` 에 I/O 없음 | `tests/core/apps/test_installed_apps.py` |
 | 공개 route 골든 목록 | `tests/test_route_inventory.py` |
 | OpenAPI 계약(operationId·태그·응답 모델·스키마 이름) | `tests/test_openapi_contract.py` · `tests/test_layering_and_openapi.py` |

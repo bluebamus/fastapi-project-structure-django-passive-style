@@ -202,9 +202,9 @@ class AppSettings(BaseSettings):
 
     # 관리 화면(SQLAdmin) 끄기 (DEBUG 와 독립적으로 동작) — 예전 `ADMIN` 설정을 대체한다.
     # False(기본): /admin 마운트 — **활성 슈퍼유저 로그인**이 필요하다(admin-login ADR-001).
-    #   계정은 `scripts/create_superuser.py` 로 만들고, 세션 쿠키(`admin_session`, path=/admin,
-    #   SameSite=Strict, HttpOnly, 8시간)는 SESSION_SECRET_KEY 로 서명한다. 권한은 매 요청
-    #   DB 로 다시 확인하므로 강등·비활성화가 바로 반영된다.
+    #   계정은 `scripts/create_superuser.py` 로 만들고, 세션은 Redis 서버 세션이다(쿠키 `admin_session`
+    #   에는 세션 ID 만, path=/admin, SameSite=Strict, HttpOnly — 만료는 ADMIN_SESSION_* 설정).
+    #   권한은 매 요청 DB 로 다시 확인하므로 강등·비활성화가 바로 반영된다.
     # True: 관리 화면이 아예 없다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두
     #   생기지 않고, 앱의 어떤 응답(OpenAPI·/docs·오류 본문·헤더)에도 관리 화면 경로가 나오지
     #   않는다(admin-login ADR-005). 관리 화면을 쓰지 않는 배포는 true 로 둔다.
@@ -1079,10 +1079,11 @@ class SessionSettings(BaseSettings):
     Note:
         ``SESSION_COOKIE_NAME`` 의 소비처는 접속 로그 미들웨어다 — 그 쿠키 값을 ``session_id`` 로
         기록한다. API 인증은 JWT(Bearer) 라 API 는 세션 쿠키를 발급하지 않는다.
-        ``SESSION_SECRET_KEY`` 는 ``/admin`` 로그인 세션 쿠키(``admin_session``)의 서명 키다
-        (admin-login ADR-001). 관리 화면 쿠키 이름·만료(8시간)는 고정이라 ``SESSION_COOKIE_NAME``·
-        ``SESSION_EXPIRE_SECONDS`` 를 따르지 않으며, ``SESSION_COOKIE_NAME`` 이 ``admin_session`` 이면
-        기동이 멈춘다.
+        ``SESSION_SECRET_KEY`` 는 ``/admin`` 관리 세션의 Redis 키를 만드는 HMAC 키다(쿠키의 세션 ID →
+        ``admin:sess:{HMAC}``, admin-session-hardening ADR-001) — 바꾸면 모든 관리 세션이 무효가 된다.
+        관리 세션 만료는 ``ADMIN_SESSION_MAX_AGE_SECONDS``(절대)·``ADMIN_SESSION_IDLE_SECONDS``(미사용)이고
+        ``SESSION_EXPIRE_SECONDS`` 를 따르지 않는다. 쿠키 이름은 ``admin_session`` 고정이며
+        ``SESSION_COOKIE_NAME`` 이 ``admin_session`` 이면 기동이 멈춘다.
     """
 
     model_config = SettingsConfigDict(
@@ -1097,10 +1098,11 @@ class SessionSettings(BaseSettings):
         description="세션 쿠키 이름",
     )
 
-    # 세션 서명 키 — /admin 로그인 세션 쿠키를 서명한다 (운영 환경에서 반드시 교체, 32자 이상)
+    # 세션 키 — /admin 관리 세션 ID 를 Redis 키로 바꾸는 HMAC 키 (운영 환경에서 반드시 교체, 32자 이상).
+    # 바꾸면 모든 관리 세션이 무효가 된다(다시 로그인).
     SESSION_SECRET_KEY: str = Field(
         default="change-this-session-secret-key",
-        description="세션 서명 키 (/admin 로그인 세션 쿠키 서명)",
+        description="세션 키 (/admin 관리 세션 ID → Redis 키 HMAC)",
     )
 
     # 세션 만료 시간 (초, 기본값 24시간)
@@ -1108,6 +1110,29 @@ class SessionSettings(BaseSettings):
         default=86400,
         description="세션 만료 시간(초)",
     )
+
+    # /admin 관리 세션(Redis 서버 세션) 만료 — admin-session-hardening ADR-001.
+    # 절대 만료: 로그인 시각부터, 요청이 있어도 연장되지 않는다(쿠키 Max-Age 도 이 값).
+    ADMIN_SESSION_MAX_AGE_SECONDS: int = Field(
+        default=28800,
+        ge=60,
+        description="관리 세션 절대 만료(초, 연장 불가)",
+    )
+    # 미사용 만료: 마지막 요청부터 센다. 절대 만료를 넘지 않는다.
+    ADMIN_SESSION_IDLE_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        description="관리 세션 미사용 만료(초, 요청마다 갱신)",
+    )
+
+    @model_validator(mode="after")
+    def _validate_admin_session_expiry(self) -> "SessionSettings":
+        """미사용 만료가 절대 만료보다 길면 뜻이 없다 — 설정 실수로 보고 기동을 멈춘다."""
+        if self.ADMIN_SESSION_IDLE_SECONDS > self.ADMIN_SESSION_MAX_AGE_SECONDS:
+            raise ValueError(
+                "ADMIN_SESSION_IDLE_SECONDS 는 ADMIN_SESSION_MAX_AGE_SECONDS 이하여야 합니다."
+            )
+        return self
 
 
 # =============================================================================

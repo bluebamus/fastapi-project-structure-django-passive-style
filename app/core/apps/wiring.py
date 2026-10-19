@@ -110,7 +110,9 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
     자격 확인 구현은 설치 앱이 ``ready()`` 에서 등록한 팩토리다(core 는 사용자 모델을 모른다) —
     등록한 앱이 없으면 인증 없는 관리 화면을 여는 대신 기동을 멈춘다. 로그인 화면은
     ``app/templates/admin/sqladmin/login.html`` 이 sqladmin 기본 템플릿을 덮어쓴다
-    (``templates_dir`` 의 ``FileSystemLoader`` 가 패키지 템플릿보다 먼저다).
+    (``templates_dir`` 의 ``FileSystemLoader`` 가 패키지 템플릿보다 먼저다). 로그인 이후 화면의
+    CSRF meta·스크립트는 ``sqladmin/base.html`` 이 원본(``sqladmin_original/base.html``)을 확장해
+    더한다. 세션은 Redis 서버 세션이고, 로그아웃은 POST 전용이다(admin-session-hardening ADR-001~003).
 
     Args:
         app: FastAPI 인스턴스. ``Admin(...)`` 생성 시 SQLAdmin 이 ``/admin`` 을 직접
@@ -130,8 +132,10 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
         AdminAuthBackend,
         AdminLoginLimits,
         AdminSessionCookie,
+        require_post_logout,
     )
     from app.core.security.admin_credentials import get_admin_credentials_factory
+    from app.core.security.admin_session import default_admin_session_store
     from app.core.security.rate_limit import RateLimiter
     from config import app_settings, jwt_settings, middleware_settings, session_settings
 
@@ -142,7 +146,10 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
             "auth 앱(app.features.auth.apps.AuthConfig)을 INSTALLED_APPS 에 두거나 "
             "ADMIN_DISABLED=true 로 끄세요."
         )
-    cookie = AdminSessionCookie(https_only=app_settings.ENV in ("staging", "production"))
+    cookie = AdminSessionCookie(
+        https_only=app_settings.ENV in ("staging", "production"),
+        max_age=session_settings.ADMIN_SESSION_MAX_AGE_SECONDS,
+    )
     if cookie.name == session_settings.SESSION_COOKIE_NAME:
         raise ImproperlyConfigured(
             f"SESSION_COOKIE_NAME 이 관리 화면 세션 쿠키 이름('{cookie.name}')과 같습니다. "
@@ -159,7 +166,8 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
             per_ip=jwt_settings.AUTH_LOGIN_IP_MAX_ATTEMPTS,
             window_seconds=jwt_settings.AUTH_LOGIN_WINDOW_SECONDS,
         ),
-        secret_key=session_settings.SESSION_SECRET_KEY,
+        # 관리 세션도 같은 Redis 에 둔다(admin-session-hardening ADR-001) — 같은 이유로 요청 때 꺼낸다.
+        session_store=lambda: default_admin_session_store(app.state.redis),
         cookie=cookie,
     )
     admin = Admin(
@@ -170,5 +178,6 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
         templates_dir=str(ADMIN_TEMPLATES_DIR),
     )
     backend.templates = admin.templates
+    require_post_logout(admin)
     install_admin(admin, registry)
     return admin

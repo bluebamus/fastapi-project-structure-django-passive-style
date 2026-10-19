@@ -56,8 +56,21 @@ def _users(engine: sa.Engine) -> list[sa.Row]:
         )
 
 
-def _run(factory, *argv: str, stdin: str = f"{PASSWORD}\n") -> int:
-    return create_superuser.main(list(argv), session_factory=factory, stdin=io.StringIO(stdin))
+def _run(
+    factory, *argv: str, stdin: str = f"{PASSWORD}\n", revoked: list[str] | None = None
+) -> int:
+    """관리 세션 폐기는 기록만 한다 — 실제 Redis 에 붙지 않는다."""
+    calls = revoked if revoked is not None else []
+
+    async def record(user_id: str) -> None:
+        calls.append(user_id)
+
+    return create_superuser.main(
+        list(argv),
+        session_factory=factory,
+        stdin=io.StringIO(stdin),
+        revoke_sessions=record,
+    )
 
 
 def test_creates_a_superuser_with_an_argon2_hash(db, capsys):
@@ -84,24 +97,87 @@ def test_promotes_an_existing_user_without_touching_the_password(db):
             )
         )
 
-    code = _run(factory, "--username", "alice", stdin="")
+    revoked: list[str] = []
+    code = _run(factory, "--username", "alice", stdin="", revoked=revoked)
 
     assert code == 0
     [(_, _, is_superuser, hashed)] = _users(engine)
     assert (is_superuser, hashed) == (True, "keep-me")
+    assert revoked == [], "비밀번호를 바꾸지 않았는데 관리 세션을 지웠다"
 
 
 def test_set_password_rehashes_when_promoting(db):
     factory, engine = db
     _run(factory, "--username", "bob", "--email", "b@x.com", "--password-stdin")
 
+    revoked: list[str] = []
     code = _run(
-        factory, "--username", "bob", "--set-password", "--password-stdin", stdin="new-pass-456\n"
+        factory,
+        "--username",
+        "bob",
+        "--set-password",
+        "--password-stdin",
+        stdin="new-pass-456\n",
+        revoked=revoked,
     )
 
     assert code == 0
     [(_, _, _, hashed)] = _users(engine)
     assert get_password_hasher().verify_and_update("new-pass-456", hashed)[0] is True
+    with engine.connect() as connection:
+        bob_id = connection.execute(sa.text("SELECT id FROM users WHERE username='bob'")).scalar()
+    assert revoked == [bob_id], "비밀번호를 바꿨는데 그 사용자의 관리 세션을 지우지 않았다"
+
+
+async def test_production_revoker_deletes_that_users_sessions_in_redis(monkeypatch):
+    """운영 조립(``revoke_sessions_in_redis``)이 설정의 Redis 에서 그 사용자의 관리 세션·refresh 만 지운다."""
+    from fakeredis import FakeServer
+    from fakeredis.aioredis import FakeRedis
+
+    from app.core.security.admin_session import SESSION_USER_KEY, default_admin_session_store
+    from app.core.security.dependencies import get_refresh_token_store
+
+    server = FakeServer()
+
+    class _Factory:
+        @staticmethod
+        def from_url(url: str) -> FakeRedis:
+            return FakeRedis(server=server)
+
+    monkeypatch.setattr("redis.asyncio.Redis", _Factory)
+    store = default_admin_session_store(FakeRedis(server=server))
+    mine = await store.create({SESSION_USER_KEY: "u-carol"})
+    other = await store.create({SESSION_USER_KEY: "u-other"})
+    refresh = get_refresh_token_store(FakeRedis(server=server))
+    await refresh.register("jti-c", "u-carol", "fam-c")
+    await refresh.register("jti-o", "u-other", "fam-o")
+
+    await create_superuser.revoke_sessions_in_redis("u-carol")
+
+    assert await store.load(mine) is None
+    assert await store.load(other) is not None
+    assert await refresh.is_family_revoked("fam-c")
+    assert not await refresh.is_family_revoked("fam-o")
+
+
+def test_redis_failure_after_password_change_exits_1(db, capsys):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    factory, _ = db
+    _run(factory, "--username", "dave", "--email", "d@x.com", "--password-stdin")
+
+    async def down(user_id: str) -> None:
+        raise RedisConnectionError("down")
+
+    code = create_superuser.main(
+        ["--username", "dave", "--set-password", "--password-stdin"],
+        session_factory=factory,
+        stdin=io.StringIO("new-pass-456\n"),
+        revoke_sessions=down,
+    )
+
+    assert code == 1
+    assert "세션을 지우지 못했습니다" in capsys.readouterr().err
 
 
 def test_interactive_password_must_match(db, monkeypatch):

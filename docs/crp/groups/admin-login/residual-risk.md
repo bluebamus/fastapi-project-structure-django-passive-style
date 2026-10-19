@@ -17,3 +17,18 @@
 ## 최종 상태 (2026-10-12, Round 2 · 그룹 CONVERGED)
 
 수용 항목은 R-001~R-007 이고, 모두 비목표(charter §2-4) 또는 배포 사실에 근거한 의도적 수용이다.
+
+## 상태 갱신 (2026-10-19, admin-session-hardening)
+
+> append-only — 위 표의 행은 그대로 두고 상태만 여기에 덧붙인다. 결정 정본은 `docs/crp/groups/admin-session-hardening/design-baseline.md`.
+
+- **R-001 — 해소 — admin-session-hardening ADR-001·ADR-005.** 관리 세션을 Redis 서버 세션으로 옮겼다(쿠키 `admin_session` 에는 무작위 세션 ID 만,
+  내용은 Redis `admin:sess:{HMAC}`). 로그아웃하면 Redis 키가 지워져 복사해 둔 쿠키도 즉시 무효이고, 비활성화·강등·삭제(API·관리 화면)와
+  `scripts/create_superuser.py --set-password` 는 그 사용자의 관리 세션을 모두 지운다. 절대 만료 8시간(`ADMIN_SESSION_MAX_AGE_SECONDS`, 연장 불가)에
+  미사용 만료 30분(`ADMIN_SESSION_IDLE_SECONDS`)이 더해졌다. 남은 관련 위험은 admin-session-hardening R-003·R-005·R-008 이다.
+- **R-002 — 보강 — admin-session-hardening ADR-002·ADR-003.** 로그인 폼 토큰(security-ops-hardening ADR-004 로 해소)에 이어 로그인 이후 상태를 바꾸는
+  모든 관리 요청(생성·수정·삭제·일괄 삭제·가져오기·로그아웃)도 CSRF 토큰을 요구한다(`AdminCsrfMiddleware`, 검사는 한 곳). 로그아웃은 POST 전용(GET 405).
+  보호 밖은 사용자 정의 `@action`(GET) 뿐이다 — admin-session-hardening R-001.
+- **R-006 — 보강 — admin-session-hardening ADR-004.** security-ops-hardening 이 단 `LocalDateFilter` 에 기간 연산(`S~E`, 양 끝 포함)이 더해져
+  필터 하나로 시작일~종료일을 지정할 수 있다.
+- R-007 의 "가이드 §11" 은 관리 화면 인증 가이드 재구성으로 §14(운영)가 됐다.

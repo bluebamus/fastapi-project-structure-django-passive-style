@@ -1,4 +1,6 @@
-"""관리 목록 날짜 필터 ``LocalDateFilter`` — 지역 날짜 경계·연산 3종·잘못된 입력 (security-ops-hardening ADR-005).
+"""관리 목록 날짜 필터 ``LocalDateFilter`` — 지역 날짜 경계·연산 4종·잘못된 입력.
+
+security-ops-hardening ADR-005(같은 날·이후·이전) + admin-session-hardening ADR-004(기간 ``S~E``, 양 끝 포함).
 
 실제 SQLite 에 ``UTCDateTime`` 컬럼(접속 로그 ``created_at``)을 두고 필터가 만든 질의를 돌린다.
 시간대는 Asia/Seoul(UTC+9)로 고정한다 — 2026-10-12 의 지역 0시는 2026-10-11T15:00Z 다.
@@ -27,7 +29,7 @@ MIDNIGHT_13 = MIDNIGHT_12 + timedelta(days=1)
 ROWS = {
     "/before-12": MIDNIGHT_12 - timedelta(seconds=1),  # 10-11 23:59:59 KST
     "/start-12": MIDNIGHT_12,  # 10-12 00:00:00 KST
-    "/end-12": MIDNIGHT_13 - timedelta(seconds=1),  # 10-12 23:59:59 KST
+    "/end-12": MIDNIGHT_13 - timedelta(microseconds=1),  # 10-12 23:59:59.999999 KST
     "/start-13": MIDNIGHT_13,  # 10-13 00:00:00 KST
 }
 
@@ -87,6 +89,7 @@ def test_follows_the_sqladmin_operation_filter_protocol():
         "on",
         "from",
         "before",
+        "between",
     ]
     assert f.template == "sqladmin/filters/local_date_filter.html"
 
@@ -100,6 +103,64 @@ def test_quick_ranges_are_counted_in_local_days():
 
     assert f.quick_ranges() == [
         ("오늘", "on", "2026-10-13"),
-        ("최근 7일", "from", "2026-10-07"),
-        ("최근 30일", "from", "2026-09-14"),
+        ("최근 7일", "between", "2026-10-07~2026-10-13"),
+        ("최근 30일", "between", "2026-09-14~2026-10-13"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 기간 (admin-session-hardening ADR-004)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # 양 끝 포함: 시작일 0시 포함, 종료일 23:59:59.999999 포함, 다음날 0시 제외
+        ("2026-10-12~2026-10-12", {"/start-12", "/end-12"}),
+        ("2026-10-11~2026-10-12", {"/before-12", "/start-12", "/end-12"}),
+        ("2026-10-12~2026-10-13", {"/start-12", "/end-12", "/start-13"}),
+        # 한쪽만 — 열린 구간
+        ("2026-10-12~", {"/start-12", "/end-12", "/start-13"}),
+        ("~2026-10-12", {"/before-12", "/start-12", "/end-12"}),
+        (" 2026-10-12 ~ 2026-10-12 ", {"/start-12", "/end-12"}),
+    ],
+)
+async def test_between_is_inclusive_on_both_local_days(session, value, expected):
+    assert await _apply(session, "between", value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-10-13~2026-10-12",
+        "2026-10-12",
+        "~",
+        "",
+        "2026-10-12~tomorrow",
+        "2026/10/12~2026/10/13",
+    ],
+    ids=["reversed", "no-separator", "both-empty", "empty", "bad-end", "bad-format"],
+)
+async def test_bad_period_leaves_the_query_unfiltered_with_a_warning(session, value, caplog):
+    caplog.set_level("WARNING", logger="app.core.admin_filters")
+
+    assert await _apply(session, "between", value) == set(ROWS)
+    assert any("기간 무시" in r.getMessage() for r in caplog.records)
+
+
+async def test_between_converts_local_days_to_utc_across_a_dst_change():
+    """뉴욕 2026-11-01 은 DST 종료일(25시간) — 경계가 각각 그날의 오프셋으로 바뀐다."""
+    new_york = TimezoneSettings(TIME_ZONE="America/New_York")
+    f = LocalDateFilter(UserAccessLog.created_at, timezone=new_york)
+
+    query = await f.get_filtered_query(
+        select(UserAccessLog.id), "between", "2026-10-31~2026-11-01", UserAccessLog
+    )
+    bounds = sorted(
+        c.right.effective_value
+        for c in query.whereclause.clauses  # type: ignore[union-attr]
+    )
+
+    assert bounds == [
+        datetime(2026, 10, 31, 4, 0, tzinfo=UTC),  # 10-31 0시 EDT(UTC-4)
+        datetime(2026, 11, 2, 5, 0, tzinfo=UTC),  # 11-02 0시 EST(UTC-5)
     ]

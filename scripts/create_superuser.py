@@ -9,7 +9,10 @@
 
 * 사용자가 없으면 슈퍼유저로 **만든다**(이메일·비밀번호 필수).
 * 이미 있으면 슈퍼유저로 **승격**한다. 비밀번호는 ``--set-password`` 를 줄 때만 바꾼다 —
-  승격하려다 기존 비밀번호를 덮어쓰는 사고를 막는다.
+  승격하려다 기존 비밀번호를 덮어쓰는 사고를 막는다. 비밀번호를 바꾸면 커밋 뒤 그 사용자의
+  ``/admin`` 세션과 API refresh family 를 모두 지운다(Redis, admin-session-hardening ADR-010 — 판정
+  ``REVOKE_ON_PASSWORD_CHANGE``) — 옛 비밀번호로 연 세션·토큰이 남지 않는다. Redis 에 닿지 못하면
+  종료 코드 1 이다(비밀번호는 이미 바뀌었다 — 이 스크립트는 API 와 다른 프로세스라 커밋 전 폐기를 쓰지 않는다).
 
 비밀번호는 명령행 인자로 받지 않는다(셸 기록·프로세스 목록에 남는다). 터미널에서는
 ``getpass`` 로 두 번 묻고, 자동화에서는 ``--password-stdin`` 으로 표준 입력 첫 줄을 읽는다.
@@ -18,8 +21,8 @@
 조립은 API 와 같은 부품을 쓴다: ``background_session()`` 세션의 ``UserRepository`` +
 core provider 의 ``PasswordHasher``. 커밋은 한 번이다.
 
-종료 코드: 0 성공 · 1 입력 거부(비밀번호 불일치·짧음·이메일 형식·생성 시 이메일 없음) ·
-2 인자 오류(argparse).
+종료 코드: 0 성공 · 1 입력 거부(비밀번호 불일치·짧음·이메일 형식·생성 시 이메일 없음)·관리 세션
+폐기 실패 · 2 인자 오류(argparse).
 """
 
 from __future__ import annotations
@@ -29,10 +32,11 @@ import asyncio
 import getpass
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import TextIO
 
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import background_session
@@ -46,6 +50,7 @@ MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+SessionRevoker = Callable[[str], Awaitable[None]]
 
 
 class SuperuserInputError(Exception):
@@ -75,8 +80,13 @@ async def ensure_superuser(
     email: str | None,
     password: Callable[[], str],
     set_password: bool,
+    revoke_sessions: SessionRevoker | None = None,
 ) -> str:
-    """슈퍼유저를 만들거나 승격하고 결과를 한 줄로 돌려준다. 커밋은 한 번이다."""
+    """슈퍼유저를 만들거나 승격하고 결과를 한 줄로 돌려준다. 커밋은 한 번이다.
+
+    기존 사용자의 비밀번호를 바꿨으면 커밋 뒤 ``revoke_sessions(user_id)`` 를 부른다.
+    """
+    changed_password_of: str | None = None
     async with session_factory() as session:
         users = UserRepository(session)
         user = await users.get_by_username(username)
@@ -98,13 +108,36 @@ async def ensure_superuser(
             if set_password:
                 changes["hashed_password"] = await asyncio.to_thread(hasher.hash, password())
             await users.update(user.id, changes)
+            if set_password:
+                changed_password_of = user.id
             result = f"기존 사용자 '{username}' 을(를) 슈퍼유저로 승격했습니다."
             if set_password:
                 result += " 비밀번호도 바꿨습니다."
             if not user.is_active:
                 result += " (비활성 계정입니다 — 로그인하려면 활성화가 필요합니다.)"
         await session.commit()
+    if changed_password_of is not None and revoke_sessions is not None:
+        await revoke_sessions(changed_password_of)
     return result
+
+
+async def revoke_sessions_in_redis(user_id: str) -> None:
+    """운영 조립 — 설정의 Redis 에 붙어 그 사용자의 관리 세션과 refresh family 를 모두 지운다."""
+    from redis.asyncio import Redis
+
+    from app.core.security.admin_session import default_admin_session_store
+    from app.core.security.dependencies import get_refresh_token_store
+    from app.core.security.revocation import REVOKE_ON_PASSWORD_CHANGE, UserSessionRevoker
+    from config import redis_settings
+
+    client = Redis.from_url(redis_settings.REDIS_URL)
+    try:
+        revoker = UserSessionRevoker(
+            get_refresh_token_store(client), default_admin_session_store(client)
+        )
+        await revoker.revoke(user_id, REVOKE_ON_PASSWORD_CHANGE)
+    finally:
+        await client.aclose()
 
 
 def main(
@@ -112,6 +145,7 @@ def main(
     *,
     session_factory: SessionFactory = background_session,
     stdin: TextIO | None = None,
+    revoke_sessions: SessionRevoker = revoke_sessions_in_redis,
 ) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m scripts.create_superuser",
@@ -145,10 +179,18 @@ def main(
                 email=args.email,
                 password=_password,
                 set_password=args.set_password,
+                revoke_sessions=revoke_sessions,
             )
         )
     except SuperuserInputError as exc:
         print(f"오류: {exc}", file=sys.stderr)
+        return 1
+    except RedisError as exc:
+        print(
+            f"오류: 비밀번호는 바뀌었지만 세션을 지우지 못했습니다({type(exc).__name__}). "
+            "Redis 를 확인하고 다시 실행하세요.",
+            file=sys.stderr,
+        )
         return 1
 
     print(message)

@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.apps import Apps
 from app.core.bootstrap import create_app
-from tests.admin_login import admin_login
+from tests.admin_login import admin_login, admin_logout
 from tests.integration.conftest import (
     MYSQL_DATABASE,
     MYSQL_HOST,
@@ -84,6 +84,6 @@ async def test_script_created_superuser_logs_in_to_admin_on_mysql(mysql_session_
         ok = await admin_login(client, username, PASSWORD)
         assert ok.status_code == 302
         assert (await client.get("/admin/")).status_code == 200
-        await client.get("/admin/logout")
+        assert (await admin_logout(client)).status_code == 302
         assert (await client.get("/admin/")).status_code == 302
     await redis.aclose()

@@ -1,0 +1,78 @@
+{#-
+  sqladmin 기본 base.html 을 **확장**한다(복사하지 않는다) — admin-session-hardening ADR-002·ADR-003.
+  원본은 sqladmin 의 ChoiceLoader 가 주는 "sqladmin_original/base.html" 이다. 바꾼 부분은 두 블록뿐이다.
+    1) head_meta: 원본 + <meta name="csrf-token"> (세션의 CSRF 토큰 — AdminAuthBackend 가 건 csrf_token 전역 함수)
+    2) tail_js:   원본 스크립트(jQuery·main.js 등) 뒤에 인라인 스크립트 하나
+       - POST 폼 제출(같은 출처)에 hidden csrf_token 을 붙인다(생성·수정 폼)
+       - 같은 출처 XHR($.ajax — 삭제·일괄 삭제)과 fetch(CSV 가져오기)에 X-CSRF-Token 헤더를 붙인다
+       - 로그아웃 링크(layout.html 의 GET <a>)를 토큰을 실은 POST 폼 제출로 바꾼다(서버는 POST 만 받는다)
+  sqladmin 을 올릴 때 원본 블록 이름·로그아웃 링크·main.js 의 요청 방식이 바뀌면
+  tests/core/test_admin_csrf.py 의 원본 대조 테스트가 실패한다.
+-#}
+{% extends "sqladmin_original/base.html" %}
+
+{% block head_meta %}
+{{ super() }}
+  <meta name="csrf-token" content="{{ csrf_token(request) }}">
+{% endblock %}
+
+{% block tail_js %}
+{{ super() }}
+  <script>
+  (function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+    var logoutUrl = {{ request.url_for('admin:logout') | string | tojson }};
+    function sameOrigin(url) {
+      try { return new URL(url, window.location.href).origin === window.location.origin; }
+      catch (e) { return false; }
+    }
+    function addToken(form) {
+      if (!form.querySelector('input[name="csrf_token"]')) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'csrf_token';
+        input.value = token;
+        form.appendChild(input);
+      }
+    }
+    document.addEventListener('submit', function (event) {
+      var form = event.target;
+      if ((form.getAttribute('method') || '').toLowerCase() === 'post' && sameOrigin(form.action)) {
+        addToken(form);
+      }
+    }, true);
+    var open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this._csrfSameOrigin = sameOrigin(url);
+      return open.apply(this, arguments);
+    };
+    var send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function () {
+      if (this._csrfSameOrigin) { this.setRequestHeader('X-CSRF-Token', token); }
+      return send.apply(this, arguments);
+    };
+    var originalFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      if (sameOrigin(url)) {
+        init = Object.assign({}, init);
+        var headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+        headers.set('X-CSRF-Token', token);
+        init.headers = headers;
+      }
+      return originalFetch.call(this, input, init);
+    };
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[href]');
+      if (!link || link.href !== logoutUrl) { return; }
+      event.preventDefault();
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = logoutUrl;
+      addToken(form);
+      document.body.appendChild(form);
+      form.submit();
+    });
+  })();
+  </script>
+{% endblock %}

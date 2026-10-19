@@ -13,12 +13,12 @@ import logging
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Mount
 
 from app.core.apps import Apps
 from app.core.bootstrap import create_app
 from app.core.security import admin_credentials
+from app.core.security.dependencies import get_admin_session_store
 
 #: 앱이 응답하는 알려진 경로 — 관리 화면 경로·공개 문서·API(인증 필요·불필요)·없는 경로.
 PROBE_PATHS = (
@@ -56,7 +56,9 @@ def test_nothing_admin_is_built(disabled_app):
     app = disabled_app
 
     assert not hasattr(app.state, "admin")
-    assert SessionMiddleware not in [m.cls for m in app.user_middleware]
+    assert not {"SessionMiddleware", "RedisSessionMiddleware"} & {
+        m.cls.__name__ for m in app.user_middleware
+    }
     mounts = [r for r in app.routes if isinstance(r, Mount)]
     assert not [m for m in mounts if m.path.startswith("/admin")]
 
@@ -83,6 +85,15 @@ async def test_no_response_mentions_the_admin_path(disabled_app):
                 assert "admin" not in response.text.lower(), path
 
     assert not leaks, f"/admin 이 응답에 나온다: {leaks}"
+
+
+def test_no_admin_session_store_is_built(disabled_app):
+    """사용자 기능의 폐기 훅이 받는 저장소가 없다 — 관리 세션이 없으므로 지울 것도 없다."""
+
+    class _Request:
+        app = disabled_app
+
+    assert get_admin_session_store(_Request(), redis=object()) is None  # type: ignore[arg-type]
 
 
 def test_startup_log_does_not_carry_the_path(disabled_app, caplog):

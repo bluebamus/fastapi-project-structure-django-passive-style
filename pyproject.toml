@@ -37,9 +37,6 @@ dependencies = [
     "python-multipart>=0.0.32",
     "bcrypt>=5.0.0",
     "pwdlib[argon2]>=0.3.1",
-    # /admin 로그인 세션 쿠키 서명 — starlette SessionMiddleware 가 import 한다(admin-login ADR-007).
-    # sqladmin 은 이것을 의존성으로 선언하지 않아, 없으면 관리 화면 조립이 ImportError 로 죽는다.
-    "itsdangerous>=2.2.0",
 ]
 
 [dependency-groups]

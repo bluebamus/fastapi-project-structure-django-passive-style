@@ -25,10 +25,18 @@ Note:
     ADMIN_DISABLED 필드 주석 참고.
 """
 
+from typing import Any
+
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
+from starlette.requests import Request
 
 from app.core.admin_filters import LocalDateFilter
+from app.core.security.revocation import (
+    REVOKE_ON_DELETE,
+    revocation_for_change,
+    revoker_from_scope,
+)
 from app.features.user.models.models import User
 
 
@@ -128,6 +136,26 @@ class UserAdmin(ModelView, model=User):
         User.created_at: "가입 시각",
         User.updated_at: "수정 시각",
     }
+
+    # =========================================================================
+    # 세션 즉시 폐기 (admin-session-hardening ADR-008·ADR-010)
+    # =========================================================================
+    # 무엇을 지울지는 API 서비스(UserService)와 같은 판정 함수가 정한다 — 비활성화·슈퍼유저 해제·비밀번호
+    # 변경·삭제는 관리 세션과 refresh family 를 지운다(관리 화면 경로 = API 경로).
+    # 이름·이메일 같은 일반 수정은 지우지 않는다. 저장소는 관리 세션 미들웨어가 요청 scope 에 둔 것이다.
+    # 폐기는 **커밋 전** 훅에서 한다 — sqladmin 0.32 는 on_model_change·on_model_delete 를 세션 안에서 커밋
+    # 전에 부르므로(_queries._update_async·_delete_async), Redis 가 실패하면 예외가 커밋을 막는다(fail-closed).
+    # 자기 자신을 강등·비활성화하면 지금 세션도 지워진다 — 의도다.
+    async def on_model_change(
+        self, data: dict[str, Any], model: Any, is_created: bool, request: Request
+    ) -> None:
+        # 이 훅은 폼 값을 적용하기 **전의** 객체로 불린다 — 판정이 전후를 비교한다.
+        revocation = revocation_for_change(model, data)
+        if not is_created and revocation:
+            await revoker_from_scope(request.scope).revoke(model.id, revocation)
+
+    async def on_model_delete(self, model: Any, request: Request) -> None:
+        await revoker_from_scope(request.scope).revoke(model.id, REVOKE_ON_DELETE)
 
 
 # registry adapter(app/core/apps/wiring.py)가 설치 앱의 이 이름을 읽어 SQLAdmin 에 등록한다.
