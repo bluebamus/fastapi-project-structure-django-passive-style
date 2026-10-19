@@ -6,12 +6,30 @@
 태스크와 모델도 워커에서 빠진다(Django ``autodiscover_tasks`` 와 같은 방식).
 """
 
+import logging
 from collections.abc import Sequence
+from typing import Any
 
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.core.apps import Apps
+from app.utils.logs import configure_logging
 from config import INSTALLED_APPS, redis_settings, timezone_settings
+
+
+@setup_logging.connect
+def use_app_logging(loglevel: int | str | None = None, **_: Any) -> None:
+    """워커도 앱 로깅 구성(``build_dictconfig``)을 쓴다.
+
+    수신자가 있으면 Celery 는 root 핸들러를 자기 포매터로 갈아끼우지 않는다 — 그래서
+    ``LOG_CONSOLE_ENABLED``·``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT`` 과 파일 핸들러가 워커에도
+    그대로 적용된다. ``--loglevel`` 은 root 레벨로 따른다(``--logfile`` 은 쓰지 않는다 — 파일은
+    ``LOG_FILE_ENABLED`` 가 정한다).
+    """
+    configure_logging(force=True)
+    if loglevel:
+        logging.getLogger().setLevel(loglevel)
 
 
 def discover_task_modules(installed_apps: Sequence[str]) -> list[str]:

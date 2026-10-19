@@ -12,41 +12,17 @@ import copy
 import inspect
 import io
 import logging
-from collections.abc import Iterator
 from logging.config import dictConfig
 from pathlib import Path
 
 import pytest
 
 from app.utils.logs import config as logs_config
-from app.utils.logs import configure_logging, setup_uvicorn_logging
+from app.utils.logs import setup_uvicorn_logging
 from app.utils.logs.redaction import MASK, SecretRedactor, install_record_redaction
 
 DSN = "mysql+asyncmy://u:secret42@h/db"
 SECRETS = ("secret42", "xxx-bearer-token", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl")
-
-_WATCHED = ("", "uvicorn", "uvicorn.error", "uvicorn.access", "app.redaction", "sqlalchemy.engine")
-
-
-@pytest.fixture
-def restore_logging() -> Iterator[None]:
-    """dictConfig 는 전역이다 — 이 테스트가 바꾼 로거 상태를 되돌린다."""
-    saved = {
-        name: (list(lg.handlers), lg.level, lg.propagate, lg.disabled)
-        for name in _WATCHED
-        for lg in [logging.getLogger(name)]
-    }
-    configure_logging()
-    yield
-    for name, (handlers, level, propagate, disabled) in saved.items():
-        lg = logging.getLogger(name)
-        for h in lg.handlers:
-            if h not in handlers:
-                h.close()
-        lg.handlers[:] = handlers
-        lg.setLevel(level)
-        lg.propagate = propagate
-        lg.disabled = disabled
 
 
 def _raise_chain() -> None:
@@ -100,12 +76,20 @@ def _swap_stream(handler: logging.Handler) -> io.StringIO:
 # =============================================================================
 # 앱 dictConfig — console · file · error_file
 # =============================================================================
+#: 사용자 포맷 — 가리기는 포매터가 아니라 LogRecord factory 가 하므로 포맷과 무관해야 한다.
+USER_FORMAT = "USR|{levelname}|{name}|{message}"
+
+
+@pytest.mark.parametrize("user_format", [None, USER_FORMAT], ids=["default", "user-format"])
 def test_app_handlers_redact_traceback_message_and_stack(
-    restore_logging, monkeypatch, tmp_path: Path
+    restore_logging, monkeypatch, tmp_path: Path, user_format: str | None
 ):
     monkeypatch.setattr(logs_config.app_settings, "ENV", "production", raising=False)
     monkeypatch.setattr(logs_config.log_settings, "LOG_FILE_ENABLED", True, raising=False)
     monkeypatch.setattr(logs_config.log_settings, "LOG_DIR", str(tmp_path), raising=False)
+    if user_format:
+        for key in ("LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT"):
+            monkeypatch.setattr(logs_config.log_settings, key, user_format, raising=False)
     cfg = logs_config.build_dictconfig()
     assert set(cfg["handlers"]) == {"console", "file", "error_file"}
     dictConfig(cfg)
@@ -118,11 +102,14 @@ def test_app_handlers_redact_traceback_message_and_stack(
     for h in root.handlers:
         h.flush()
 
-    _assert_redacted(buf.getvalue(), line)
+    outputs = [buf.getvalue()]
     files = sorted(tmp_path.iterdir())
     assert len(files) == 2  # app · error
-    for f in files:
-        _assert_redacted(f.read_text(encoding="utf-8"), line)
+    outputs += [f.read_text(encoding="utf-8") for f in files]
+    for out in outputs:
+        _assert_redacted(out, line)
+        # 사용자 포맷이 실제로 적용됐다 — 안 됐으면 이 테스트는 기본 포맷만 다시 본 것이다.
+        assert ("USR|ERROR|app.redaction|" in out) == bool(user_format)
 
 
 def test_third_party_logger_through_root_is_redacted(restore_logging):

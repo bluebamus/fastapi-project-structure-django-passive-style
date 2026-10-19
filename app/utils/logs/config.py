@@ -31,13 +31,11 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
 
 from __future__ import annotations
 
-from config import app_settings, log_settings, timezone_settings
+from config import DEFAULT_LOG_FORMAT, app_settings, log_settings, timezone_settings
 
 # 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
-LOG_FORMAT = (
-    "[{asctime} {tzname}] {levelname:5} [app={appname}] "
-    "[{module}:{classname}:{funcName}:{lineno}] {message}"
-)
+# 실제로 쓰는 형식은 LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT 이고, 이 값은 그 기본값이다.
+LOG_FORMAT = DEFAULT_LOG_FORMAT
 
 
 def _env() -> str:
@@ -48,22 +46,39 @@ def _level() -> str:
     return log_settings.get_effective_log_level(app_settings.DEBUG)
 
 
+def console_enabled() -> bool:
+    """콘솔 핸들러를 붙일지 — 앱·uvicorn(``setup_uvicorn_logging``)·Celery 워커가 모두 여기를 본다."""
+    return log_settings.LOG_CONSOLE_ENABLED
+
+
+def formatter_spec(fmt: str, use_utc: bool, with_ms: bool = False) -> dict:
+    """``TzFormatter`` dictConfig 항목 — 날짜 형식은 ``LOG_DATE_FORMAT`` 하나를 함께 쓴다."""
+    return {
+        "()": "app.utils.logs.formatters.TzFormatter",
+        "fmt": fmt,
+        "datefmt": log_settings.LOG_DATE_FORMAT,
+        "use_utc": use_utc,
+        "with_ms": with_ms,
+    }
+
+
 def build_dictconfig() -> dict:
     env = _env()
     level = _level()
     use_utc = env in ("production", "staging")
     with_ms = env == "development"
 
-    handlers: dict = {
-        "console": {
+    handlers: dict = {}
+    root_handlers: list[str] = []
+    if console_enabled():
+        handlers["console"] = {
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
             "formatter": "app",
             "filters": ["sql_noise", "context"],
             "level": log_settings.get_effective_console_level(app_settings.DEBUG),
-        },
-    }
-    root_handlers = ["console"]
+        }
+        root_handlers.append("console")
 
     if env in ("production", "staging") and log_settings.LOG_FILE_ENABLED:
         log_dir = log_settings.get_log_dir()
@@ -75,7 +90,7 @@ def build_dictconfig() -> dict:
             "maxBytes": max_bytes,
             "backupCount": log_settings.LOG_BACKUP_COUNT,
             "encoding": "utf-8",
-            "formatter": "app",
+            "formatter": "file",
             "filters": ["sql_noise", "context"],
             "level": log_settings.LOG_FILE_LEVEL,
         }
@@ -85,11 +100,17 @@ def build_dictconfig() -> dict:
             "maxBytes": max_bytes,
             "backupCount": log_settings.LOG_BACKUP_COUNT,
             "encoding": "utf-8",
-            "formatter": "app",
+            "formatter": "file",
             "filters": ["sql_noise", "context"],
             "level": "ERROR",
         }
         root_handlers += ["file", "error_file"]
+
+    if not root_handlers:
+        # 출력이 모두 꺼졌다. 핸들러 0개면 logging.lastResort 가 WARNING 이상을 stderr 로
+        # 찍는다 — 끈 것은 끈 것이다. 경고 한 줄은 configure_logging() 이 남긴다.
+        handlers["null"] = {"class": "logging.NullHandler"}
+        root_handlers.append("null")
 
     return {
         "version": 1,
@@ -104,12 +125,8 @@ def build_dictconfig() -> dict:
             },
         },
         "formatters": {
-            "app": {
-                "()": "app.utils.logs.formatters.TzFormatter",
-                "fmt": LOG_FORMAT,
-                "use_utc": use_utc,
-                "with_ms": with_ms,
-            },
+            "app": formatter_spec(log_settings.LOG_CONSOLE_FORMAT, use_utc, with_ms),
+            "file": formatter_spec(log_settings.LOG_FILE_FORMAT, use_utc, with_ms),
         },
         "handlers": handlers,
         "root": {"handlers": root_handlers, "level": level},
