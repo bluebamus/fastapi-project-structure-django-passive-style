@@ -332,6 +332,16 @@ def test_retention_deletes_only_older_files(tmp_path, retention):
         ("mysql+aiomysql://dbuser:pw@h:3306/db", f"mysql+aiomysql://{MASK}:{MASK}@h:3306/db"),
         ("redis://:pw@h:6379/0", f"redis://:{MASK}@h:6379/0"),
         ("redis://h:6379/0", "redis://h:6379/0"),
+        # config.REDIS_URL 의 실제 모양 — 사용자명 없음, 비밀번호는 퍼센트 인코딩
+        ("redis://:p%40ss%3Aw@h:6379/0", f"redis://:{MASK}@h:6379/0"),
+        # 인코딩하지 않은 @·: 가 든 비밀번호 — 마지막 @ 까지가 userinfo 다
+        ("redis://:pa@ss:w@h:6379/0", f"redis://:{MASK}@h:6379/0"),
+        ("mysql+aiomysql://u:p@ss:w0rd@h/db", f"mysql+aiomysql://{MASK}:{MASK}@h/db"),
+        ("mysql://u:p:w@h/db", f"mysql://{MASK}:{MASK}@h/db"),
+        # 사용자명만 있는 꼴 — 계정명도 id 다
+        ("mysql://dbuser@h/db", f"mysql://{MASK}@h/db"),
+        # userinfo 가 아닌 @ 는 건드리지 않는다
+        ("http://example.com/a@b mail admin@example.com", "http://example.com/a@b mail admin@example.com"),
     ],
 )
 def test_dsn_user_and_password_are_masked(text, expected):

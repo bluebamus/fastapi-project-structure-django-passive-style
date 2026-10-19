@@ -16,6 +16,7 @@
 - [x] (L7) DSN 계정명 가리기, `LOG_REDACTED_SETTINGS` 원문 가리기(4글자 미만 규칙), 계약 테스트
 - [x] (F-001) 실기동 스모크에서 워커 import 중 줄이 `app.log` 로 가는 것 발견 → `entry_process()` · TDD
 - [x] (F-002) beat 와 워커가 `celery.log` 를 함께 회전시키는 문제 → `celery-beat*.log` · TDD
+- [x] (F-004, 감독자 추가 확인) DSN 의 빈 계정명·계정명만·`@`/`:` 가 든 비밀번호 고정 · TDD · fail-on-revert
 - [x] fail-on-revert 기록 — run-log Round 1
 - [x] (L8) README 로깅 절·업그레이드 노트, ARCHITECTURE §5·§12, DEVELOPMENT §1, server-lifecycle 부록, `.env.example`, 이전 그룹 residual-risk 덧붙임
 - [x] GATE 3 — run-log Round 1 검사

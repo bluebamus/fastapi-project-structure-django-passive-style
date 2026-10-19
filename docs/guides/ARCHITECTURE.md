@@ -780,7 +780,7 @@ Celery `--loglevel` 은 워커 root 레벨로 따르고, `--logfile` 을 주면 
   필수 필드 `{asctime}`·`{levelname}`·`{appname}`·`{module}`·`{classname}`·`{funcName}`·`{message}` 가 하나라도 없어도 멈춘다(`config.REQUIRED_LOG_FIELDS`).
 - `SqlNoiseFilter` 가 모든 핸들러에서 SQLAlchemy·드라이버 로거의 SQL 본문·바인딩 값을 막는다. `LOG_SQL_ECHO_ENABLED=true` 로만 열 수 있고, production/staging 에서는 설정 로드가 거부한다.
 - **비밀값 가리기** — `app/utils/logs/redaction.py` 의 `SecretRedactor` 가 규칙의 정본이다(DSN·URL 의 **계정명과 비밀번호**
-  `scheme://***:***@host`, `password`·`secret`·`token`·`api_key`·`authorization` 으로 끝나는 키의 값, Bearer 토큰, JWT → `***`).
+  `scheme://***:***@host` — 계정명 없는 `scheme://:***@host`·계정명만 있는 `scheme://***@host`, 비밀번호는 마지막 `@` 까지, `password`·`secret`·`token`·`api_key`·`authorization` 으로 끝나는 키의 값, Bearer 토큰, JWT → `***`).
   여기에 `config.LOG_REDACTED_SETTINGS`(DB writer·replica 계정명·비밀번호, Redis 비밀번호, JWT access/refresh 키, `SESSION_SECRET_KEY`)의
   **현재 값 원문**을 `configure_logging()` 이 넘겨, 로그 어디에 나와도 `***` 로 바꾼다. 4글자 미만 값(주로 짧은 계정명)은 일반 단어와 겹치므로
   `user=`·`username=` 뒤와 DSN 에서만 가린다. 새 비밀 설정은 이 목록에 넣어야 한다(`test_every_secret_setting_is_redacted_from_logs` 가 이름 규칙으로 강제).

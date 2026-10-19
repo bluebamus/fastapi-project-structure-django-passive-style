@@ -452,7 +452,7 @@ Celery `--logfile` 을 주면 그 파일에도 같은 형식으로 씁니다. Ce
 
 ### 비밀값
 
-DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db`), `password=`·`token=` 류 값, Bearer·JWT, 그리고 설정된 비밀값의 **원문**
+DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명 없는 `redis://:***@host`, 계정명만 있는 `mysql://***@host`, 인코딩 안 된 `@`·`:` 가 든 비밀번호도), `password=`·`token=` 류 값, Bearer·JWT, 그리고 설정된 비밀값의 **원문**
 (DB writer·replica 계정명·비밀번호, Redis 비밀번호, JWT access/refresh 키, `SESSION_SECRET_KEY` — `config.LOG_REDACTED_SETTINGS`)은
 메시지·인자·traceback·`stack_info` 어디에 나와도 `***` 로 바뀝니다. 4글자 미만 값(짧은 계정명)은 일반 단어를 가리지 않도록 DSN 과 `user=`·`username=` 뒤에서만 가립니다.
 새 비밀 설정을 만들면 `config.LOG_REDACTED_SETTINGS` 에 넣습니다(이름에 PASSWORD·SECRET 가 들어가거나 끝이 _KEY·_USER 면 테스트가 강제합니다).

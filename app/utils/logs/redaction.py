@@ -33,9 +33,12 @@ _KEY_WORDS = (
 
 _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     # DSN·URL 의 userinfo: scheme://USER:PASSWORD@host — 계정명과 비밀번호를 모두 가린다.
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s:/@]+:[^\s@/]+@"), rf"\1{MASK}:{MASK}@"),
-    # 계정명 없는 userinfo: scheme://:PASSWORD@host (인증만 있는 Redis)
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://:)[^\s@/]+@"), rf"\1{MASK}@"),
+    # 비밀번호 부분은 탐욕적으로 **마지막** @ 까지 먹는다 — 인코딩 안 된 @·: 가 든 비밀번호도 통째로 가린다.
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s:/@]+:[^\s/]+@"), rf"\1{MASK}:{MASK}@"),
+    # 계정명 없는 userinfo: scheme://:PASSWORD@host (config.REDIS_URL 의 모양)
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://:)[^\s/]+@"), rf"\1{MASK}@"),
+    # 계정명만 있는 userinfo: scheme://USER@host
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s:/@]+@"), rf"\1{MASK}@"),
     # key=value · key: value · "key": "value" (Authorization 은 scheme 까지 한 덩어리)
     (
         re.compile(
