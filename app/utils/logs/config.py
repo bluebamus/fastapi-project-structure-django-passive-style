@@ -68,6 +68,7 @@ def formatter_spec(fmt: str, use_utc: bool, with_ms: bool = False) -> dict:
 LOG_FILES = {
     "web": ("app.log", "error.log"),
     "celery": ("celery.log", "celery-error.log"),
+    "beat": ("celery-beat.log", "celery-beat-error.log"),
 }
 
 #: uvicorn 로거는 자기 핸들러 없이 root 로 보낸다 — ``python main.py``·``uvicorn main:app`` CLI 모두

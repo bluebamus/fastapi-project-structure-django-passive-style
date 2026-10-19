@@ -58,14 +58,17 @@ def configure_logging(
         )
 
 
-def entry_process() -> str:
-    """진입 명령이 ``celery``(워커·beat)면 ``celery``, 아니면 ``web``.
+def entry_process(default: str = "web") -> str:
+    """프로세스 종류를 정하는 한 곳 — 진입 명령이 ``celery`` 면 ``beat``/``celery``, 아니면 ``default``.
 
     워커는 ``setup_logging`` 시그널 **전**, ``-A app.celery.app`` 을 import 하는 동안에도 로그를 남긴다.
     그 줄이 웹 ``app.log`` 로 가면 웹과 워커가 한 파일을 회전시킨다 — 그래서 첫 구성부터 나눈다.
     """
     entry = Path(sys.argv[0]) if sys.argv and sys.argv[0] else Path()
-    return "celery" if "celery" in (entry.stem.lower(), entry.parent.name.lower()) else "web"
+    if "celery" not in (entry.stem.lower(), entry.parent.name.lower()):
+        return default
+    # beat 는 워커와 다른 프로세스다 — 같은 파일을 둘이 회전시키지 않게 나눈다(ADR-003).
+    return "beat" if "beat" in sys.argv[1:] else "celery"
 
 
 def _known_headers() -> set[str]:

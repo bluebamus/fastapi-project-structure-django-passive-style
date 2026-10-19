@@ -418,3 +418,33 @@ def test_import_time_lines_of_worker_go_to_worker_files(monkeypatch, tmp_path, a
 
     names = tuple(Path(captured[0]["handlers"][h]["filename"]).name for h in ("file", "error_file"))
     assert names == files
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["/venv/bin/celery", "-A", "app.celery.app", "beat", "-l", "info"], "beat"),
+        (["/venv/bin/celery", "-A", "app.celery.app", "worker"], "celery"),
+        (["/venv/bin/pytest", "tests"], "web"),
+    ],
+)
+def test_entry_process(monkeypatch, argv, expected):
+    """beat 는 워커와 다른 프로세스다 — 같은 celery.log 를 둘이 회전시키지 않게 따로 둔다."""
+    monkeypatch.setattr("sys.argv", argv)
+    assert logs_setup.entry_process() == expected
+    assert logs_config.LOG_FILES["beat"] == ("celery-beat.log", "celery-beat-error.log")
+
+
+def test_celery_receiver_in_beat_uses_beat_files(restore_logging, monkeypatch, tmp_path):
+    from celery.signals import setup_logging
+
+    import app.celery.app  # noqa: F401 - 수신자 등록
+
+    monkeypatch.setattr("sys.argv", ["/venv/bin/celery", "-A", "app.celery.app", "beat"])
+    _set(monkeypatch, tmp_path, LOG_FILE_ENABLED=True)
+    setup_logging.send(sender=None, loglevel=logging.INFO, logfile=None, format="", colorize=False)
+
+    logging.getLogger("celery.beat").error("beat-boom")
+    _flush()
+    assert "beat-boom" in (tmp_path / "celery-beat-error.log").read_text(encoding="utf-8")
+    assert not (tmp_path / "celery.log").exists()
