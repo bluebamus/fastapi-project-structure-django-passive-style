@@ -14,3 +14,15 @@
 ## 최종 상태 (2026-10-19, Round 1 · 그룹 CONVERGED)
 
 수용 항목은 R-001~R-005 — 모두 비목표 또는 사용자 결정·배포 사실에 근거한 의도적 수용이다.
+
+## 상태 갱신 (2026-10-19, admin-session-hardening)
+
+> append-only — 위 표의 행은 그대로 두고 상태만 여기에 덧붙인다. 결정 정본은 `docs/crp/groups/admin-session-hardening/design-baseline.md`.
+
+- **R-001 — 해소 — admin-session-hardening ADR-002·ADR-003.** `AdminCsrfMiddleware` 가 `/admin` 아래 POST·PUT·PATCH·DELETE 전부(로그인 포함)의 토큰을
+  세션 토큰과 대조하고, 덮어쓴 `app/templates/admin/sqladmin/base.html` 이 생성·수정 폼(hidden)·삭제·가져오기(헤더)에 토큰을 싣는다.
+  로그아웃은 POST 전용 + 토큰이다(`require_post_logout`, GET 405). 남은 구멍은 사용자 정의 `@action`(GET) — admin-session-hardening R-001.
+- **R-003 — 해소 — admin-session-hardening ADR-001·ADR-005.** 관리 세션은 Redis 서버 세션이다. 로그아웃·비활성화·강등·삭제·비밀번호 변경 시
+  서버에서 즉시 지운다(`AdminSessionStore.revoke_user`). 사용자 결정은 "방법 2: Redis 서버 세션"(2026-10-19).
+- **R-005 — 해소 — admin-session-hardening ADR-004.** `LocalDateFilter` 에 기간 연산(`between`, 값 `YYYY-MM-DD~YYYY-MM-DD`, 양 끝 포함, 한쪽만이면
+  열린 구간)이 생겼고, 빠른 선택 "최근 7일·30일" 도 이 연산으로 표현한다.

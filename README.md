@@ -30,8 +30,9 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - **운영 기본기**: `/health`·`/ready` 분리, 불투명한 500(예외 헤더 `Allow`·`WWW-Authenticate` 등은 보존), SQL·비밀값 로그 차단(메시지·traceback·`stack_info` 의
   DSN 비밀번호·`password=`·Bearer·JWT 를 `***` 로 — uvicorn·Celery 핸들러 포함), DB 오류 메시지의 바인드 값 숨김(모든 엔진 `hide_parameters=True`),
   접속 로그 보존 기간(`ACCESS_LOG_RETENTION_DAYS`, 기본 1년 — Celery beat 가 매일 삭제), 종료 시 자원 정리 순서 보장.
-- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면 + 로그인 폼 CSRF 토큰 +
-  서명 세션 쿠키, 매 요청 DB 재확인), 목록의 `created_at` 날짜 필터(`TIME_ZONE` 기준 같은 날·이후·이전).
+- **Scalar** API 문서(`DEBUG=true`), **SQLAdmin** 관리 화면 — 활성 슈퍼유저 로그인(Bootstrap 로그인 화면, Redis 서버 세션 —
+  쿠키에는 세션 ID 만, 로그아웃·강등·비활성화·삭제 시 즉시 폐기, 로그인·생성·수정·삭제·로그아웃(POST) 전부 CSRF 토큰, 매 요청 DB 재확인),
+  목록의 `created_at` 날짜 필터(`TIME_ZONE` 기준 같은 날·이후·이전·기간).
   관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true` 로 마운트·링크까지 없앤다.
 
 ## 기술 스택
@@ -43,10 +44,10 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 | ORM / Migration | SQLAlchemy 2.0 async, Alembic |
 | Database | MySQL (aiomysql / 마이그레이션은 PyMySQL) |
 | Validation / Settings | Pydantic v2, pydantic-settings |
-| Redis | **필수, 7.0 이상** — 레이트 리밋이 `EXPIRE … NX`(7.0)를, refresh 회전이 GETDEL(6.2)을 쓴다. startup 연결·버전 검증, `get_redis` 주입, `/ready` 확인, Celery broker·result backend |
+| Redis | **필수, 7.0 이상** — 레이트 리밋이 `EXPIRE … NX`(7.0)를, refresh 회전이 GETDEL(6.2)을 쓴다. startup 연결·버전 검증, `get_redis` 주입, `/ready` 확인, `/admin` 관리 세션, Celery broker·result backend |
 | Task Queue | Celery 5 |
 | Auth | OAuth2 Password + PyJWT + pwdlib(Argon2) · 기존 bcrypt 해시 검증 · Redis(refresh 회전·레이트 리밋) |
-| Admin / Docs | SQLAdmin(슈퍼유저 세션 로그인 — starlette `SessionMiddleware` + itsdangerous 서명 쿠키, Bootstrap 5.3 로그인 화면) / Scalar |
+| Admin / Docs | SQLAdmin(슈퍼유저 세션 로그인 — Redis 서버 세션(`RedisSessionMiddleware`, 쿠키에는 세션 ID 만) + CSRF 미들웨어, Bootstrap 5.3 로그인 화면) / Scalar |
 | Quality | pytest, Ruff, mypy, Bandit, pip-audit, Playwright |
 
 정확한 버전 범위는 `pyproject.toml` 과 `uv.lock` 이 기준입니다.
@@ -205,11 +206,16 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 | `ENV` | `development` | production/staging 에서 `DEBUG=true` 이거나 `LOG_LEVEL=DEBUG` 면 설정 로드가 실패하고, `/admin` 세션 쿠키에 `Secure` 가 붙는다(HTTPS 전용). 비밀키 검증은 test 외 모든 ENV 에 적용된다(아래) |
 | `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 분리는 선택 기능 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access·refresh 수명. `JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·`JWT_LEEWAY_SECONDS` 와 레이트 리밋 `AUTH_LOGIN_*`·`AUTH_REGISTER_*` 는 `.env.example`·[아키텍처 §7](docs/guides/ARCHITECTURE.md#7-인증-jwt) |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. `SESSION_SECRET_KEY` 는 `/admin` 로그인 세션 쿠키의 서명 키다(바꾸면 모든 관리 세션이 끊긴다). 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | test 외 모든 ENV(개발 포함)에서 placeholder(빈 값·`your-` 시작·`change-this` 포함)이거나 32자 미만이면 **기동이 실패**하고, access·refresh 키는 서로 달라야 한다. `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(바꾸면 모든 관리 세션이 끊긴다). 생성: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `ADMIN_SESSION_MAX_AGE_SECONDS` | `28800` | `/admin` 세션 절대 만료(초, 8시간). 로그인 시각부터 세며 연장되지 않는다. 60 미만은 기동 실패 |
+| `ADMIN_SESSION_IDLE_SECONDS` | `1800` | `/admin` 세션 미사용 만료(초, 30분). 요청마다 다시 센다. 60 미만이거나 절대 만료보다 크면 기동 실패 |
 
 > **`/admin` 은 활성 슈퍼유저만 들어갑니다.** 로그인 화면(Bootstrap)에서 `scripts/create_superuser.py` 로 만든 계정으로
-> 로그인하면 `admin_session` 쿠키(path `/admin`·SameSite=Strict·HttpOnly·8시간)가 발급되고, 권한은 매 요청 DB 로 다시 확인합니다.
-> 로그인 폼은 세션에 둔 CSRF 토큰을 hidden 입력으로 싣고, 토큰이 없거나 다르면 자격 확인 전에 403 으로 막습니다.
+> 로그인하면 `admin_session` 쿠키(path `/admin`·SameSite=Strict·HttpOnly)가 발급되고, 권한은 매 요청 DB 로 다시 확인합니다.
+> 쿠키에는 무작위 세션 ID 만 있고 내용은 Redis 에 있습니다 — 30분 동안 쓰지 않거나 로그인 후 8시간이 지나면 다시 로그인해야 하고,
+> 로그아웃하거나 API·관리 화면에서 그 사용자를 강등·비활성화·삭제하면(또는 `--set-password` 로 비밀번호를 바꾸면) 세션이 즉시 지워집니다.
+> 로그인·생성·수정·삭제·로그아웃 같은 상태를 바꾸는 요청은 모두 CSRF 토큰을 싣고(화면 스크립트가 자동으로 붙인다), 없거나 다르면 403 입니다.
+> 로그아웃은 POST 전용입니다(GET 은 405). 날짜 필터는 같은 날·이후·이전과 **기간**(시작일~종료일, 양 끝 포함)을 고를 수 있습니다.
 > 세션은 **`/admin` 전용**이며 API 인증(JWT Bearer)과 섞이지 않습니다. 설계·흐름도·문제 해결은
 > [관리 화면 인증 가이드](docs/guides/admin-auth-guide.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
 
@@ -365,7 +371,7 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 
 비밀번호는 명령행 인자로 받지 않습니다(셸 기록에 남는다). 종료 코드는 0 성공 · 1 입력 거부 · 2 인자 오류입니다.
 만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다. **같은 계정이 `/admin` 로그인 계정입니다** — 활성 슈퍼유저만
-들어갈 수 있고, API 로 강등·비활성화하면 다음 관리 화면 요청부터 바로 로그인 화면으로 돌아갑니다.
+들어갈 수 있고, API·관리 화면에서 강등·비활성화하면 그 사용자의 관리 세션과 refresh 토큰이 즉시 지워져 다음 요청부터 로그인 화면으로 돌아갑니다.
 
 ## 운영 배포 체크리스트
 
@@ -378,7 +384,8 @@ uv run python -m scripts.create_superuser --username alice --set-password       
   운영했다면 적용 전에 리비전의 `LEGACY_OFFSET` 상수를 그 오프셋으로 바꿉니다. **적용 전에 백업합니다.**
 - **첫 관리자** — `scripts/create_superuser.py` 로 만듭니다(대화형 또는 `--password-stdin`). 이 계정이 `/admin` 로그인 계정입니다.
   일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지도 확인합니다.
-- **`/admin` 은 슈퍼유저 로그인이 필요합니다** — 세션 쿠키 서명 키는 `SESSION_SECRET_KEY` 입니다(바꾸면 모든 관리 세션이 끊깁니다).
+- **`/admin` 은 슈퍼유저 로그인이 필요합니다** — 관리 세션은 Redis 에 있습니다. Redis 를 쓸 수 없으면 관리 화면은 503 입니다(fail-closed).
+  `SESSION_SECRET_KEY` 는 세션 ID 를 Redis 키로 바꾸는 HMAC 키라 바꾸면 모든 관리 세션이 끊깁니다(다시 로그인하면 된다).
   staging/production 은 쿠키에 `Secure` 가 붙으므로 HTTPS 로 접속해야 로그인이 유지됩니다.
 - **관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`** — 마운트·링크·세션 미들웨어가 모두 사라집니다. 예전 `ADMIN` 줄이 `.env`·환경에
   남아 있으면 기동이 멈추니 `ADMIN_DISABLED` 로 옮깁니다.

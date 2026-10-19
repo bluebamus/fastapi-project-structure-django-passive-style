@@ -117,7 +117,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 | `app/core/db/errors.py` | `convert_db_error()` — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환 |
 | `app/core/exception.py` | `AppException` 계층(`headers` 를 핸들러가 응답에 싣는다 — 429 `Retry-After`)과 `ErrorResponse` |
 | `app/core/redis.py` | `get_redis()` 주입 provider, `ping_redis()`, 최소 버전 `redis.REDIS_MIN_VERSION`(7.0)·`ensure_redis_version()` |
-| `app/core/security/` | 인증·인가 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`Principal`·`OwnershipPolicy`와 주입 경로 `dependencies.py`(`get_current_principal`·`require_superuser`, §7·§7.1) |
+| `app/core/security/` | 인증·인가 부품 `PasswordHasher`·`TokenService`·`RefreshTokenStore`·`RateLimiter`·`Principal`·`OwnershipPolicy`, 관리 세션 `admin_session.py`(`AdminSessionStore`·`RedisSessionMiddleware`, §8)와 주입 경로 `dependencies.py`(`get_current_principal`·`require_superuser`, §7·§7.1) |
 | `app/core/models/models_base.py` | `Base` + `UUIDPrimaryKeyMixin`·`CreatedAtMixin`·`UpdatedAtMixin`·`TimestampMixin` |
 | `app/core/repositories/` | ORM: `CRUDBase`·`BaseRepository` / Raw: `RawCRUDBase`·`RawRepositoryBase` (두 계열은 상속 관계가 없다) |
 | `app/core/services/services_base.py` | `BaseService` — 세션 보관, `commit()`·`rollback()` 헬퍼 |
@@ -389,7 +389,7 @@ flowchart TD
 | `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
 | `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
-| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 로그인 세션 쿠키의 서명 키다(§8). `SESSION_EXPIRE_SECONDS` 는 소비처가 없다(관리 세션은 8시간 고정) |
+| `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(§8). `ADMIN_SESSION_MAX_AGE_SECONDS`(절대)·`ADMIN_SESSION_IDLE_SECONDS`(미사용)는 관리 세션 만료다(미사용이 절대보다 크면 기동 실패). `SESSION_EXPIRE_SECONDS` 는 소비처가 없다(`/admin` 과 무관) |
 | `ApiSettings`·`SMTPSettings`·`UploadSettings` | **선언만 있고 소비처가 없다.** 값을 바꿔도 동작이 변하지 않는다(버전 prefix 는 라우터 파일의 `/v1` 이 정한다) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` 도 현재 로깅 구성에서 읽지 않는다(§5).
@@ -421,7 +421,8 @@ flowchart TD
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅(§4.4) |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `localhost` / `6379` / `0` / 없음 | startup ping 대상이자 Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부 |
-| `SESSION_SECRET_KEY` | `change-this-...` | `/admin` 로그인 세션 쿠키 서명 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
+| `SESSION_SECRET_KEY` | `change-this-...` | `/admin` 관리 세션 ID → Redis 키 HMAC 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부 |
+| `ADMIN_SESSION_MAX_AGE_SECONDS` / `ADMIN_SESSION_IDLE_SECONDS` | `28800` / `1800` | `/admin` 세션 절대 만료(연장 불가)·미사용 만료(§8). 둘 다 60 이상, 미사용 ≤ 절대가 아니면 기동 실패 |
 
 ### 3.3 `create_app()` 조립 순서
 
@@ -883,7 +884,7 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
 - **상수 시간 인증**: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
   bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).
 - **논블로킹 해싱**: Argon2·bcrypt 는 `asyncio.to_thread` 로 이벤트 루프 밖에서 돈다.
-- **API 인증은 세션을 쓰지 않는다**: 메인 앱에는 `SessionMiddleware` 가 없고, `admin_session` 쿠키를 보내도 API 는 401 이다. 세션 로그인은 `/admin` 전용이다(§8).
+- **API 인증은 세션을 쓰지 않는다**: 메인 앱에는 세션 미들웨어가 없고, `admin_session` 쿠키를 보내도 API 는 401 이다. 세션 로그인은 `/admin` 전용이다(§8).
 
 ### 7.1 인가 — 주체·소유권·슈퍼유저
 
@@ -924,7 +925,7 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 | user | — | — | 단건 조회·수정(본인 — **권한 판정이 존재 확인보다 먼저**라 남의 ID 는 있든 없든 403) | 목록·생성(비밀번호 필수, `is_superuser` 지정 가능)·삭제, `is_active`·`is_superuser` 변경 |
 | auth | register·login·refresh·logout | `/me` | — | — |
 
-- 비활성화(`is_active=false`)·강등(`is_superuser=false`)·삭제는 그 사용자의 refresh family 를 모두 폐기한다(`RefreshTokenStore.revoke_user`).
+- 비활성화(`is_active=false`)·강등(`is_superuser=false`)·삭제는 그 사용자의 refresh family 와 `/admin` 관리 세션을 모두 폐기한다(`UserSessionRevoker`, §8 — 커밋 전).
   이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).
 - `author_id` 가 없는 행(인가 리비전 `a3c9e8f1b274` 이전 데이터)은 슈퍼유저만 수정·삭제한다.
 - 정본은 뷰 선언이다. "모든 오퍼레이션이 분류됐는가" 는 기동 검사가 막고, `tests/test_authorization_policy.py` 의 표는 예시 정책이
@@ -944,23 +945,54 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 - ModelView 는 모델과 같은 기능 폴더의 `admin.py` 가 소유한다(중앙 취합 파일 없음). 모델이 있는 앱은 `admin.py` 를 가져야 한다(`tests/core/test_admin_wiring.py`).
   `User` 의 `hashed_password` 는 목록·상세·폼·내보내기 어디에도 나오지 않고 `User` 생성은 막혀 있다(`tests/core/test_admin_views.py`).
 - **활성 슈퍼유저 로그인이 필요하다.** `AdminAuthBackend`(`app/core/security/admin_auth.py`)가 SQLAdmin `AuthenticationBackend` 를 구현한다.
-  - 로그인: 폼 username/password/csrf_token → **CSRF 토큰 확인**(세션의 토큰과 `hmac.compare_digest`, 없거나 다르면 403 으로 로그인 화면을 다시 그리고
-    레이트 리밋·자격 확인을 하지 않는다 — `AdminLoginCsrf`, security-ops-hardening ADR-004) → 레이트 리밋(`AUTH_LOGIN_*` 한도 재사용, 키 접두사 `admin-login:` 으로 API 와 분리, ip·ip+username) →
-    자격 확인 → 활성·슈퍼유저면 `request.session.clear()` 후 사용자 id 만 저장(세션 고정 방지). 실패는 사유 없이 400, 한도 초과는 로그인 화면을 429 + `Retry-After` 로 다시 그린다.
-  - 매 요청: 세션의 id 로 **DB 를 다시 확인**해 활성·슈퍼유저가 아니면 세션을 비우고 로그인 화면으로 보낸다(강등·비활성화 즉시 반영).
+  - 로그인: 폼 username/password/csrf_token → **CSRF 토큰 확인**(`AdminCsrfMiddleware` — 아래, 없거나 다르면 403 으로 로그인 화면을 다시 그리고
+    레이트 리밋·자격 확인을 하지 않는다) → 레이트 리밋(`AUTH_LOGIN_*` 한도 재사용, 키 접두사 `admin-login:` 으로 API 와 분리, ip·ip+username) →
+    자격 확인 → 활성·슈퍼유저면 `request.session.clear()` 후 사용자 id 저장 + 새 CSRF 토큰 + `RedisSessionMiddleware.rotate()`(응답 직전 새 세션 ID 발급,
+    이전 Redis 키 삭제 — 세션 고정 방지). 실패는 사유 없이 400, 한도 초과는 로그인 화면을 429 + `Retry-After` 로 다시 그린다.
+  - 매 요청: 세션의 id 로 **DB 를 다시 확인**해 활성·슈퍼유저가 아니면 세션을 비우고 로그인 화면으로 보낸다(아래 즉시 폐기와 이중 방어).
+  - 로그아웃: **POST 전용**(`require_post_logout` 이 sqladmin 의 GET `/admin/logout` 라우트를 POST 라우트로 바꾼다 — GET 은 405) + CSRF 토큰.
+    세션을 비우면 미들웨어가 Redis 키를 지우고 쿠키를 지운다 — 복사해 둔 쿠키도 그 순간 무효다.
   - 자격 확인은 core 가 사용자 모델을 모르므로 `AuthConfig.ready()` 가 `app/core/security/admin_credentials.py` 의 훅에 등록한
     `UserAdminCredentials`(`app/features/auth/admin_credentials.py`, `background_session` + `PasswordHasher`, API 로그인과 같은 `verify_credentials`)가 한다.
     등록한 앱이 없으면 관리 화면을 열지 않고 기동을 멈춘다.
-- 세션 쿠키 `admin_session`: path `/admin`, SameSite=Strict, HttpOnly, Max-Age 8시간, staging/production 에서 Secure, 서명 키 `SESSION_SECRET_KEY`
-  (starlette `SessionMiddleware` + itsdangerous). 세션 미들웨어는 **SQLAdmin 하위 앱에만** 있다 — API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
+- **세션은 Redis 서버 세션이다**(`app/core/security/admin_session.py`, admin-session-hardening ADR-001). 쿠키 `admin_session` 에는 `secrets.token_urlsafe(32)`
+  세션 ID 만 있고(path `/admin`, SameSite=Strict, HttpOnly, staging/production 에서 Secure, Max-Age = 절대 만료), 내용은 Redis 에 있다.
+  - `AdminSessionStore` 가 저장·조회·삭제·사용자별 폐기를, ASGI `RedisSessionMiddleware` 가 `scope["session"]` 에 dict 를 채우고 응답 직전에 저장·회전·삭제한다
+    (`request.session` 인터페이스 그대로).
+  - Redis 키 `admin:sess:{HMAC-SHA256(SESSION_SECRET_KEY, 세션 ID)}` → JSON `{"data", "user_id", "created_at"}`. TTL = min(미사용 만료, 절대 만료까지 남은 초),
+    요청마다 다시 건다(내용이 바뀌면 SET, 아니면 EXPIRE). 사용자별 인덱스 `admin:user_sessions:{user_id}`(SET, TTL = 절대 만료).
+  - 만료: 절대 `ADMIN_SESSION_MAX_AGE_SECONDS`(기본 8시간, 연장 불가 — 읽을 때 `created_at` 으로도 검사), 미사용 `ADMIN_SESSION_IDLE_SECONDS`(기본 30분).
+    쿠키의 ID 가 Redis 에 없으면(만료·폐기·위조) 빈 세션이고 쿠키를 지운다(`Max-Age=0`).
+  - `SESSION_SECRET_KEY` 는 세션 ID → Redis 키 HMAC 키다 — Redis 키가 새도 쿠키를 만들 수 없고, 키를 바꾸면 모든 관리 세션이 무효다.
+  - **Redis 장애는 fail-closed**: 세션을 읽지 못하면(lifespan 밖이라 클라이언트가 없는 경우 포함) 관리 화면은 503 이고 앱에 닿지 않는다. 응답 직전 저장 실패는 500.
+  - 미들웨어 순서는 `RedisSessionMiddleware`(바깥) → `AdminCsrfMiddleware`(안쪽)이고 **SQLAdmin 하위 앱에만** 있다 — 메인 앱에는 세션 미들웨어가 없고
+    API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
+- **즉시 폐기**(ADR-005·ADR-008): `UserSessionRevoker`(`app/core/security/revocation.py`)의 `revoke(user_id)` 가 refresh family(`RefreshTokenStore.revoke_user`)와
+  관리 세션(`AdminSessionStore.revoke_user` — 그 사용자의 세션 키와 인덱스)을 함께 지운다. API 와 관리 화면이 이 클래스 하나를 써서 **폐기 집합이 같다**.
+  - API: `UserService`(`app/features/user/services/user_service.py`)가 비활성화·강등·삭제 때 부른다. 생성자는 `revoker` 하나를 받고, provider 는
+    `get_user_session_revoker`(`app/core/security/dependencies.py`)다. 관리 화면이 꺼져 있으면 관리 세션 저장소가 `None` 이라 refresh 만 폐기한다.
+  - 관리 화면: `UserAdmin`(`app/features/user/admin.py`)의 커밋 **전** 훅이 `revoker_from_scope(request.scope)` 로 부른다. `on_model_change` 는 변경 전 객체와
+    폼 값을 비교해 비활성화(True→False)·슈퍼유저 해제(True→False)·비밀번호 해시 변경일 때만(생성 제외), `on_model_delete` 는 항상 폐기한다. 이름·이메일 같은
+    일반 수정은 폐기하지 않는다. 자기 자신을 강등·비활성화하면 현재 세션도 지워져 다음 요청에서 로그인 화면이 나온다(의도).
+  - **폐기는 커밋 전이다(fail-closed)**: sqladmin 0.32 의 `_queries._update_async`·`_delete_async` 가 `on_*` 훅을 세션 안에서 커밋 전에 부르고, API 는 핸들러가
+    나중에 커밋한다. Redis 폐기가 실패하면 예외가 커밋을 막는다 — 관리 화면 수정은 400 오류 화면 + DB 변경 없음, 삭제는 목록 `error=` + 행 유지.
+    반대로 폐기 뒤 커밋이 다른 이유로 실패하면 세션만 지워진다(다시 로그인하면 된다). 폐기와 커밋 사이에 다시 로그인한 세션은 매 요청 DB 확인이 막는다(R-005).
+  - 스크립트: `scripts/create_superuser.py --set-password` 는 별도 프로세스라 커밋 뒤 그 사용자의 관리 세션만 지운다. Redis 실패면 종료 코드 1 이다.
+- **CSRF**(ADR-002): `AdminCsrfMiddleware`(`app/core/security/admin_auth.py`)가 `/admin` 아래 POST·PUT·PATCH·DELETE 전부(로그인 포함 — 검사는 여기 하나)에서
+  헤더 `X-CSRF-Token`, 없으면 폼 필드 `csrf_token` 을 세션 토큰(`AdminCsrf`)과 `hmac.compare_digest` 로 비교한다. 폼은 본문을 한 번 버퍼링해 파싱하고
+  같은 본문을 다운스트림에 다시 흘려 준다. 실패는 403 이다 — 로그인은 로그인 화면, 로그인한 세션은 관리 화면 `error.html`, 로그인 전 요청은 문구만.
+  로그는 WARNING `[AdminCsrf] 토큰 불일치 METHOD PATH`. 레이트 리밋·자격 확인보다 먼저라 위조 요청이 카운터를 올리지 못한다.
 - 로그인 화면은 `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, SRI)이 sqladmin 기본 템플릿을 덮어쓴다 — `templates_dir` 의 로더가 패키지 템플릿보다 먼저다.
   폼은 `csrf_token(request)`(백엔드가 템플릿에 건 전역 함수 — 세션에 토큰이 없으면 `secrets.token_urlsafe(32)` 로 만든다)를 hidden 입력으로 싣는다.
-  로그인에 성공하면 `session.clear()` 가 토큰도 지워 다음 로그인 화면에서 새 토큰이 나온다. 로그인 이후 sqladmin 이 그리는 생성·수정·삭제 폼과
-  GET 로그아웃에는 토큰이 없다 — `SameSite=Strict`·`Path=/admin` 이 1차 방어다(security-ops-hardening R-001).
+  로그인 이후 화면은 `app/templates/admin/sqladmin/base.html` 이 sqladmin 원본(`sqladmin_original/base.html`)을 **확장**해 `<meta name="csrf-token">` 을 싣고,
+  인라인 스크립트가 같은 출처 POST 폼(생성·수정)에 hidden `csrf_token` 을, 같은 출처 XHR·`fetch`(삭제·일괄 삭제·가져오기)에 `X-CSRF-Token` 을 붙이며,
+  로그아웃 링크 클릭을 토큰 실은 POST 폼 제출로 바꾼다. JS 가 꺼져 있으면 로그아웃은 405 다. 원본 대조 테스트(`tests/core/test_admin_csrf.py`)가
+  sqladmin 업그레이드로 원본 블록·로그아웃 링크·`main.js` 요청 방식·로그아웃 라우트가 바뀌면 실패한다. 사용자 정의 `@action`(GET)은 보호 밖이다(이 저장소는 안 쓴다).
 - 목록의 시각 컬럼 필터는 `LocalDateFilter`(`app/core/admin_filters.py`)다. sqladmin 의 연산 필터는 `UTCDateTime` 을 날짜로 알아보지 못해 문자열을
   바인딩하고 목록이 500 이 된다. 이 필터는 `YYYY-MM-DD` 를 `TIME_ZONE` 의 날짜로 읽어 지역 0시를 UTC 순간으로 바꾼 범위로 거른다 —
-  같은 날 `[D, D+1)`·이후(포함) `>= D`·이전(미포함) `< D`, 빠른 선택(오늘·최근 7일·최근 30일). 형식이 틀리면 필터 없이 목록을 보여 준다(WARNING).
-  `created_at` 이 있는 모든 ModelView 가 단다(`tests/core/test_admin_pages.py`).
+  같은 날 `[D, D+1)`·이후(포함) `>= D`·이전(미포함) `< D`·**기간** `S~E`(양 끝 포함 `[S, E+1)`, 한쪽만이면 열린 구간), 빠른 선택(오늘·최근 7일·최근 30일 —
+  최근 N일은 오늘을 포함한 기간). 화면은 시작일·종료일 날짜 입력 둘을 제출 직전 스크립트가 값 하나로 합친다(`app/templates/admin/sqladmin/filters/local_date_filter.html`).
+  형식이 틀리거나 역순이면 필터 없이 목록을 보여 준다(WARNING `[admin] 날짜 필터 기간 무시`). `created_at` 이 있는 모든 ModelView 가 단다(`tests/core/test_admin_pages.py`).
 - 기본이 "켜짐" 인 것은 받자마자 DB 를 들여다보게 하려는 **개발 우선 결정**(2026-08-12)이다. 배포 환경에서도 켤 수 있다(로그인이 막는다).
 
 ---
@@ -1030,16 +1062,16 @@ config.set_main_option(                                              # URL → �
 | 1 | `DEBUG=false` (그리고 `LOG_LEVEL` 을 `DEBUG` 로 두지 않는다) | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2) |
 | 2 | 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`. 쓴다면 HTTPS 로만 접근(staging/production 쿠키는 `Secure`) | 켜 둔 `/admin` 은 로그인 화면을 공개한다(로그인은 필요하다). 예전 `ADMIN` 줄이 남아 있으면 기동이 멈춘다 |
 | 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 관리 화면을 내부망으로만 쓰려면 프록시에서 `/admin` 을 제한한다 |
-| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 쿠키 서명)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
+| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 세션 ID → Redis 키 HMAC)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
 | 5 | CORS 는 실제 frontend origin 만 | `CORS_ALLOW_ORIGINS=["*"]` 와 `CORS_ALLOW_CREDENTIALS=true` 조합은 설정 로드가 거부한다 |
-| 6 | Redis 는 **7.0 이상**, 인증·사설망 | startup 필수 자원이자 Celery broker. 7.0 미만이면 기동이 거부된다(`EXPIRE NX`). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다 |
+| 6 | Redis 는 **7.0 이상**, 인증·사설망 | startup 필수 자원이자 Celery broker·`/admin` 세션 저장소(Redis 를 쓸 수 없으면 관리 화면은 503). 7.0 미만이면 기동이 거부된다(`EXPIRE NX`). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다 |
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
 | 8 | 오케스트레이터가 `/health` 를 liveness, `/ready` 를 readiness 로 연결 | DB 흔들림에 프로세스 재시작 |
 | 9 | 로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록 | — |
 | 10 | 프록시 뒤 배포면 `TRUSTED_PROXY_HOPS` 를 **앞단 프록시 단 수**로 | 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋(API·`/admin`)이 전체 사용자를 한 사람으로 취급한다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 `X-Forwarded-For` 를 믿어 IP 위조가 가능하다(service-hardening R-013) |
 | 11 | 첫 관리자를 `scripts/create_superuser.py` 로 만들고(대화형 또는 `--password-stdin`), 관리 API 가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 도 `/admin` 로그인도 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
 | 12 | KST→UTC 리비전 `e5a7c2d9f310` 적용 전 백업, 기존 값의 시간대가 `+09:00` 이 아니면 `LEGACY_OFFSET` 수정 | 모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10) |
-| 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션 쿠키 서명 키는 `SESSION_SECRET_KEY` | 키가 새면 관리 세션 쿠키를 위조할 수 있다(권한은 매 요청 DB 로 다시 보므로 존재하는 활성 슈퍼유저 id 가 필요하다) |
+| 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션은 Redis 서버 세션, `SESSION_SECRET_KEY` 는 세션 ID → Redis 키 HMAC 키. `ADMIN_SESSION_MAX_AGE_SECONDS`(절대 8시간)·`ADMIN_SESSION_IDLE_SECONDS`(미사용 30분)를 정책에 맞춘다 | 키를 바꾸면 모든 관리 세션이 끊긴다(다시 로그인). Redis 를 읽을 수 있는 사람은 세션 내용(사용자 id·CSRF 토큰)을 본다 — Redis 접근을 통제한다 (쿠키는 HMAC 때문에 Redis 키로 만들 수 없다, admin-session-hardening R-008) |
 | 14 | `ACCESS_LOG_RETENTION_DAYS` 를 개인정보 정책에 맞추고(기본 365일), Celery worker 와 **beat 한 개**를 띄운다 | beat 가 없으면 보존 삭제가 돌지 않아 접속 로그가 무기한 쌓인다(§6·§9) |
 
 ### 11.2 배포 절차와 확인
@@ -1067,9 +1099,10 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 - **API 인가의 세분**: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). `Principal` 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
   다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.
-- **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). CSRF 토큰은 **로그인 폼에만** 있다 —
-  로그인 이후 sqladmin 의 생성·수정·삭제 폼과 GET 로그아웃은 `SameSite=Strict` 쿠키(다른 사이트에서 온 요청에는 세션이 실리지 않는다)가 막는다
-  (관리 화면 인증 가이드 §10, security-ops-hardening R-001). 관리 세션은 서명 쿠키라 서버 측 강제 로그아웃이 없다(Redis 이전은 사용자 결정 대기).
+- **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 상태를 바꾸는 관리 요청은 모두 CSRF 토큰을 요구하지만
+  sqladmin 사용자 정의 `@action`(GET 라우트)은 보호 밖이다 — 이 저장소는 쓰지 않는다(admin-session-hardening R-001). 관리 화면에서의 비활성화·강등·삭제도
+  API 와 같이 refresh 토큰과 관리 세션을 커밋 전에 폐기한다(R-007 해소). 같은 경로를 메서드별 라우트로 나눈 경우 405 의 `Allow` 가 불완전하다
+  (사용자 결정으로 현행 유지, R-002). 익명 로그인 화면 방문도 Redis 세션(미사용 30분)을 만든다(R-003).
 - **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·삭제)로 대신한다.
 - **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
   `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장된다
@@ -1088,6 +1121,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-19 | **admin-session-hardening**: `/admin` 세션을 서명 쿠키(starlette `SessionMiddleware` + itsdangerous)에서 Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 쿠키에는 세션 ID 만, 절대·미사용 만료 `ADMIN_SESSION_*`)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(`UserSessionRevoker` — API·`UserAdmin` 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, `create_superuser --set-password` 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(`AdminCsrfMiddleware`, 덮어쓴 `sqladmin/base.html`), 로그아웃 POST 전용(GET 405). `LocalDateFilter` 에 기간(`S~E`) 연산. `itsdangerous` 직접 의존 제거. 405 `Allow` 불완전은 사용자 결정으로 현행 유지(§8·§11) |
 | 2026-10-19 | **security-ops-hardening**: 모든 엔진에 `hide_parameters=True`(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). `/admin` 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 `created_at` 날짜 필터 `LocalDateFilter`(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (`docs/crp/groups/security-ops-hardening/`). |
 | 2026-10-13 | **log-redaction-fixes**: 로그 메시지·traceback·`stack_info` 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette `HTTPException` 핸들러가 `headers` 를 보존(405 `Allow`), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 `session_id`·Referer·XFF 원문 저장은 사용자 결정으로 유지 (`docs/crp/groups/log-redaction-fixes/`). |
 | 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](admin-auth-guide.html) (`docs/crp/groups/admin-login/`). |
