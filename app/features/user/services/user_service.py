@@ -8,8 +8,8 @@ User Service
 여기서 ``OwnershipPolicy`` 로 "본인 또는 슈퍼유저" 를 판정한다 — **존재 확인보다 먼저**
 판정해 남의 ID 를 넣어 404/403 차이로 존재 여부를 알아내지 못하게 한다. 권한 필드
 (``is_active``·``is_superuser``) 변경은 슈퍼유저만 한다. 비활성화·강등·삭제는 그 사용자의
-refresh family 와 관리 화면 세션을 모두 폐기한다(``RefreshTokenStore.revoke_user``·
-``AdminSessionStore.revoke_user`` — admin-session-hardening ADR-001).
+refresh family 와 관리 화면 세션을 모두 폐기한다(``UserSessionRevoker`` — 관리 화면의 ``UserAdmin`` 훅과
+같은 폐기 집합, admin-session-hardening ADR-005). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
 """
 
 import asyncio
@@ -18,8 +18,8 @@ from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ForbiddenException
-from app.core.security import OwnershipPolicy, PasswordHasher, Principal, RefreshTokenStore
-from app.core.security.admin_session import AdminSessionStore
+from app.core.security import OwnershipPolicy, PasswordHasher, Principal
+from app.core.security.revocation import UserSessionRevoker
 from app.core.services.services_base import BaseService
 from app.features.user.exceptions import (
     UsernameDuplicateException,
@@ -37,9 +37,8 @@ class UserService(BaseService):
         session: DB 세션.
         ownership: 본인·슈퍼유저 판정.
         password_hasher: 생성 시 비밀번호 해시 — 쓰기용 provider 만 넘긴다.
-        refresh_store: 비활성화·강등·삭제 시 refresh 폐기 — 쓰기용 provider 만 넘긴다
+        revoker: 비활성화·강등·삭제 시 refresh·관리 세션 폐기 — 쓰기용 provider 만 넘긴다
             (읽기 경로가 Redis 에 묶이지 않게 한다).
-        admin_sessions: 같은 시점에 관리 화면 세션 폐기 — 관리 화면이 꺼져 있으면 ``None``.
     """
 
     def __init__(
@@ -47,15 +46,13 @@ class UserService(BaseService):
         session: AsyncSession,
         ownership: OwnershipPolicy,
         password_hasher: PasswordHasher | None = None,
-        refresh_store: RefreshTokenStore | None = None,
-        admin_sessions: AdminSessionStore | None = None,
+        revoker: UserSessionRevoker | None = None,
     ) -> None:
         super().__init__(session)
         self.repository = UserRepository(session)
         self.ownership = ownership
         self._password_hasher = password_hasher
-        self._refresh_store = refresh_store
-        self._admin_sessions = admin_sessions
+        self._revoker = revoker
 
     async def create_user(self, data: UserCreate) -> User:
         """사용자를 생성한다. 사용자명 중복 시 UsernameDuplicateException."""
@@ -97,7 +94,7 @@ class UserService(BaseService):
         existing = await self._get_existing(user_id)  # 존재 보장(없으면 404)
         updated = await self.repository.update(user_id, changes)
         if changes.get("is_active") is False or changes.get("is_superuser") is False:
-            await self._revoke_sessions(user_id)
+            await self._writer_revoker().revoke(user_id)
         # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
         # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
         return updated if updated is not None else existing
@@ -108,12 +105,7 @@ class UserService(BaseService):
         deleted = await self.repository.delete(user_id)
         if not deleted:
             raise UserNotFoundException(detail={"id": user_id})
-        await self._revoke_sessions(user_id)
-
-    async def _revoke_sessions(self, user_id: str) -> None:
-        await self._writer_refresh_store().revoke_user(user_id)
-        if self._admin_sessions is not None:
-            await self._admin_sessions.revoke_user(user_id)
+        await self._writer_revoker().revoke(user_id)
 
     async def _get_existing(self, user_id: str) -> User:
         user = await self.repository.get_by_id(user_id)
@@ -126,7 +118,7 @@ class UserService(BaseService):
             raise RuntimeError("쓰기용 provider(get_user_service)로 만든 서비스가 아니다")
         return self._password_hasher
 
-    def _writer_refresh_store(self) -> RefreshTokenStore:
-        if self._refresh_store is None:
+    def _writer_revoker(self) -> UserSessionRevoker:
+        if self._revoker is None:
             raise RuntimeError("쓰기용 provider(get_user_service)로 만든 서비스가 아니다")
-        return self._refresh_store
+        return self._revoker

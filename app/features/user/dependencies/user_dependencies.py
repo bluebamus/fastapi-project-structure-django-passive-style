@@ -9,14 +9,13 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session, get_writer_db_session
-from app.core.security import OwnershipPolicy, PasswordHasher, RefreshTokenStore
-from app.core.security.admin_session import AdminSessionStore
+from app.core.security import OwnershipPolicy, PasswordHasher
 from app.core.security.dependencies import (
-    get_admin_session_store,
     get_ownership_policy,
     get_password_hasher,
-    get_refresh_token_store,
+    get_user_session_revoker,
 )
+from app.core.security.revocation import UserSessionRevoker
 from app.features.user.services.user_service import UserService
 
 
@@ -24,8 +23,7 @@ async def get_user_service(
     session: AsyncSession = Depends(get_writer_db_session),
     ownership: OwnershipPolicy = Depends(get_ownership_policy),
     password_hasher: PasswordHasher = Depends(get_password_hasher),
-    refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
-    admin_sessions: AdminSessionStore | None = Depends(get_admin_session_store),
+    revoker: UserSessionRevoker = Depends(get_user_session_revoker),
 ) -> UserService:
     """UserService 를 구성해 view 에 제공한다(쓰기용 — 커밋은 핸들러가 한다).
 
@@ -36,7 +34,7 @@ async def get_user_service(
     비밀번호 해시기와 refresh 기록·관리 세션 저장소(비활성화·강등·삭제 시 폐기)는 core provider 로
     주입한다.
     """
-    return UserService(session, ownership, password_hasher, refresh_store, admin_sessions)
+    return UserService(session, ownership, password_hasher, revoker)
 
 
 async def get_user_service_readonly(

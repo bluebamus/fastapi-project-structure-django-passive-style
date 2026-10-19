@@ -107,6 +107,11 @@ class AdminSessionStore:
         self.idle = idle
         self._clock = clock
 
+    @property
+    def redis(self) -> Redis:
+        """이 저장소의 Redis 클라이언트 — 같은 요청의 다른 저장소(refresh 폐기)가 함께 쓴다."""
+        return self._redis
+
     def key_for(self, sid: str) -> str:
         digest = hmac.new(self._secret, sid.encode("utf-8"), hashlib.sha256).hexdigest()
         return f"admin:sess:{digest}"

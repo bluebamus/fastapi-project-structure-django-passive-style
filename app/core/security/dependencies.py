@@ -1,7 +1,7 @@
 """인증·인가 주입 경로 — core 하나만 의존하면 된다 (service-hardening ADR-017·C-11).
 
 보안 부품 provider(``get_password_hasher``·``get_token_service``·``get_refresh_token_store``·
-``get_admin_session_store``·``get_ownership_policy``)와 현재 주체 해석(``get_current_principal``)·슈퍼유저 강제
+``get_admin_session_store``·``get_user_session_revoker``·``get_ownership_policy``)와 현재 주체 해석(``get_current_principal``)·슈퍼유저 강제
 (``require_superuser``)를 둔다. 인증 기능도 같은 provider 를 쓴다 — 테스트가
 ``app.dependency_overrides`` 로 바꾸면 모든 기능에 한 번에 적용된다.
 
@@ -31,6 +31,7 @@ from app.core.security.admin_session import AdminSessionStore, default_admin_ses
 from app.core.security.passwords import PasswordHasher
 from app.core.security.principal import OwnershipPolicy, Principal
 from app.core.security.refresh_store import RefreshTokenStore
+from app.core.security.revocation import UserSessionRevoker
 from app.core.security.tokens import ACCESS, TokenService
 from config import jwt_settings
 
@@ -88,6 +89,14 @@ def get_admin_session_store(
     if getattr(request.app.state, "admin", None) is None:
         return None
     return default_admin_session_store(redis)
+
+
+def get_user_session_revoker(
+    refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
+    admin_sessions: AdminSessionStore | None = Depends(get_admin_session_store),
+) -> UserSessionRevoker:
+    """사용자 단위 폐기(refresh + 관리 세션) — 관리 화면 훅과 같은 집합이다(admin-session-hardening ADR-005)."""
+    return UserSessionRevoker(refresh_store, admin_sessions)
 
 
 # =============================================================================

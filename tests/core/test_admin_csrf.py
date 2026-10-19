@@ -41,7 +41,7 @@ from app.core.bootstrap import create_app
 from app.core.db.session import Base
 from app.core.security.admin_auth import CSRF_FAILED_MESSAGE, AdminCsrfMiddleware
 from app.core.security.admin_session import RedisSessionMiddleware
-from app.core.security.dependencies import get_password_hasher
+from app.core.security.dependencies import get_password_hasher, get_refresh_token_store
 from app.features.catalog.models.models import Product
 from app.features.user.models.models import User
 from tests.admin_login import admin_login, admin_page_token
@@ -316,6 +316,25 @@ async def _boss_client(app) -> AsyncClient:
     return other
 
 
+async def _seed_boss_refresh(redis: FakeRedis) -> None:
+    """boss 의 API refresh family 하나 — 관리 화면 폐기가 refresh 도 지우는지 본다."""
+    await get_refresh_token_store(redis).register("jti-boss", "u-boss", "fam-boss")
+
+
+async def _boss_refresh_revoked(redis: FakeRedis) -> bool:
+    return bool(await redis.exists("auth:fam:fam-boss:revoked"))
+
+
+async def _boss_exists_as_active_superuser(maker) -> bool:
+    async with maker() as session:
+        row = (
+            await session.execute(
+                sa.select(User.is_active, User.is_superuser).where(User.id == "u-boss")
+            )
+        ).one_or_none()
+    return row is not None and bool(row[0]) and bool(row[1])
+
+
 async def _boss_index(redis: FakeRedis) -> set[bytes]:
     return set(await redis.smembers("admin:user_sessions:u-boss"))
 
@@ -332,6 +351,7 @@ async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(e
     client, _, redis = env
     app = client._transport.app  # type: ignore[attr-defined]
     boss = await _boss_client(app)
+    await _seed_boss_refresh(redis)
     keys_before = await _boss_index(redis)
     assert keys_before
 
@@ -343,6 +363,7 @@ async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(e
     assert await _boss_index(redis) == set()
     for key in keys_before:
         assert not await redis.exists(key), "강등·비활성화된 사용자의 세션 키가 남았다"
+    assert await _boss_refresh_revoked(redis), "API refresh family 가 폐기되지 않았다"
     stale = await boss.get("/admin/")
     assert stale.status_code == 302
     await boss.aclose()
@@ -378,7 +399,7 @@ async def test_admin_edit_on_an_already_inactive_user_does_not_revoke(env, monke
     async def spy(self, user_id: str) -> None:
         calls.append(user_id)
 
-    monkeypatch.setattr("app.core.security.admin_session.AdminSessionStore.revoke_user", spy)
+    monkeypatch.setattr("app.core.security.revocation.UserSessionRevoker.revoke", spy)
     response = await client.post(
         "/admin/user/edit/u-boss",
         data={
@@ -393,16 +414,20 @@ async def test_admin_edit_on_an_already_inactive_user_does_not_revoke(env, monke
     assert calls == []
 
 
-async def test_redis_failure_while_revoking_is_not_swallowed(env, monkeypatch):
-    """폐기 중 Redis 오류는 삼키지 않는다 — sqladmin 이 오류 화면(400)으로 드러낸다."""
+async def _redis_down(monkeypatch) -> None:
     from redis.exceptions import ConnectionError as RedisConnectionError
-
-    client, _, _ = env
 
     async def down(self, user_id: str) -> None:
         raise RedisConnectionError("down")
 
     monkeypatch.setattr("app.core.security.admin_session.AdminSessionStore.revoke_user", down)
+
+
+async def test_revoke_failure_blocks_the_edit_commit(env, monkeypatch):
+    """폐기는 커밋 전 — Redis 가 실패하면 DB 변경도 저장되지 않는다(fail-closed)."""
+    client, maker, _ = env
+    await _redis_down(monkeypatch)
+
     response = await client.post(
         "/admin/user/edit/u-boss",
         data={
@@ -415,6 +440,20 @@ async def test_redis_failure_while_revoking_is_not_swallowed(env, monkeypatch):
 
     assert response.status_code == 400
     assert "down" in response.text
+    assert await _boss_exists_as_active_superuser(maker), "폐기에 실패했는데 강등이 커밋됐다"
+
+
+async def test_revoke_failure_blocks_the_delete_commit(env, monkeypatch):
+    client, maker, _ = env
+    await _redis_down(monkeypatch)
+
+    response = await client.delete(
+        "/admin/user/delete?pks=u-boss", headers={"X-CSRF-Token": await admin_page_token(client)}
+    )
+
+    assert response.status_code == 200
+    assert "error=down" in response.text, "삭제 실패가 목록 오류로 드러나지 않았다"
+    assert await _boss_exists_as_active_superuser(maker), "폐기에 실패했는데 삭제가 커밋됐다"
 
 
 async def test_admin_edit_that_keeps_the_privilege_keeps_the_sessions(env):
@@ -440,6 +479,7 @@ async def test_admin_edit_that_keeps_the_privilege_keeps_the_sessions(env):
 async def test_admin_delete_revokes_that_users_sessions(env):
     client, _, redis = env
     boss = await _boss_client(client._transport.app)  # type: ignore[attr-defined]
+    await _seed_boss_refresh(redis)
     keys_before = await _boss_index(redis)
 
     response = await client.delete(
@@ -450,6 +490,7 @@ async def test_admin_delete_revokes_that_users_sessions(env):
     assert await _boss_index(redis) == set()
     for key in keys_before:
         assert not await redis.exists(key)
+    assert await _boss_refresh_revoked(redis), "API refresh family 가 폐기되지 않았다"
     await boss.aclose()
 
 
