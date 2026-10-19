@@ -25,10 +25,15 @@ Note:
     ADMIN_DISABLED 필드 주석 참고.
 """
 
+from typing import Any
+
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.core.admin_filters import LocalDateFilter
+from app.core.security.admin_session import store_from_scope
 from app.features.user.models.models import User
 
 
@@ -128,6 +133,42 @@ class UserAdmin(ModelView, model=User):
         User.created_at: "가입 시각",
         User.updated_at: "수정 시각",
     }
+
+    # =========================================================================
+    # 관리 세션 즉시 폐기 (admin-session-hardening ADR-005)
+    # =========================================================================
+    # 관리 화면에서 비활성화·슈퍼유저 해제·비밀번호 변경·삭제를 하면 그 사용자의 관리 세션을 모두
+    # 지운다 — API 서비스(UserService)와 같은 AdminSessionStore.revoke_user 를 부른다. 저장소는 관리
+    # 세션 미들웨어가 요청 scope 에 둔 것이다(조합은 주입). 이름·이메일 같은 일반 수정은 지우지 않는다.
+    # 자기 자신을 강등·비활성화하면 지금 세션도 지워진다(다음 요청은 로그인 화면) — 의도다.
+    # Redis 오류는 삼키지 않는다(커밋 뒤라 변경은 남고 오류가 화면에 드러난다). 매 요청 DB 확인
+    # (AdminAuthBackend.authenticate)이 이중 방어다.
+    async def on_model_change(
+        self, data: dict[str, Any], model: Any, is_created: bool, request: Request
+    ) -> None:
+        # sqladmin 0.32 는 폼 값을 적용하기 **전의** 객체로 이 훅을 부른다 — 여기서 전후를 비교한다.
+        request.state.revoke_admin_sessions = not is_created and _loses_admin_access(model, data)
+
+    async def after_model_change(
+        self, data: dict[str, Any], model: Any, is_created: bool, request: Request
+    ) -> Response | None:
+        if getattr(request.state, "revoke_admin_sessions", False):
+            await store_from_scope(request.scope).revoke_user(model.id)
+        return None
+
+    async def after_model_delete(self, model: Any, request: Request) -> None:
+        await store_from_scope(request.scope).revoke_user(model.id)
+
+
+def _loses_admin_access(before: Any, data: dict[str, Any]) -> bool:
+    """비활성화(True→False)·슈퍼유저 해제(True→False)·비밀번호 해시 변경이면 True."""
+    deactivated = before.is_active and data.get("is_active") is False
+    demoted = before.is_superuser and data.get("is_superuser") is False
+    # 비밀번호는 폼에서 빠져 있다(form_excluded_columns) — 폼이 바뀌어도 맞게 비교해 둔다.
+    password_changed = (
+        "hashed_password" in data and data["hashed_password"] != before.hashed_password
+    )
+    return bool(deactivated or demoted or password_changed)
 
 
 # registry adapter(app/core/apps/wiring.py)가 설치 앱의 이 이름을 읽어 SQLAdmin 에 등록한다.

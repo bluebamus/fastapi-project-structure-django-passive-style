@@ -139,16 +139,18 @@ def test_admin_is_assembled_with_the_login_backend():
 )
 def test_session_cookie_options_follow_env(monkeypatch: pytest.MonkeyPatch, env: str, secure: bool):
     import config
+    from app.core.security.admin_session import RedisSessionMiddleware
 
     monkeypatch.setattr(config.app_settings, "ENV", env)
-    options = _create().authentication_backend.middlewares[0].kwargs
+    middleware = _create().authentication_backend.middlewares[0]
+    cookie = middleware.kwargs["cookie"]
 
-    assert options["session_cookie"] == "admin_session"
-    assert options["path"] == "/admin"
-    assert options["same_site"] == "strict"
-    assert options["max_age"] == 8 * 60 * 60
-    assert options["https_only"] is secure
-    assert options["secret_key"] == config.session_settings.SESSION_SECRET_KEY
+    assert middleware.cls is RedisSessionMiddleware
+    assert cookie.name == "admin_session"
+    assert cookie.path == "/admin"
+    assert cookie.same_site == "strict"
+    assert cookie.max_age == config.session_settings.ADMIN_SESSION_MAX_AGE_SECONDS == 8 * 60 * 60
+    assert cookie.https_only is secure
 
 
 def test_missing_credentials_registration_stops_startup(monkeypatch: pytest.MonkeyPatch):

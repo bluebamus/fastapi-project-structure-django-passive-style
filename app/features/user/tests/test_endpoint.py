@@ -13,6 +13,7 @@ from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
 
 from app.core.redis import get_redis
+from app.core.security.admin_session import SESSION_USER_KEY, default_admin_session_store
 from app.core.security.dependencies import get_password_hasher
 from app.features.user.models.models import User
 from main import app
@@ -271,3 +272,44 @@ async def test_delete_revokes_refresh_families(env):
 
     assert resp.status_code == 204
     assert await _revoked(redis)
+
+
+# ---------------------------------------------------------------------------
+# 관리 화면 세션 즉시 폐기 (admin-session-hardening ADR-001) — refresh 폐기와 같은 지점이다.
+# ---------------------------------------------------------------------------
+async def _seed_admin_sessions(redis: FakeRedis, user_id: str) -> list[str]:
+    """그 사용자의 관리 세션 두 개(브라우저 두 곳)를 만든다."""
+    store = default_admin_session_store(redis)
+    return [await store.create({SESSION_USER_KEY: user_id}) for _ in range(2)]
+
+
+async def _alive(redis: FakeRedis, sids: list[str]) -> list[bool]:
+    store = default_admin_session_store(redis)
+    return [await store.load(sid) is not None for sid in sids]
+
+
+async def test_deactivation_demotion_and_deletion_revoke_admin_sessions(env):
+    client, _, redis = env
+    users = {
+        name: (await _create(client, name, is_superuser=True))["id"]
+        for name in ("adm-off", "adm-demote", "adm-gone", "adm-keep")
+    }
+    sids = {name: await _seed_admin_sessions(redis, uid) for name, uid in users.items()}
+
+    off = await client.patch(f"/api/v1/user/users/{users['adm-off']}", json={"is_active": False})
+    demote = await client.patch(
+        f"/api/v1/user/users/{users['adm-demote']}", json={"is_superuser": False}
+    )
+    gone = await client.delete(f"/api/v1/user/users/{users['adm-gone']}")
+    keep = await client.patch(f"/api/v1/user/users/{users['adm-keep']}", json={"email": "k@x.com"})
+
+    assert (off.status_code, demote.status_code, gone.status_code, keep.status_code) == (
+        200,
+        200,
+        204,
+        200,
+    )
+    assert await _alive(redis, sids["adm-off"]) == [False, False]
+    assert await _alive(redis, sids["adm-demote"]) == [False, False]
+    assert await _alive(redis, sids["adm-gone"]) == [False, False]
+    assert await _alive(redis, sids["adm-keep"]) == [True, True], "평범한 수정이 세션을 지웠다"

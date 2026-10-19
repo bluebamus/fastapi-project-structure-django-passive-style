@@ -21,14 +21,14 @@ import sqlalchemy as sa
 from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.apps import Apps
 from app.core.bootstrap import create_app
 from app.core.db.session import Base
+from app.core.security.admin_session import RedisSessionMiddleware
 from app.features.user.models.models import User
 from scripts import create_superuser
-from tests.admin_login import admin_login
+from tests.admin_login import admin_login, admin_logout
 
 PASSWORD = "Flow-admin-pw-123"
 BOOTSTRAP_CSS = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
@@ -92,7 +92,7 @@ async def test_superuser_from_the_script_can_log_in_and_out(env):
     assert logged_in.headers["location"].endswith("/admin/")
     assert (await client.get("/admin/")).status_code == 200
 
-    assert (await client.get("/admin/logout")).status_code == 302
+    assert (await admin_logout(client)).status_code == 302
     assert (await client.get("/admin/")).status_code == 302
 
 
@@ -185,8 +185,14 @@ async def test_session_middleware_lives_only_in_the_admin_sub_app(env):
     main_stack = [m.cls for m in app.user_middleware]
     admin_stack = [m.cls for m in app.state.admin.admin.user_middleware]
 
-    assert SessionMiddleware not in main_stack, "메인 앱에 세션 미들웨어가 붙었다"
-    assert admin_stack.count(SessionMiddleware) == 1
+    names = {c.__name__ for c in main_stack}
+    assert (
+        not {"SessionMiddleware", "RedisSessionMiddleware"} & names
+    ), "메인 앱에 세션 미들웨어가 붙었다"
+    assert admin_stack.count(RedisSessionMiddleware) == 1
+    assert "SessionMiddleware" not in [
+        c.__name__ for c in admin_stack
+    ], "서명 쿠키 세션이 남았다(admin-session-hardening ADR-001)"
 
 
 async def test_admin_session_cookie_does_not_authenticate_the_api(env):

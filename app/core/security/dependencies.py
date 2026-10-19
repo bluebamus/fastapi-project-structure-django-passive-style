@@ -1,7 +1,7 @@
 """인증·인가 주입 경로 — core 하나만 의존하면 된다 (service-hardening ADR-017·C-11).
 
 보안 부품 provider(``get_password_hasher``·``get_token_service``·``get_refresh_token_store``·
-``get_ownership_policy``)와 현재 주체 해석(``get_current_principal``)·슈퍼유저 강제
+``get_admin_session_store``·``get_ownership_policy``)와 현재 주체 해석(``get_current_principal``)·슈퍼유저 강제
 (``require_superuser``)를 둔다. 인증 기능도 같은 provider 를 쓴다 — 테스트가
 ``app.dependency_overrides`` 로 바꾸면 모든 기능에 한 번에 적용된다.
 
@@ -27,6 +27,7 @@ from redis.asyncio import Redis
 
 from app.core.exception import ErrorResponse, ForbiddenException, UnauthorizedException
 from app.core.redis import get_redis
+from app.core.security.admin_session import AdminSessionStore, default_admin_session_store
 from app.core.security.passwords import PasswordHasher
 from app.core.security.principal import OwnershipPolicy, Principal
 from app.core.security.refresh_store import RefreshTokenStore
@@ -74,6 +75,19 @@ def get_ownership_policy() -> OwnershipPolicy:
 def get_refresh_token_store(redis: Redis = Depends(get_redis)) -> RefreshTokenStore:
     """refresh 회전 기록. TTL 은 refresh 수명이다."""
     return RefreshTokenStore(redis, ttl_seconds=jwt_settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
+
+
+def get_admin_session_store(
+    request: Request, redis: Redis = Depends(get_redis)
+) -> AdminSessionStore | None:
+    """관리 세션 저장소 — 사용자 비활성화·강등·삭제 시 그 사용자의 관리 세션을 지운다.
+
+    관리 화면이 조립되지 않은 앱(``ADMIN_DISABLED=true``)에는 관리 세션이 없으므로 ``None`` 이다
+    (admin-session-hardening ADR-001 — 이때 저장소를 만들지 않는다).
+    """
+    if getattr(request.app.state, "admin", None) is None:
+        return None
+    return default_admin_session_store(redis)
 
 
 # =============================================================================

@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session, get_writer_db_session
 from app.core.security import OwnershipPolicy, PasswordHasher, RefreshTokenStore
+from app.core.security.admin_session import AdminSessionStore
 from app.core.security.dependencies import (
+    get_admin_session_store,
     get_ownership_policy,
     get_password_hasher,
     get_refresh_token_store,
@@ -23,6 +25,7 @@ async def get_user_service(
     ownership: OwnershipPolicy = Depends(get_ownership_policy),
     password_hasher: PasswordHasher = Depends(get_password_hasher),
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
+    admin_sessions: AdminSessionStore | None = Depends(get_admin_session_store),
 ) -> UserService:
     """UserService 를 구성해 view 에 제공한다(쓰기용 — 커밋은 핸들러가 한다).
 
@@ -30,9 +33,10 @@ async def get_user_service(
     종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
     커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다.
 
-    비밀번호 해시기와 refresh 기록(비활성화·삭제 시 폐기)은 core provider 로 주입한다.
+    비밀번호 해시기와 refresh 기록·관리 세션 저장소(비활성화·강등·삭제 시 폐기)는 core provider 로
+    주입한다.
     """
-    return UserService(session, ownership, password_hasher, refresh_store)
+    return UserService(session, ownership, password_hasher, refresh_store, admin_sessions)
 
 
 async def get_user_service_readonly(
