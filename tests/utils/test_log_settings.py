@@ -135,6 +135,27 @@ def test_uvicorn_direct_run_follows_console_format_and_date(monkeypatch, tmp_pat
     assert cfg["formatters"]["access"]["datefmt"] == "%Y"
 
 
+def test_uvicorn_direct_run_access_line_renders(restore_logging, monkeypatch, tmp_path, capsys):
+    """``python main.py`` 의 접속 로그 한 줄 — uvicorn 이 남기는 그대로의 레코드를 흘린다.
+
+    ``{client_addr}``·``{request_line}``·``{status_code}`` 는 uvicorn ``AccessFormatter`` 만 채운다.
+    ``TzFormatter`` 가 그 필드를 쓰면 줄마다 logging 오류(stderr)가 나고 접속 로그가 사라진다.
+    """
+    _set(monkeypatch, tmp_path, env="production", LOG_DATE_FORMAT="%Y/%m/%d")
+    dictConfig(setup_uvicorn_logging())
+    access = logging.getLogger("uvicorn.access")
+    buf = io.StringIO()
+    access.handlers[0].setStream(buf)
+
+    # uvicorn.protocols.http 의 호출과 같은 모양(5-튜플 args)
+    access.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", "/x?password=secret42", "1.1", 200)
+
+    assert capsys.readouterr().err == "", "접속 로그 포맷 오류가 stderr 로 나갔다"
+    line = buf.getvalue().strip()
+    assert line.endswith('INFO  [app=uvicorn] 1.2.3.4:5 - "GET /x?password=*** HTTP/1.1" 200'), line
+    assert line.startswith("[20") and " UTC] " in line and line[5] == "/"  # LOG_DATE_FORMAT·UTC
+
+
 def test_celery_worker_uses_app_logging(restore_logging, monkeypatch, tmp_path):
     """Celery 는 ``setup_logging`` 수신자가 있으면 root 를 가로채지 않는다 — 우리 구성을 쓴다."""
     from celery.signals import setup_logging

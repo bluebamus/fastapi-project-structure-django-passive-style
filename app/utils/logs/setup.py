@@ -67,10 +67,9 @@ def setup_uvicorn_logging() -> dict:
     env = _env()
     level = _level()
     use_utc = env in ("production", "staging")
-    access_fmt = (
-        "[{asctime} {tzname}] {levelname:5} [app=uvicorn] "
-        '{client_addr} - "{request_line}" {status_code}'
-    )
+    # {client_addr}·{request_line}·{status_code} 는 uvicorn AccessFormatter 만 채운다 — TzFormatter 에서
+    # 쓰면 줄마다 logging 오류. uvicorn 이 넘기는 메시지가 이미 `client - "METHOD path HTTP/v" status` 다.
+    access_fmt = "[{asctime} {tzname}] {levelname:5} [app=uvicorn] {message}"
     console = console_enabled()
     handlers: dict = {}
     if console:

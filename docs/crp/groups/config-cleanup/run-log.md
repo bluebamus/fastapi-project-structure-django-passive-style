@@ -75,3 +75,13 @@
   pip-audit(네트워크)·mysql·browser 단계는 실행 안 함. 마이그레이션 변경 없음.
 - **신규 finding:** LOW 2 → ledger F-004·F-005(Fixed). 수용 R-004(ADR-012).
 - **수렴 판정:** `CONVERGED` (Open Fix 0, R-001 해소)
+
+### Round 2b — 2026-10-19 · 감독자 추가 확인: `python main.py` 의 uvicorn access 줄
+- **재현:** `configure_logging()` → `dictConfig(setup_uvicorn_logging())` → `uvicorn.access` 에 uvicorn 과 같은 5-튜플 레코드
+  (`'%s - "%s %s HTTP/%s" %d'`)를 흘림 → `--- Logging error --- ValueError: Formatting field not found in record: 'client_addr'`, 출력 줄 없음.
+  원인: `{client_addr}`·`{request_line}`·`{status_code}` 는 uvicorn `AccessFormatter.formatMessage` 가 레코드 복사본에 넣는 필드인데 우리는 `TzFormatter` 를 썼다.
+  main(`80d56a9`)의 `setup.py` 도 같은 fmt — 이번 브랜치가 만든 결함이 아니다. 기존 `test_uvicorn_config_isolates_three_loggers` 는 fmt 에 `request_line` 문자열이 있는지만 봐 결함을 고정했다.
+- **TDD:** `test_uvicorn_direct_run_access_line_renders` 를 먼저 써 실패 확인(stderr 에 logging 오류) → access fmt 를 `[{asctime} {tzname}] {levelname:5} [app=uvicorn] {message}` 로 바꿔 통과.
+  줄: `[YYYY/MM/DD HH:MM:SS UTC] INFO  [app=uvicorn] 1.2.3.4:5 - "GET /x?password=*** HTTP/1.1" 200` — 마스킹·UTC·`LOG_DATE_FORMAT` 유지. 상태 문구(`OK`)는 없다.
+- **fail-on-revert:** `setup.py` 를 직전 커밋으로 되돌리면 `test_uvicorn_direct_run_access_line_renders`·`test_uvicorn_config_isolates_three_loggers` 2건 실패 → 복원(`cmp` 확인).
+- **신규 finding:** MED 1 → ledger F-006(Fixed)
