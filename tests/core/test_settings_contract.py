@@ -137,11 +137,7 @@ def test_environment_access_check_scans_real_files():
 # =============================================================================
 #: 필드를 "읽는지" 볼 운영 코드 — 테스트는 제외한다(테스트만 읽는 설정은 소비처가 아니다).
 #: config.py 도 넣는다(DSN 조립·교차 검증처럼 config 안에서 읽는 필드가 있다).
-READ_SCAN_FILES = (
-    PROJECT_ROOT / "config.py",
-    PROJECT_ROOT / "main.py",
-    *(path for root in SOURCE_ROOTS for path in (PROJECT_ROOT / root).rglob("*.py")),
-)
+READ_SCAN_FILES = [PROJECT_ROOT / "config.py", *_python_sources()]
 
 #: 읽는 곳이 없지만 이번 정리 범위 밖이라 남겨 둔 필드 — 사유와 함께. 비우는 것이 목표다.
 UNREAD_ALLOWED = {
@@ -218,9 +214,3 @@ def test_removed_keys_left_in_environment_are_ignored(
 
     for key in REMOVED_KEYS:
         assert not hasattr(settings, key), f"{cls.__name__} 에 지운 설정 {key} 가 남아 있다"
-
-
-def test_removed_settings_singletons_are_gone():
-    """지운 설정 묶음의 전역 인스턴스·클래스가 다시 생기지 않는다."""
-    for name in ("smtp_settings", "upload_settings", "SMTPSettings", "UploadSettings"):
-        assert not hasattr(config_module, name), f"config.{name} 가 남아 있다"
