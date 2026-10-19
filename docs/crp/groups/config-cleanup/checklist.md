@@ -22,4 +22,5 @@
 - [x] (F-005) 포맷·날짜 형식·콘솔 스위치 연결(앱·`python main.py` uvicorn·Celery 워커), 포맷 검증, 모두 꺼짐 경고 · 사용자 포맷 가리기 테스트
 - [x] fail-on-revert 기록 — run-log Round 2
 - [x] GATE 3 — `.env` 없는 사본 1249 passed · 36 deselected · skip 0, ruff·mypy·bandit·OpenAPI revert 통과
+- [x] (F-007, Round 3 · 브랜치 `fix/redaction-keeps-args`) 가리기 뒤 접속 줄 소실 재현(CLI·`python main.py` × 비밀값 유무) → TDD 수정 · fail-on-revert — run-log Round 3
 - [x] (F-006, 감독자 추가 확인) `python main.py` uvicorn access 줄 포맷 오류 재현 → TDD 수정 · fail-on-revert — run-log Round 2b

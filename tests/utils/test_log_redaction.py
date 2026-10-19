@@ -166,6 +166,39 @@ def test_uvicorn_access_args_stay_a_tuple(restore_logging):
     assert " 200" in out
 
 
+@pytest.mark.parametrize("path", ["cli", "main.py"])
+@pytest.mark.parametrize(
+    ("target", "shown", "hidden"),
+    [
+        ("/x?page=2", "GET /x?page=2 HTTP/1.1", None),
+        ("/x?token=abc.def&page=2", f"GET /x?token={MASK}&page=2 HTTP/1.1", "abc.def"),
+        (f"/cb?access_token={SECRETS[2]}", f"GET /cb?access_token={MASK} HTTP/1.1", SECRETS[2]),
+        # 값이 빈 키·경로 끝의 bearer — 인자 하나만 보면 깨끗한데 템플릿의 " HTTP/1.1" 과 이어 붙이면
+        # 규칙에 걸린다. 예전에는 args 를 None 으로 접어 AccessFormatter 가 줄마다 오류를 냈다(F-007).
+        ("/x?password=", f"GET {MASK} HTTP/1.1", None),
+        ("/x?token=", f"GET {MASK} HTTP/1.1", None),
+        ("/auth/bearer", f"GET {MASK} HTTP/1.1", None),
+    ],
+)
+def test_uvicorn_access_line_survives_redaction(
+    restore_logging, capsys, path, target, shown, hidden
+):
+    """접속 줄은 사라지지 않고(logging 오류 없음) 비밀값은 가려진다 — CLI·``python main.py`` 두 경로."""
+    from uvicorn.config import LOGGING_CONFIG
+
+    dictConfig(copy.deepcopy(LOGGING_CONFIG) if path == "cli" else setup_uvicorn_logging())
+    access = logging.getLogger("uvicorn.access")
+    buf = _swap_stream(access.handlers[0])
+
+    access.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", target, "1.1", 200)
+
+    assert "Logging error" not in capsys.readouterr().err
+    out = buf.getvalue()
+    assert f'1.2.3.4:5 - "{shown}" 200' in out, out
+    if hidden:
+        assert hidden not in out
+
+
 # =============================================================================
 # Celery — 워커는 root 핸들러를 자기 포매터로 바꾼다
 # =============================================================================

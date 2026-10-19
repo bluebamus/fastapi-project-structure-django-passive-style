@@ -85,3 +85,15 @@
   줄: `[YYYY/MM/DD HH:MM:SS UTC] INFO  [app=uvicorn] 1.2.3.4:5 - "GET /x?password=*** HTTP/1.1" 200` — 마스킹·UTC·`LOG_DATE_FORMAT` 유지. 상태 문구(`OK`)는 없다.
 - **fail-on-revert:** `setup.py` 를 직전 커밋으로 되돌리면 `test_uvicorn_direct_run_access_line_renders`·`test_uvicorn_config_isolates_three_loggers` 2건 실패 → 복원(`cmp` 확인).
 - **신규 finding:** MED 1 → ledger F-006(Fixed)
+
+### Round 3 — 2026-10-19 (base SHA: `2d478ea`, 브랜치 `fix/redaction-keeps-args`) · 가리기 뒤 접속 줄 소실
+- **재현(실제 레코드, 두 경로 × 7 경로값):** `configure_logging()` 뒤 uvicorn `LOGGING_CONFIG`(CLI)와 `setup_uvicorn_logging()`(`python main.py`)에
+  `'%s - "%s %s HTTP/%s" %d'` 5-튜플을 흘렸다. 비밀값 없음·`?password=secret42&page=2`·`?token=abc.def`·`?access_token=<JWT>` 는 두 경로 모두 줄이 남고 값이 가려졌다
+  (인자별 가리기가 args 모양을 지킨다 — 이 저장소는 LogRecord factory 방식). `?password=`·`?token=`(빈 값)·`/bearer` 는 CLI 에서 `--- Logging error --- Arguments: None` 으로
+  **줄이 사라졌고**, `python main.py` 는 오류 없이 `"GET /x?password= ***"` 처럼 HTTP 버전을 가렸다.
+- **원인:** `SecretRedactor._redact_message` 는 인자별로 가린 결과가 여전히 규칙에 걸리면 렌더 문자열로 접는다(`args=None`). 위 세 경우는 키가 경로 인자 끝에 있고 규칙이 템플릿의 ` HTTP/` + 버전 인자를 "값" 으로 잡는다.
+- **TDD:** `test_uvicorn_access_line_survives_redaction`(2 경로 × 6 경우)를 먼저 써 6건 실패 확인 → 접기 전에 문자열 인자 하나씩 `***` 로 바꿔 보고 깨끗해지는 첫 모양으로 고정. 
+  인자 하나로 안 되면(진짜로 여러 곳에 걸친 비밀값) 예전처럼 접는다. `password=%s` 처럼 키가 템플릿·값이 인자인 기존 경우는 그 인자가 가려진다(기존 테스트 통과).
+- **fail-on-revert:** `redaction.py` 를 main 으로 되돌리면 새 테스트 6건 실패 → 복원(`cmp` 확인).
+- **검사:** `.env` 없는 저장소 밖 클론(`b127a9a`) 1262 passed · 36 deselected · skip/xfail/xpass 0, `-m "mysql or browser" --collect-only` 36 수집(실행 안 함). 작업 사본 1262 passed · 36 deselected. mypy 222 파일·ruff·bandit(0건) 통과.
+- **신규 finding:** MED 1 → ledger F-007(Fixed)
