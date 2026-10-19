@@ -6,7 +6,7 @@ UserAccessLog Service
 """
 
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import String
@@ -33,6 +33,9 @@ _COLUMN_MAX_LENGTHS: dict[str, int] = {
     if isinstance(column.type, String) and column.type.length
 }
 
+#: 보존 삭제 한 번(트랜잭션 하나)에 지우는 최대 행 수 — 긴 잠금·거대한 트랜잭션을 피한다.
+PURGE_BATCH_SIZE = 5_000
+
 
 def truncate_to_columns(data: dict[str, Any]) -> dict[str, Any]:
     """문자열 값을 ``user_access_logs`` 컬럼 길이로 자른 새 dict 를 돌려준다.
@@ -52,11 +55,16 @@ class UserAccessLogService(BaseService):
     """접속 로그 비즈니스 로직 (세션 기반)."""
 
     def __init__(
-        self, session: AsyncSession, timezone: TimezoneSettings = timezone_settings
+        self,
+        session: AsyncSession,
+        timezone: TimezoneSettings = timezone_settings,
+        retention_days: int = 0,
     ) -> None:
         super().__init__(session)
         self.repository = UserAccessLogRepository(session)
         self.timezone = timezone
+        #: 보존 일수(``ACCESS_LOG_RETENTION_DAYS``) — provider 가 설정에서 넣는다. 0 = 지우지 않음.
+        self.retention_days = retention_days
 
     async def create_access_log(
         self,
@@ -145,3 +153,34 @@ class UserAccessLogService(BaseService):
             os_list=[OSStats(os_name=k, count=v) for k, v in os_counts.items()],
             browsers=[BrowserStats(browser_name=k, count=v) for k, v in browser_counts.items()],
         )
+
+    async def purge_expired(
+        self, *, now: datetime | None = None, batch_size: int = PURGE_BATCH_SIZE
+    ) -> int:
+        """보존 기간이 지난 접속 로그를 배치로 지우고 지운 총 행 수를 돌려준다.
+
+        기준은 ``now - retention_days`` 이고 그보다 **오래된** 행만 지운다(정확히 그 순간의 행은
+        남는다). 배치마다 커밋한다 — 한 트랜잭션으로 수백만 행을 지우면 잠금이 길어지고 실패 시
+        전부 되돌아간다. ``retention_days`` 가 0 이면 DB 에 가지 않고 0 을 돌려준다.
+
+        Args:
+            now: 기준 시각(aware). 테스트가 시계를 주입한다 — 기본은 ``timezone.utc_now()``.
+            batch_size: 한 번에 지울 최대 행 수.
+        """
+        if self.retention_days <= 0:
+            return 0
+        cutoff = (now or self.timezone.utc_now()) - timedelta(days=self.retention_days)
+        total = 0
+        while True:
+            deleted = await self.repository.delete_created_before(cutoff, batch_size)
+            await self.commit()
+            total += deleted
+            if deleted < batch_size:
+                break
+        self.log.info(
+            "접속 로그 보존 삭제: deleted=%s cutoff=%s retention_days=%s",
+            total,
+            cutoff.isoformat(),
+            self.retention_days,
+        )
+        return total

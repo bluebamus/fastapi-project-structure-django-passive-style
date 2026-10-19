@@ -33,6 +33,8 @@ from app.features.reply.models.models import Reply
 from app.features.reports.models.models import SalesOrder
 from app.features.sns.models.models import SnsPost
 from app.features.user.models.models import User
+from config import timezone_settings
+from tests.admin_login import admin_login
 
 PASSWORD = "Pages-admin-pw-123"
 NOW = datetime(2026, 10, 12, 1, 2, 3, tzinfo=UTC)
@@ -72,7 +74,11 @@ def _seed() -> list[object]:
             ordered_at=NOW,
         ),
         UserAccessLog(
-            id="l-1", ip_address="127.0.0.1", request_path="/health", request_method="GET"
+            id="l-1",
+            ip_address="127.0.0.1",
+            request_path="/health",
+            request_method="GET",
+            created_at=NOW,
         ),
     ]
 
@@ -105,7 +111,7 @@ async def admin_client() -> AsyncIterator[tuple[AsyncClient, list]]:
     redis = FakeRedis()
     app.state.redis = redis
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        login = await client.post("/admin/login", data={"username": "root", "password": PASSWORD})
+        login = await admin_login(client, "root", PASSWORD)
         assert login.status_code == 302
         yield client, list(admin._views)
     await redis.aclose()
@@ -138,3 +144,46 @@ async def test_every_admin_view_lists_filters_and_shows_details(admin_client):
                 failures.append(f"{view.identity} {name} → {response.status_code}")
 
     assert not failures, failures
+
+
+async def test_every_admin_view_with_created_at_lists_through_the_date_filter(admin_client):
+    """``created_at`` 이 있는 모든 뷰에 날짜 필터가 있고, 연산 3종·잘못된 입력 모두 200 이다."""
+    client, views = admin_client
+    seeded_day = NOW.astimezone(timezone_settings.tz).date().isoformat()
+
+    failures: list[str] = []
+    for view in views:
+        assert hasattr(view.model, "created_at"), f"{view.identity} 에 created_at 이 없다"
+        names = [type(f).__name__ for f in view.get_filters()]
+        if "LocalDateFilter" not in names:
+            failures.append(f"{view.identity}: 날짜 필터 없음 {names}")
+            continue
+        base = f"/admin/{view.identity}/list"
+        for operation, value in (
+            ("on", seeded_day),
+            ("from", seeded_day),
+            ("before", seeded_day),
+            ("on", "not-a-date"),
+        ):
+            response = await client.get(
+                base, params={"created_at": value, "created_at_op": operation}
+            )
+            if response.status_code != 200:
+                failures.append(f"{view.identity} {operation}={value} → {response.status_code}")
+            elif 'type="date" name="created_at"' not in response.text:
+                failures.append(f"{view.identity}: 날짜 입력이 그려지지 않았다")
+
+    assert not failures, failures
+
+
+async def test_date_filter_narrows_the_access_log_list(admin_client):
+    client, _ = admin_client
+    seeded_day = NOW.astimezone(timezone_settings.tz).date().isoformat()
+    base = "/admin/user-access-log/list"
+
+    on = await client.get(base, params={"created_at": seeded_day, "created_at_op": "on"})
+    before = await client.get(base, params={"created_at": seeded_day, "created_at_op": "before"})
+
+    assert on.status_code == before.status_code == 200
+    assert "details/l-1" in on.text
+    assert "details/l-1" not in before.text

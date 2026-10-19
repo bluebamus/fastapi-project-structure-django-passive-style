@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.apps import Apps
 from app.core.bootstrap import create_app
+from tests.admin_login import admin_login
 from tests.integration.conftest import (
     MYSQL_DATABASE,
     MYSQL_HOST,
@@ -78,11 +79,9 @@ async def test_script_created_superuser_logs_in_to_admin_on_mysql(mysql_session_
     app.state.redis = redis
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.get("/admin/")).status_code == 302
-        wrong = await client.post(
-            "/admin/login", data={"username": username, "password": "wrong-password"}
-        )
+        wrong = await admin_login(client, username, "wrong-password")
         assert wrong.status_code == 400
-        ok = await client.post("/admin/login", data={"username": username, "password": PASSWORD})
+        ok = await admin_login(client, username, PASSWORD)
         assert ok.status_code == 302
         assert (await client.get("/admin/")).status_code == 200
         await client.get("/admin/logout")

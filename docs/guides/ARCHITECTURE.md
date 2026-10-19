@@ -111,7 +111,8 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 | `app/core/bootstrap.py` | `create_app()` factory, `lifespan`, 전역 예외 핸들러 4종, `/health`·`/ready`·Scalar `/docs` |
 | `app/core/resources.py` | `manage_application_resources()` — Redis 검증, 개발용 테이블 생성, 종료 순서 |
 | `app/core/apps/` | `AppConfig`·`Apps`·예외(Django lifecycle) + `wiring.py`(FastAPI·SQLAdmin adapter) |
-| `app/core/db/session.py` | 엔진·세션 팩토리, 세션 Dependency, `background_session()`, `owned_tables()`, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` |
+| `app/core/db/session.py` | 엔진·세션 팩토리(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`), 세션 Dependency, `background_session()`, `owned_tables()`, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` |
+| `app/core/admin_filters.py` | 관리 목록 날짜 필터 `LocalDateFilter` — 지역 날짜를 UTC 범위로 바꿔 `UTCDateTime` 컬럼을 거른다(sqladmin 미의존, §8) |
 | `app/core/db/router.py` | `DatabaseRouter`·`RoutingSession`, `using_writer`·`mark_read_only`·`is_read_only_session`, `read_intent`·`write_intent` |
 | `app/core/db/errors.py` | `convert_db_error()` — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환 |
 | `app/core/exception.py` | `AppException` 계층(`headers` 를 핸들러가 응답에 싣는다 — 429 `Retry-After`)과 `ErrorResponse` |
@@ -574,6 +575,11 @@ FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(`use_cache=
 모든 엔진은 `pool_pre_ping`, `pool_recycle=DB_POOL_RECYCLE`(280초 — DB/프록시 `wait_timeout` 보다 짧게),
 반환 시 rollback, `connect_timeout` 10초, utf8mb4 를 쓴다. 엔진 생성은 import 시점이지만 **실제 연결은 첫 사용 때**다.
 
+모든 엔진(writer·reader·background, Alembic 의 `engine_from_config` 포함)은 `session.ENGINE_SAFETY_OPTIONS` 를 펼쳐 받는다 — 지금은
+`hide_parameters=True` 하나다. DB 오류(`IntegrityError` 등)의 메시지와 SQLAlchemy 로그에서 **바인드 값**(이메일·비밀번호 해시·토큰)이
+빠지고 SQL 문과 `[SQL parameters hidden due to hide_parameters=True]` 만 남는다. 새 엔진을 만들면 같은 옵션을 넣는다 —
+`tests/core/test_engine_hide_parameters.py` 가 모든 생성 지점을 AST 로 확인한다(security-ops-hardening ADR-001).
+
 최대 연결 수(`db_settings.max_total_connections`)는 프로세스마다 다음과 같고 `DB_WORKER_PROCESSES`(uvicorn + celery worker 수)를 곱한다.
 
 ```text
@@ -694,6 +700,7 @@ SQLAlchemy 예외의 문자열에는 실행 SQL·바인딩 값·때로 DSN 이 �
 | 그 밖의 `SQLAlchemyError` | `DatabaseException` (500) |
 
 SQLite 는 숫자 코드를 주지 않으므로 파이썬 `sqlite3` 예외의 `sqlite_errorname` 으로 가른다 — 메시지는 파싱하지 않는다.
+변환을 거치지 않는 경로(잡히지 않은 예외의 traceback, 직접 `logger.exception`)도 엔진의 `hide_parameters=True`(§4.3) 덕분에 예외 문자열에 바인드 값이 없다.
 4xx 로 바뀌는 위반은 WARNING, 나머지는 ERROR 로 남는다(service-hardening ADR-007).
 
 ### 4.8 모델과 기능 카탈로그
@@ -786,6 +793,14 @@ UserInfoMiddleware (app/core/middlewares/user_info_middleware.py)
 | `TRUSTED_PROXY_HOPS` | `0` — 앞단 신뢰 프록시 수. 0 이면 프록시 헤더를 보지 않는다 |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]` (대소문자 무시) |
 | `SESSION_COOKIE_NAME` | `session` — 이 이름의 쿠키 값을 `session_id` 로 기록 |
+| `ACCESS_LOG_RETENTION_DAYS` | `365` — 보존 일수. `0` = 지우지 않음, 음수는 설정 검증 오류 |
+
+**보존 기간 삭제** (security-ops-hardening ADR-002·ADR-003): home 의 Celery 태스크 `home.purge_expired_access_logs` 가
+`UserAccessLogService.purge_expired()` 를 부른다. 기준은 `now(UTC) - ACCESS_LOG_RETENTION_DAYS 일` 이고 그보다 **오래된** 행만 지운다
+(정확히 그 순간의 행은 남는다). `UserAccessLogRepository.delete_created_before()` 가 오래된 순으로 id 를 최대 5,000개(`user_access_log_service.PURGE_BATCH_SIZE`) 고른 뒤
+그 id 로 지우고, 서비스가 배치마다 커밋한다 — 긴 잠금·거대 트랜잭션을 피한다. 두 구문으로 나눈 이유는 MySQL 이 같은 테이블의
+`IN (SELECT … LIMIT)` 을 거부하고 SQLite 는 `DELETE … LIMIT` 을 받지 않기 때문이다(두 DB 에서 같은 쿼리). 보존 0 이면 DB 에 가지 않는다.
+일정은 매일 03:30(`TIME_ZONE`)이고 home 의 `tasks.py` 가 `celery_app.add_periodic_task` 로 등록한다(§9).
 
 **클라이언트 IP** (`app/core/middlewares/client_ip.py` 의 `ClientIPResolver`, `setup_user_info_middleware()` 가
 설정으로 한 번 만들어 미들웨어에 주입): `TRUSTED_PROXY_HOPS=0` 이면 소켓 주소(`request.client.host`)만 쓴다.
@@ -929,7 +944,8 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 - ModelView 는 모델과 같은 기능 폴더의 `admin.py` 가 소유한다(중앙 취합 파일 없음). 모델이 있는 앱은 `admin.py` 를 가져야 한다(`tests/core/test_admin_wiring.py`).
   `User` 의 `hashed_password` 는 목록·상세·폼·내보내기 어디에도 나오지 않고 `User` 생성은 막혀 있다(`tests/core/test_admin_views.py`).
 - **활성 슈퍼유저 로그인이 필요하다.** `AdminAuthBackend`(`app/core/security/admin_auth.py`)가 SQLAdmin `AuthenticationBackend` 를 구현한다.
-  - 로그인: 폼 username/password → 레이트 리밋(`AUTH_LOGIN_*` 한도 재사용, 키 접두사 `admin-login:` 으로 API 와 분리, ip·ip+username) →
+  - 로그인: 폼 username/password/csrf_token → **CSRF 토큰 확인**(세션의 토큰과 `hmac.compare_digest`, 없거나 다르면 403 으로 로그인 화면을 다시 그리고
+    레이트 리밋·자격 확인을 하지 않는다 — `AdminLoginCsrf`, security-ops-hardening ADR-004) → 레이트 리밋(`AUTH_LOGIN_*` 한도 재사용, 키 접두사 `admin-login:` 으로 API 와 분리, ip·ip+username) →
     자격 확인 → 활성·슈퍼유저면 `request.session.clear()` 후 사용자 id 만 저장(세션 고정 방지). 실패는 사유 없이 400, 한도 초과는 로그인 화면을 429 + `Retry-After` 로 다시 그린다.
   - 매 요청: 세션의 id 로 **DB 를 다시 확인**해 활성·슈퍼유저가 아니면 세션을 비우고 로그인 화면으로 보낸다(강등·비활성화 즉시 반영).
   - 자격 확인은 core 가 사용자 모델을 모르므로 `AuthConfig.ready()` 가 `app/core/security/admin_credentials.py` 의 훅에 등록한
@@ -938,6 +954,13 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 - 세션 쿠키 `admin_session`: path `/admin`, SameSite=Strict, HttpOnly, Max-Age 8시간, staging/production 에서 Secure, 서명 키 `SESSION_SECRET_KEY`
   (starlette `SessionMiddleware` + itsdangerous). 세션 미들웨어는 **SQLAdmin 하위 앱에만** 있다 — API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
 - 로그인 화면은 `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, SRI)이 sqladmin 기본 템플릿을 덮어쓴다 — `templates_dir` 의 로더가 패키지 템플릿보다 먼저다.
+  폼은 `csrf_token(request)`(백엔드가 템플릿에 건 전역 함수 — 세션에 토큰이 없으면 `secrets.token_urlsafe(32)` 로 만든다)를 hidden 입력으로 싣는다.
+  로그인에 성공하면 `session.clear()` 가 토큰도 지워 다음 로그인 화면에서 새 토큰이 나온다. 로그인 이후 sqladmin 이 그리는 생성·수정·삭제 폼과
+  GET 로그아웃에는 토큰이 없다 — `SameSite=Strict`·`Path=/admin` 이 1차 방어다(security-ops-hardening R-001).
+- 목록의 시각 컬럼 필터는 `LocalDateFilter`(`app/core/admin_filters.py`)다. sqladmin 의 연산 필터는 `UTCDateTime` 을 날짜로 알아보지 못해 문자열을
+  바인딩하고 목록이 500 이 된다. 이 필터는 `YYYY-MM-DD` 를 `TIME_ZONE` 의 날짜로 읽어 지역 0시를 UTC 순간으로 바꾼 범위로 거른다 —
+  같은 날 `[D, D+1)`·이후(포함) `>= D`·이전(미포함) `< D`, 빠른 선택(오늘·최근 7일·최근 30일). 형식이 틀리면 필터 없이 목록을 보여 준다(WARNING).
+  `created_at` 이 있는 모든 ModelView 가 단다(`tests/core/test_admin_pages.py`).
 - 기본이 "켜짐" 인 것은 받자마자 DB 를 들여다보게 하려는 **개발 우선 결정**(2026-08-12)이다. 배포 환경에서도 켤 수 있다(로그인이 막는다).
 
 ---
@@ -965,6 +988,10 @@ celery_app = Celery("project", broker=redis_settings.REDIS_URL, backend=redis_se
   태스크 module 내부의 import 오류는 워커가 include 를 import 할 때 드러난다.
 - 동기 태스크 안의 코루틴은 `app/celery/task.py` 의 `run_async()` 가 **worker 프로세스당 영속 event loop** 에서 실행한다.
 - worker 종료: `app/celery/lifecycle.py` 가 `worker_process_shutdown` 신호에서 살아 있는 loop 로 `dispose_engine()` → `shutdown_asyncgens()` → loop close → 전역 참조 해제.
+- **주기 실행(beat)**: 일정도 기능의 `tasks.py` 가 `celery_app.add_periodic_task(...)` 로 등록한다 — beat 는 기동 때 워커와 같은 `include` 로
+  태스크 module 을 불러온 뒤 `beat_schedule` 을 읽으므로, 중앙 Celery 앱은 기능을 import 하지 않는다. 현재 일정은 home 의
+  `home.purge_expired_access_logs`(매일 03:30, `timezone=TIME_ZONE` 기준) 하나다. 실행: `uv run celery -A app.celery.app beat --loglevel=info`
+  (worker 와 별도 프로세스, **한 개만** — 여러 개면 같은 일정이 중복 실행된다).
 - API 기동은 worker·beat 를 띄우지 않고, API lifespan 은 worker 의 broker 연결·loop 를 정리하지 않는다(소유권이 다른 프로세스).
 - 태스크에는 살아 있는 세션·Service·Request 를 넘기지 말고 JSON 직렬화 가능한 id·값만 넘긴다. 재시도·멱등 정책은 태스크별로 정한다.
 
@@ -1013,6 +1040,7 @@ config.set_main_option(                                              # URL → �
 | 11 | 첫 관리자를 `scripts/create_superuser.py` 로 만들고(대화형 또는 `--password-stdin`), 관리 API 가 일반 토큰에 403 인지 확인 | 슈퍼유저가 없으면 관리 API 도 `/admin` 로그인도 쓸 수 없다. 리비전 `a3c9e8f1b274` 는 아무도 자동 승격하지 않는다 |
 | 12 | KST→UTC 리비전 `e5a7c2d9f310` 적용 전 백업, 기존 값의 시간대가 `+09:00` 이 아니면 `LEGACY_OFFSET` 수정 | 모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10) |
 | 13 | `/admin` 은 슈퍼유저 로그인이 필요하다 — 세션 쿠키 서명 키는 `SESSION_SECRET_KEY` | 키가 새면 관리 세션 쿠키를 위조할 수 있다(권한은 매 요청 DB 로 다시 보므로 존재하는 활성 슈퍼유저 id 가 필요하다) |
+| 14 | `ACCESS_LOG_RETENTION_DAYS` 를 개인정보 정책에 맞추고(기본 365일), Celery worker 와 **beat 한 개**를 띄운다 | beat 가 없으면 보존 삭제가 돌지 않아 접속 로그가 무기한 쌓인다(§6·§9) |
 
 ### 11.2 배포 절차와 확인
 
@@ -1039,12 +1067,13 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 - **API 인가의 세분**: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). `Principal` 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
   다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.
-- **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 로그인 CSRF 토큰은 두지 않는다 —
-  `SameSite=Strict` 쿠키라 다른 사이트에서 온 요청에는 세션이 실리지 않는다(관리 화면 인증 가이드 §10).
+- **관리 화면 인증의 범위**: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). CSRF 토큰은 **로그인 폼에만** 있다 —
+  로그인 이후 sqladmin 의 생성·수정·삭제 폼과 GET 로그아웃은 `SameSite=Strict` 쿠키(다른 사이트에서 온 요청에는 세션이 실리지 않는다)가 막는다
+  (관리 화면 인증 가이드 §10, security-ops-hardening R-001). 관리 세션은 서명 쿠키라 서버 측 강제 로그아웃이 없다(Redis 이전은 사용자 결정 대기).
 - **access 토큰 즉시 폐기**: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·삭제)로 대신한다.
 - **접속 로그 신뢰 경계**: `ip_address` 는 `TRUSTED_PROXY_HOPS` 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
-  `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장되고,
-  보존 기간·자동 삭제 정책이 없다. 개인정보 정책을 배포 측에서 정한다.
+  `forwarded_for`·`real_ip` 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·`session_id` 쿠키 원문과 (민감 키를 가린) query string 이 저장된다
+  (사용자 결정). 보존 기간은 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)이고 beat 가 떠 있어야 삭제된다(§6). 개인정보 정책을 배포 측에서 정한다.
 - **접속 로그 내구성**: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.
 - **레이트 리밋**: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.
 - **자동 앱 탐색**: 없음(설계 원칙).
@@ -1059,6 +1088,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-19 | **security-ops-hardening**: 모든 엔진에 `hide_parameters=True`(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). `/admin` 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 `created_at` 날짜 필터 `LocalDateFilter`(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (`docs/crp/groups/security-ops-hardening/`). |
 | 2026-10-13 | **log-redaction-fixes**: 로그 메시지·traceback·`stack_info` 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette `HTTPException` 핸들러가 `headers` 를 보존(405 `Allow`), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 `session_id`·Referer·XFF 원문 저장은 사용자 결정으로 유지 (`docs/crp/groups/log-redaction-fixes/`). |
 | 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](admin-auth-guide.html) (`docs/crp/groups/admin-login/`). |
 | 2026-10-12 | **service-hardening**: DSN `URL.create`, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 `/ready`, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(`Principal`·`OwnershipPolicy`·슈퍼유저·`scripts/create_superuser.py`, §7.1) (`docs/crp/groups/service-hardening/`). |

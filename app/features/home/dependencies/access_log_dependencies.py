@@ -13,15 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session
 from app.features.home.services.user_access_log_service import UserAccessLogService
-from config import timezone_settings
+from config import middleware_settings, timezone_settings
 
 
 def build_user_access_log_service(session: AsyncSession) -> UserAccessLogService:
     """세션 하나로 UserAccessLogService 를 조립한다 — HTTP·Celery 공용 조립 규칙.
 
-    세션의 출처(요청 의존성 / ``background_session()``)는 호출자가 정한다.
+    세션의 출처(요청 의존성 / ``background_session()``)는 호출자가 정한다. 보존 일수
+    (``ACCESS_LOG_RETENTION_DAYS``)도 여기서 한 번 넣는다.
     """
-    return UserAccessLogService(session, timezone_settings)
+    return UserAccessLogService(
+        session, timezone_settings, middleware_settings.ACCESS_LOG_RETENTION_DAYS
+    )
 
 
 async def get_access_log_service(

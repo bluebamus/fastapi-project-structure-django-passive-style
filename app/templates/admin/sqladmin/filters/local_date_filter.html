@@ -1,0 +1,43 @@
+{#-
+  관리 목록 날짜 필터 — app/core/admin_filters.py 의 LocalDateFilter 가 쓴다(security-ops-hardening ADR-005).
+  sqladmin 의 operation_filter.html 과 같은 쿼리 형식(<이름>=YYYY-MM-DD, <이름>_op=연산)이고, 입력만
+  브라우저의 날짜 선택(<input type="date">)이라 형식이 틀릴 일이 적다. 날짜는 TIME_ZONE 기준이다.
+-#}
+{% extends "sqladmin/filters/base_filter.html" %}
+
+{% block filter_body %}
+  {% set name = filter.parameter_name %}
+  {% set current_filter = request.query_params.get(name, '') %}
+  {% set current_op = request.query_params.get(name + '_op', '') %}
+
+  {% if current_filter %}
+  <div class="mb-2 text-muted small">
+    Current: {{ current_op }} {{ current_filter }}
+    <a href="{{ request.url.remove_query_params(name).remove_query_params(name + '_op') }}" class="text-decoration-none">[Clear]</a>
+  </div>
+  {% endif %}
+
+  <div class="mb-2 small">
+    {% for label, op, day in filter.quick_ranges() %}
+    <a href="{{ request.url.include_query_params(**{name: day, name + '_op': op}) }}" class="me-2 text-decoration-none">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <form method="get" class="d-flex flex-column filter-form">
+    {% for key, value in request.query_params.items() %}
+      {% if key != name and key != name + '_op' and key != 'error' %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endif %}
+    {% endfor %}
+
+    <select name="{{ name }}_op" class="form-select form-select-sm" required>
+      {% for op_value, op_label in filter.get_operation_options_for_model(model_view.model) %}
+      <option value="{{ op_value }}" {% if current_op == op_value %}selected{% endif %}>{{ op_label }}</option>
+      {% endfor %}
+    </select>
+
+    <input type="date" name="{{ name }}" class="form-control form-control-sm" value="{{ current_filter }}" required>
+
+    <button type="submit" class="btn btn-sm btn-outline-primary">{{ _("Apply Filter") }}</button>
+  </form>
+{% endblock %}

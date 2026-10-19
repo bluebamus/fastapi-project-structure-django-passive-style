@@ -401,6 +401,9 @@ async with background_session() as session:     # 요청 밖 — 커밋은 직�
 - Celery 태스크는 기능 루트 `tasks.py` 에 두고(`INSTALLED_APPS` 에 있으면 워커가 자동으로 include 한다) `run_async()` 로 코루틴을 돌린다.
   세션은 `background_session()` 으로 열고, 서비스는 그 기능의 provider 함수(세션을 받는 일반 함수 — 예: home `build_user_access_log_service(session)`)로
   조립한다 — HTTP 의존성도 같은 함수를 부른다. 인자는 JSON 직렬화 가능한 값만. 재시도·중복·커밋과 enqueue 사이 실패를 테스트한다.
+- 주기 실행이 필요하면 같은 `tasks.py` 에서 `celery_app.add_periodic_task(crontab(...), my_task.s(), name="<앱>.<태스크>")` 로 등록한다 —
+  중앙 Celery 앱에 목록을 만들지 않는다(예: home `tasks.PURGE_SCHEDULE`). 시각은 `TIME_ZONE` 기준이고, 실행에는 worker 와 별도로 beat 가 한 개 필요하다:
+  `uv run celery -A app.celery.app beat --loglevel=info`. 대량 삭제는 배치로 나눠 배치마다 커밋한다(home `purge_expired` 참고).
 - 접속 로그 runner(`access_log_tasks`)는 drop 가능한 비핵심 작업 전용이다. 업무 저장·결제·발송을 넣지 않는다.
 - Redis 는 필수다. 새 기능은 `redis: Redis = Depends(get_redis)`(`app/core/redis.py`)로 lifespan 이 소유한 client 를 주입받는다 —
   `Redis.from_url` 을 직접 만들지 않는다. client 가 없으면(lifespan 밖) 503. 테스트는 `app.state.redis` 에 fakeredis 를 넣거나 `dependency_overrides[get_redis]` 를 쓴다.
@@ -463,7 +466,10 @@ async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service:
 - **API 에 세션(쿠키) 인증을 섞지 않는다.** `/admin` 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 `SessionMiddleware` 를 붙이거나
   API 의존성이 `admin_session` 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 [관리 화면 인증 가이드](admin-auth-guide.html).
 - 새 기능의 `admin.py` ModelView 는 따로 인증을 붙이지 않는다 — `/admin` 전체가 `AdminAuthBackend` 뒤에 있다. 로그인 화면은
-  `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §12).
+  `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §12). 폼의 CSRF hidden 입력
+  (`csrf_token(request)`)을 지우면 모든 로그인이 403 이다. 테스트에서 로그인하려면 `tests/admin_login.py` 의 `admin_login()` 을 쓴다.
+- ModelView 의 시각 컬럼(`UTCDateTime`) 필터는 `OperationColumnFilter` 가 아니라 `LocalDateFilter(Model.created_at, title="생성일")`
+  (`app/core/admin_filters.py`)로 단다 — 연산 필터는 문자열을 바인딩해 목록이 500 이 된다.
 
 ---
 

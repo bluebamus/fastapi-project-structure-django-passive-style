@@ -6,8 +6,9 @@ UserAccessLog Repository
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import CursorResult, and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.repositories.repository_base import BaseRepository
@@ -212,3 +213,35 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
 
         logger.debug(f"[get_recent_logs] 조회 완료: count={len(logs)}")
         return logs
+
+    async def delete_created_before(self, cutoff: datetime, limit: int) -> int:
+        """``created_at < cutoff`` 인 행을 **최대** ``limit`` 개 지우고 지운 수를 돌려준다(커밋 안 함).
+
+        id 를 먼저 ``LIMIT`` 으로 고른 뒤 그 id 로 지운다. MySQL 은 ``DELETE ... LIMIT`` 을 받지만
+        SQLite 는 기본 빌드에서 받지 않고, MySQL 은 같은 테이블의 ``IN (SELECT ... LIMIT)`` 을
+        거부한다 — 두 구문으로 나누면 두 DB 에서 같은 쿼리가 돈다. 오래된 순으로 고르므로
+        ``ix_user_access_logs_created_at`` 을 탄다.
+        """
+        ids = (
+            (
+                await self.session.execute(
+                    select(self.model.id)
+                    .where(self.model.created_at < cutoff)
+                    .order_by(self.model.created_at)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not ids:
+            return 0
+        result = cast(
+            "CursorResult[Any]",
+            await self.session.execute(
+                delete(self.model)
+                .where(self.model.id.in_(ids))
+                .execution_options(synchronize_session=False)
+            ),
+        )
+        return result.rowcount
