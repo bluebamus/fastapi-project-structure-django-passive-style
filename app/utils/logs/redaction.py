@@ -86,6 +86,19 @@ class SecretRedactor:
             if candidate is not None and self.redact(candidate) == candidate:
                 record.msg, record.args = msg, args
                 return
+            # 템플릿과 인자에 걸친 일치(예: 접속 줄의 `?token=` + ` HTTP/1.1`)는 인자 하나를 통째로
+            # 가려서 깨끗해지면 그것으로 끝낸다 — args 모양을 지켜야 AccessFormatter 줄이 살아남는다.
+            for i, arg in enumerate(args):
+                if not isinstance(arg, str):
+                    continue
+                masked = (*args[:i], MASK, *args[i + 1 :])
+                try:
+                    candidate = msg % masked
+                except (TypeError, ValueError):
+                    continue
+                if self.redact(candidate) == candidate:
+                    record.msg, record.args = msg, masked
+                    return
         # 비밀값이 템플릿과 인자에 걸쳐 있거나 예외 객체 안에 있으면 렌더 결과로 고정한다.
         record.msg, record.args = clean, None
 
