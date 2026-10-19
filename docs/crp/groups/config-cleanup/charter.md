@@ -37,3 +37,8 @@
 
 ## 4. 변경 이력
 - v0.1 (2026-10-19): 최초 작성.
+- v0.2 (2026-10-19, Round 2 · REQ-002): 범위에 `ApiSettings`·`API_VERSION` 삭제와 로그 설정 연결을 더한다 — §2-2 의 첫 비목표는 이 개정으로 범위 안이 됐다.
+  인벤토리 추가: `app/utils/logs/config.py`·`setup.py`·`formatters.py`, `app/celery/app.py`, `tests/utils/test_log_settings.py`·`conftest.py`·`test_log_redaction.py`,
+  `docs/guides/DEVELOPMENT.md`·`feature-development-guide.html`. INV-1 은 예외 없이(`UNREAD_ALLOWED` 삭제, ADR-006), INV-2 에 `API_VERSION` 추가.
+  INV-5: 로그 설정 기본값이면 출력 줄은 변경 전과 같다(`test_default_output_line_is_unchanged`). INV-6: 비밀값 가리기는 사용자 포맷에서도 유지
+  (`test_app_handlers_redact_traceback_message_and_stack[user-format]`). 착수 기준선 `80d56a9`. 마이그레이션·의존성 변경 없음.

@@ -14,3 +14,11 @@
 - [x] (F-002) README "세션·토큰 만료" 표 + 업그레이드 노트, ARCHITECTURE·admin-auth-guide·server-lifecycle-guide 는 표를 가리킴
 - [x] (F-003) 범위 밖 미사용 설정 5건 → residual-risk R-001
 - [x] GATE 3 인수기준 그린 — `.env` 없는 사본에서 1230 passed · 36 deselected · skip 0, review_gate --fast 7단계 통과
+
+## Round 2 — 2026-10-19 · config-cleanup-2 (브랜치 `chore/config-cleanup-2`)
+- [x] REQ-002 를 design-baseline §2 에 기록, ADR-006~ADR-012
+- [x] 현재 로그 흐름 조사(포맷·날짜 하드코딩 위치, 앱·uvicorn·Celery 핸들러 생성 경로) — run-log Round 2
+- [x] (F-004) `ApiSettings`·`API_VERSION` 삭제, `.env.example`·문서·`REMOVED_KEYS`, `UNREAD_ALLOWED` 삭제
+- [x] (F-005) 포맷·날짜 형식·콘솔 스위치 연결(앱·`python main.py` uvicorn·Celery 워커), 포맷 검증, 모두 꺼짐 경고 · 사용자 포맷 가리기 테스트
+- [x] fail-on-revert 기록 — run-log Round 2
+- [x] GATE 3 — `.env` 없는 사본 1249 passed · 36 deselected · skip 0, ruff·mypy·bandit·OpenAPI revert 통과
