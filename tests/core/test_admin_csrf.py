@@ -340,14 +340,18 @@ async def _boss_index(redis: FakeRedis) -> set[bytes]:
 
 
 @pytest.mark.parametrize(
-    "form",
+    ("form", "refresh_revoked"),
     [
-        {"username": "boss", "email": "b@x.com", "is_active": "y"},  # 슈퍼유저 해제
-        {"username": "boss", "email": "b@x.com", "is_superuser": "y"},  # 비활성화
+        # 슈퍼유저 해제 — 관리 세션만. refresh 는 회전 때 DB 의 새 권한으로 재발급된다(ADR-009)
+        ({"username": "boss", "email": "b@x.com", "is_active": "y"}, False),
+        # 비활성화 — 관리 세션 + refresh
+        ({"username": "boss", "email": "b@x.com", "is_superuser": "y"}, True),
     ],
     ids=["demote", "deactivate"],
 )
-async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(env, form):
+async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(
+    env, form, refresh_revoked
+):
     client, _, redis = env
     app = client._transport.app  # type: ignore[attr-defined]
     boss = await _boss_client(app)
@@ -363,7 +367,9 @@ async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(e
     assert await _boss_index(redis) == set()
     for key in keys_before:
         assert not await redis.exists(key), "강등·비활성화된 사용자의 세션 키가 남았다"
-    assert await _boss_refresh_revoked(redis), "API refresh family 가 폐기되지 않았다"
+    assert (
+        await _boss_refresh_revoked(redis) is refresh_revoked
+    ), "refresh 폐기 집합이 판정과 다르다"
     stale = await boss.get("/admin/")
     assert stale.status_code == 302
     await boss.aclose()

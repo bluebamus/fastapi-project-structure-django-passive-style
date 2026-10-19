@@ -69,7 +69,7 @@ def _run(
         list(argv),
         session_factory=factory,
         stdin=io.StringIO(stdin),
-        revoke_admin_sessions=record,
+        revoke_sessions=record,
     )
 
 
@@ -130,11 +130,12 @@ def test_set_password_rehashes_when_promoting(db):
 
 
 async def test_production_revoker_deletes_that_users_sessions_in_redis(monkeypatch):
-    """운영 조립(``revoke_admin_sessions_in_redis``)이 설정의 Redis 에서 그 사용자의 세션만 지운다."""
+    """운영 조립(``revoke_sessions_in_redis``)이 설정의 Redis 에서 그 사용자의 관리 세션·refresh 만 지운다."""
     from fakeredis import FakeServer
     from fakeredis.aioredis import FakeRedis
 
     from app.core.security.admin_session import SESSION_USER_KEY, default_admin_session_store
+    from app.core.security.dependencies import get_refresh_token_store
 
     server = FakeServer()
 
@@ -147,11 +148,16 @@ async def test_production_revoker_deletes_that_users_sessions_in_redis(monkeypat
     store = default_admin_session_store(FakeRedis(server=server))
     mine = await store.create({SESSION_USER_KEY: "u-carol"})
     other = await store.create({SESSION_USER_KEY: "u-other"})
+    refresh = get_refresh_token_store(FakeRedis(server=server))
+    await refresh.register("jti-c", "u-carol", "fam-c")
+    await refresh.register("jti-o", "u-other", "fam-o")
 
-    await create_superuser.revoke_admin_sessions_in_redis("u-carol")
+    await create_superuser.revoke_sessions_in_redis("u-carol")
 
     assert await store.load(mine) is None
     assert await store.load(other) is not None
+    assert await refresh.is_family_revoked("fam-c")
+    assert not await refresh.is_family_revoked("fam-o")
 
 
 def test_redis_failure_after_password_change_exits_1(db, capsys):
@@ -167,11 +173,11 @@ def test_redis_failure_after_password_change_exits_1(db, capsys):
         ["--username", "dave", "--set-password", "--password-stdin"],
         session_factory=factory,
         stdin=io.StringIO("new-pass-456\n"),
-        revoke_admin_sessions=down,
+        revoke_sessions=down,
     )
 
     assert code == 1
-    assert "관리 세션을 지우지 못했습니다" in capsys.readouterr().err
+    assert "세션을 지우지 못했습니다" in capsys.readouterr().err
 
 
 def test_interactive_password_must_match(db, monkeypatch):

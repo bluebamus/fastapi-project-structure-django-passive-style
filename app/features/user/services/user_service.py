@@ -8,8 +8,9 @@ User Service
 여기서 ``OwnershipPolicy`` 로 "본인 또는 슈퍼유저" 를 판정한다 — **존재 확인보다 먼저**
 판정해 남의 ID 를 넣어 404/403 차이로 존재 여부를 알아내지 못하게 한다. 권한 필드
 (``is_active``·``is_superuser``) 변경은 슈퍼유저만 한다. 비활성화·강등·삭제는 그 사용자의
-refresh family 와 관리 화면 세션을 모두 폐기한다(``UserSessionRevoker`` — 관리 화면의 ``UserAdmin`` 훅과
-같은 폐기 집합, admin-session-hardening ADR-005). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
+관리 세션·refresh family 를 폐기한다 — 무엇을 지울지는 ``revocation_for_change``·``REVOKE_ON_DELETE`` 가 정하고
+(강등은 관리 세션만, 비활성화·삭제는 둘 다), 관리 화면의 ``UserAdmin`` 훅과 같은 판정이다(admin-session-hardening
+ADR-009). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
 """
 
 import asyncio
@@ -19,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ForbiddenException
 from app.core.security import OwnershipPolicy, PasswordHasher, Principal
-from app.core.security.revocation import UserSessionRevoker
+from app.core.security.revocation import (
+    REVOKE_ON_DELETE,
+    UserSessionRevoker,
+    revocation_for_change,
+)
 from app.core.services.services_base import BaseService
 from app.features.user.exceptions import (
     UsernameDuplicateException,
@@ -84,7 +89,8 @@ class UserService(BaseService):
         """사용자를 부분 수정한다.
 
         본인·슈퍼유저가 아니면 403(존재 확인 전), 권한 필드를 일반 사용자가 바꾸면 403,
-        없으면 404. 비활성화·강등이면 그 사용자의 refresh family 와 관리 세션을 모두 폐기한다.
+        없으면 404. 비활성화면 refresh family 와 관리 세션을, 강등이면 관리 세션을 폐기한다
+        (변경 전 값과 비교 — ``revocation_for_change``).
         """
         self.log.debug("사용자 수정: id=%s", user_id)
         self.ownership.ensure_can_modify(user_id, principal)
@@ -92,9 +98,11 @@ class UserService(BaseService):
         if not principal.is_superuser and changes.keys() & UserUpdate.privileged_fields:
             raise ForbiddenException()
         existing = await self._get_existing(user_id)  # 존재 보장(없으면 404)
+        # 판정은 UPDATE 전에 — 같은 세션의 객체가 새 값으로 바뀌기 전의 값과 비교한다.
+        revocation = revocation_for_change(existing, changes)
         updated = await self.repository.update(user_id, changes)
-        if changes.get("is_active") is False or changes.get("is_superuser") is False:
-            await self._writer_revoker().revoke(user_id)
+        if revocation:
+            await self._writer_revoker().revoke(user_id, revocation)
         # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
         # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
         return updated if updated is not None else existing
@@ -105,7 +113,7 @@ class UserService(BaseService):
         deleted = await self.repository.delete(user_id)
         if not deleted:
             raise UserNotFoundException(detail={"id": user_id})
-        await self._writer_revoker().revoke(user_id)
+        await self._writer_revoker().revoke(user_id, REVOKE_ON_DELETE)
 
     async def _get_existing(self, user_id: str) -> User:
         user = await self.repository.get_by_id(user_id)
