@@ -16,3 +16,10 @@
 ## 최종 상태 (2026-10-13, Round 2 · 그룹 CONVERGED)
 
 수용 항목은 R-001~R-006 이고, R-001·R-006 은 사용자 결정, 나머지는 형식 기반 가리기와 관리형 Redis 에 근거한 의도적 수용이다.
+
+## 상태 갱신 (2026-10-19, logging-overhaul — 브랜치 `feat/logging-overhaul`, 병합 대기)
+
+- **R-002 일부 해소** — 설정된 비밀값(`config.LOG_REDACTED_SETTINGS`: DB 계정명·비밀번호, Redis 비밀번호, JWT 키, `SESSION_SECRET_KEY`)은 이제
+  형식이 없어도 원문 일치로 가린다(4글자 미만은 `user=`·DSN 에서만). DSN 은 계정명도 가린다. 설정 밖에서 들어온 자유 텍스트 비밀값은 여전히 형식 기반이다(logging-overhaul R-005).
+- **R-003 갱신** — `uvicorn main:app` CLI 의 서버 줄(`Started server process` 등)은 앱 import 뒤에 찍혀 프로젝트 구성을 탄다. 앱 import 이전 줄은
+  `--reload` 감시 프로세스의 몇 줄뿐이고 앱 비밀값이 없다(logging-overhaul R-002). 외부 SDK 항목은 그대로다.

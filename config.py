@@ -725,8 +725,8 @@ class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()``(앱·Celery 워커)와
-    ``app/utils/logs/setup.py`` 의 ``setup_uvicorn_logging()``(``python main.py``)다.
+    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()`` 하나다 — 앱·``python main.py``
+    (``setup_uvicorn_logging()`` 이 같은 dict 를 돌려준다)·``uvicorn main:app`` CLI·Celery 워커가 함께 쓴다.
     콘솔 핸들러는 ``LOG_CONSOLE_ENABLED`` 일 때만, 파일 핸들러는 ENV 가 staging/production 이고
     ``LOG_FILE_ENABLED`` 일 때만 붙는다. 레벨을 명시하지 않으면 DEBUG 모드에 따라 자동 결정됩니다.
 

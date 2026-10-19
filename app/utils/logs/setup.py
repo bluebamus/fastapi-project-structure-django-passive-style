@@ -67,7 +67,7 @@ def entry_process(default: str = "web") -> str:
     entry = Path(sys.argv[0]) if sys.argv and sys.argv[0] else Path()
     if "celery" not in (entry.stem.lower(), entry.parent.name.lower()):
         return default
-    # beat 는 워커와 다른 프로세스다 — 같은 파일을 둘이 회전시키지 않게 나눈다(ADR-003).
+    # beat 는 워커와 다른 프로세스다 — 같은 파일을 둘이 회전시키지 않게 나눈다(logging-overhaul ADR-003).
     return "beat" if "beat" in sys.argv[1:] else "celery"
 
 

@@ -14,7 +14,7 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 등록한다. 각 cleanup 은 :func:`_run_cleanup` 이 감싸서 실패·timeout 을 로깅만 하고
 삼킨다 — 하나가 실패했다고 뒤따르는 cleanup 을 건너뛰면 자원이 새기 때문이다.
 
-logging 은 여기서 다루지 않는다. 이 저장소는 ADR-019(console + RotatingFileHandler)
+logging 은 여기서 다루지 않는다. 이 저장소는 ADR-019(console + 회전 파일 — logging-overhaul 의 DailySizeRotatingFileHandler)
 를 유지하고 queue listener 를 두지 않기로 했다(ADR-003) — 닫을 자원이 없다.
 
 테이블 자동 생성은 파일 존재 여부가 아니라 **App Registry 가 소유한 테이블 수**로

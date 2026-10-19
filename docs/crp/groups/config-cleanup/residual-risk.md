@@ -17,3 +17,8 @@
 
 - **R-001 해소** — `API_VERSION` 은 삭제, 로그 설정 네 개는 로깅 구성에 연결했다(REQ-002, F-004·F-005). 계약 테스트 예외 목록은 없다(ADR-006).
 - 신규 수용 R-004. 현재 수용 항목은 R-002·R-003·R-004 다.
+
+## 상태 갱신 (2026-10-19, logging-overhaul — 브랜치 `feat/logging-overhaul`, 병합 대기)
+
+- **R-004 해소** — `uvicorn main:app`·`fastapi dev` CLI 도 앱 import 때 `configure_logging()` 이 uvicorn 로거를 root 로 보내 콘솔 스위치·포맷·날짜 형식·파일을 따른다
+  (logging-overhaul ADR-001). 남은 것은 `--reload` 감시 프로세스의 몇 줄뿐이다 — logging-overhaul R-002 로 옮겼다. ADR-012 는 logging-overhaul ADR-001 로 대체된다.

@@ -3,16 +3,19 @@
 ENV(development/test/staging/production)에 따라 레벨·핸들러·타임존을 다르게 구성한다.
 - development (uv run fastapi dev): 콘솔, DEBUG, 밀리초, 로컬 TZ(KST)
 - test: 콘솔, 간결, 파일 off, 로컬 TZ
-- staging/production: 콘솔 + 회전 파일 + 에러 파일, INFO, UTC
+- staging/production: 콘솔 + 날짜·크기 회전 파일 + 에러 파일, INFO, UTC
+
+앱·``python main.py``·``uvicorn main:app`` CLI·Celery 워커가 모두 이 dict 하나를 쓴다(logging-overhaul).
 
 Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 확정했다):
     같다   — 설정이 한 곳에 모인다. Django 의 ``settings.LOGGING`` 자리를
              ``build_dictconfig()`` 가 맡고, ``configure_logging()`` 이 1회 적용한다.
-    다르다 — **앱별 로거를 등록하지 않는다.** 아래 dict 에 ``loggers`` 키가 없고
-             핸들러는 **root 에만** 붙는다. ``get_logger(name)`` 이 돌려주는 것은
+    다르다 — **앱별 로거를 등록하지 않는다.** ``loggers`` 키에는 uvicorn 로거를 root 로 보내는
+             항목만 있고 핸들러는 **root 에만** 붙는다. ``get_logger(name)`` 이 돌려주는 것은
              NOTSET·핸들러 0·propagate=True 인 자식 로거이며, 로그 헤더의 ``app=`` 은
-             로거 이름이 아니라 **소스 파일 경로**에서 산출된다
-             (``filters.ContextFilter`` → ``_app_from_path``).
+             로거 이름이 아니라 **소스 파일 경로**에서 산출된다(저장소 밖 코드만 로거 이름 표 —
+             ``filters.ContextFilter`` → ``_app_from_path``).
+             Django ``LOGGING["loggers"][name]["level"]`` 자리는 ``LOG_APP_LEVELS``(헤더별 레벨 필터)다.
 
 왜 이렇게 하나:
     새 기능을 추가할 때 로깅 설정에 **손댈 곳이 0** 이다. Django 라면 ``LOGGING["loggers"]``
@@ -20,13 +23,9 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
     판별은 등록 누락이라는 실패 모드 자체를 없앤다. 로거 이름을 잘못 줘도(복사·붙여넣기)
     ``app=`` 라벨은 항상 맞다.
 
-이 선택이 포기한 것 (수용된 잔여 위험 — 결함으로 재보고하지 말 것):
-    · **앱별 로그 레벨을 따로 줄 수 없다.** 레벨은 root 하나뿐이고
-      ``LogSettings`` 에도 전역 레벨(``LOG_LEVEL``·``LOG_CONSOLE_LEVEL``·``LOG_FILE_LEVEL``)만 있다.
-    · **서드파티 로거(sqlalchemy·aiomysql 등)를 개별 제어할 수 없다.** 아래 dict 에
-      해당 항목이 없어 전부 root 레벨을 따른다.
-    둘 중 하나가 실제로 필요해지면 그때 ``loggers`` 키를 추가한다 —
-    그 시점에 charter 비목표를 먼저 개정한다.
+예전에 포기했던 것 — 앱별 레벨·서드파티 개별 제어 — 는 ``LOG_APP_LEVELS`` 가 헤더 단위로 맡는다
+(``celery``·``uvicorn``·``sqlalchemy``·``alembic`` 은 헤더 이름, 그 밖 라이브러리는 ``ext`` 하나).
+라이브러리 로거 하나하나(예: ``aiomysql`` 만)를 따로 줄 수는 없다.
 """
 
 from __future__ import annotations
@@ -64,7 +63,7 @@ def formatter_spec(fmt: str, use_utc: bool, with_ms: bool = False) -> dict:
     }
 
 
-#: 프로세스 종류 → (일반 파일, 에러 파일). 웹과 워커가 같은 파일을 회전시키지 않게 나눈다(ADR-003).
+#: 프로세스 종류 → (일반 파일, 에러 파일). 웹과 워커가 같은 파일을 회전시키지 않게 나눈다(logging-overhaul ADR-003).
 LOG_FILES = {
     "web": ("app.log", "error.log"),
     "celery": ("celery.log", "celery-error.log"),
@@ -72,7 +71,7 @@ LOG_FILES = {
 }
 
 #: uvicorn 로거는 자기 핸들러 없이 root 로 보낸다 — ``python main.py``·``uvicorn main:app`` CLI 모두
-#: 앱 핸들러(콘솔·파일)·포맷·헤더·레벨을 그대로 탄다(ADR-001). 앱별 로거 등록이 아니다.
+#: 앱 핸들러(콘솔·파일)·포맷·헤더·레벨을 그대로 탄다(logging-overhaul ADR-001). 앱별 로거 등록이 아니다.
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 
@@ -116,7 +115,7 @@ def build_dictconfig(process: str = "web", logfile: str | None = None) -> dict:
                 "filename": str(log_dir / filename),
                 "max_bytes": log_settings.LOG_MAX_SIZE_MB * 1024 * 1024,
                 "retention_days": log_settings.LOG_RETENTION_DAYS,
-                # 파일은 staging/production 에서만 붙고 그 시각은 UTC 다 — 자정도 UTC 로 맞춘다(ADR-004).
+                # 파일은 staging/production 에서만 붙고 그 시각은 UTC 다 — 자정도 UTC 로 맞춘다(logging-overhaul ADR-004).
                 "utc": use_utc,
                 "formatter": "file",
                 "filters": filters,

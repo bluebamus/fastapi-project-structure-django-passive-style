@@ -23,7 +23,7 @@ from config import INSTALLED_APPS, redis_settings, timezone_settings
 def use_app_logging(
     loglevel: int | str | None = None, logfile: str | None = None, **_: Any
 ) -> None:
-    """워커도 앱 로깅 구성(``build_dictconfig``)을 쓴다 — 프로세스 종류 ``celery`` 를 정하는 곳이다.
+    """워커·beat 도 앱 로깅 구성(``build_dictconfig``)을 쓴다 — Celery 쪽 로깅 진입점.
 
     수신자가 있으면 Celery 는 root 핸들러를 자기 포매터로 갈아끼우지 않는다 — 그래서 콘솔 스위치·
     포맷·헤더·앱별 레벨이 워커에도 그대로 적용되고, 파일은 ``celery.log``·``celery-error.log``(beat 는
