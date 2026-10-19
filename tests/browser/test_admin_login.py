@@ -176,9 +176,12 @@ async def test_create_delete_and_logout_carry_the_csrf_token_in_a_real_browser(l
 
             # 삭제 — 모달의 $.ajax DELETE 에 X-CSRF-Token 헤더가 붙는다.
             await row.locator('a[data-bs-target="#modal-delete"]').click()
-            await page.locator("#modal-delete-button").click()
-            await page.wait_for_load_state("domcontentloaded")
-            await page.goto(f"{live_server}/admin/product/list", wait_until="load")
+            # 성공 콜백이 ``window.location.href`` 로 목록에 간다 — 그 이동을 기다린다. 직접 goto 하면
+            # 콜백 이동과 겹쳐 ERR_ABORTED 가 난다.
+            async with page.expect_response(lambda r: r.request.method == "DELETE") as deleted:
+                await page.locator("#modal-delete-button").click()
+            assert (await deleted.value).ok, f"삭제 응답 실패: {(await deleted.value).status}"
+            await page.wait_for_url("**/admin/product/list**", wait_until="load")
             assert await page.locator(f'tr:has-text("{sku}")').count() == 0, "삭제되지 않았다"
             deletes = [s for s in sent if s[0] == "DELETE"]
             assert deletes and deletes[-1][2] == token, f"삭제 요청에 토큰 헤더가 없다: {deletes}"
