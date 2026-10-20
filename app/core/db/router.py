@@ -88,7 +88,9 @@ def is_connection_error(exc: BaseException) -> bool:
         return True
     orig = getattr(exc, "orig", None)
     args = getattr(orig, "args", None)
-    return bool(args) and args[0] in REPLICA_CONNECTION_ERRORS
+    if not args:
+        return False
+    return args[0] in REPLICA_CONNECTION_ERRORS
 
 
 class ReadOnlyRoutingError(RuntimeError):
