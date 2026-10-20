@@ -17,6 +17,7 @@
 
 import logging
 import os
+import string
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
 from functools import lru_cache
@@ -692,13 +693,40 @@ DEFAULT_LOG_FORMAT = (
     "[{module}:{classname}:{funcName}:{lineno}] {message}"
 )
 
+#: 모든 로그 줄에 반드시 나와야 하는 자리표시자 — LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT 검증이 강제한다.
+REQUIRED_LOG_FIELDS = (
+    "asctime",
+    "levelname",
+    "appname",
+    "module",
+    "classname",
+    "funcName",
+    "message",
+)
+
+_LEVEL_NAMES = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+
+
+def _parse_app_levels(raw: str) -> dict[str, int]:
+    """``"blog=DEBUG,celery=INFO"`` → ``{"blog": 10, "celery": 20}``. 형식·레벨이 틀리면 ValueError."""
+    levels: dict[str, int] = {}
+    for item in filter(None, (part.strip() for part in raw.split(","))):
+        name, sep, level = (s.strip() for s in item.partition("="))
+        if not sep or not name or level.upper() not in _LEVEL_NAMES or name in levels:
+            raise ValueError(
+                f"LOG_APP_LEVELS 항목 {item!r} 이 잘못됐습니다 — "
+                f"'헤더=레벨' 을 쉼표로 잇고 레벨은 {'/'.join(_LEVEL_NAMES)} 중 하나, 헤더는 한 번씩"
+            )
+        levels[name] = logging.getLevelName(level.upper())
+    return levels
+
 
 class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()``(앱·Celery 워커)와
-    ``app/utils/logs/setup.py`` 의 ``setup_uvicorn_logging()``(``python main.py``)다.
+    소비처는 ``app/utils/logs/config.py`` 의 ``build_dictconfig()`` 하나다 — 앱·``python main.py``
+    (``setup_uvicorn_logging()`` 이 같은 dict 를 돌려준다)·``uvicorn main:app`` CLI·Celery 워커가 함께 쓴다.
     콘솔 핸들러는 ``LOG_CONSOLE_ENABLED`` 일 때만, 파일 핸들러는 ENV 가 staging/production 이고
     ``LOG_FILE_ENABLED`` 일 때만 붙는다. 레벨을 명시하지 않으면 DEBUG 모드에 따라 자동 결정됩니다.
 
@@ -769,28 +797,26 @@ class LogSettings(BaseSettings):
         description="로그 디렉토리 경로",
     )
 
-    # 앱 로그 파일명 패턴 ({date}는 YYYY-MM-DD로 치환)
-    LOG_APP_FILENAME: str = Field(
-        default="{date}_app.log",
-        description="앱 로그 파일명 패턴",
-    )
-
-    # 에러 로그 파일명 패턴 ({date}는 YYYY-MM-DD로 치환)
-    LOG_ERROR_FILENAME: str = Field(
-        default="{date}_error.log",
-        description="에러 로그 파일명 패턴",
-    )
-
-    # 단일 로그 파일 최대 크기 (MB)
+    # 파일 이름은 고정이다 — 웹 app.log·error.log, Celery 워커 celery.log·celery-error.log.
+    # 매일 자정(UTC)에 app.log.2026-10-19 로 넘기고, 하루 안에서 크기를 넘으면 .1·.2 로 나눈다.
+    # 하루 안에서 이 크기를 넘으면 분할한다 (MB, 0 = 크기 분할 없음)
     LOG_MAX_SIZE_MB: int = Field(
         default=10,
-        description="로그 파일 최대 크기(MB)",
+        ge=0,
+        description="로그 파일 최대 크기(MB) — 넘으면 같은 날짜 안에서 .1·.2 로 분할",
     )
 
-    # 보관할 백업 로그 파일 개수
-    LOG_BACKUP_COUNT: int = Field(
-        default=5,
-        description="백업 로그 파일 개수",
+    # 이 일수보다 오래된 회전 파일을 회전 시점에 지운다 (0 = 지우지 않음)
+    LOG_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=0,
+        description="회전된 로그 파일 보관 일수 (0 = 삭제 안 함)",
+    )
+
+    # 헤더(app=)별 최소 레벨 — "blog=DEBUG,celery=INFO,sqlalchemy=WARNING". 지정 없는 헤더는 LOG_LEVEL.
+    LOG_APP_LEVELS: str = Field(
+        default="",
+        description="헤더(app=)별 최소 레벨 (Django LOGGING['loggers'] 의 level 자리)",
     )
 
     # === 포맷 설정 ===
@@ -821,7 +847,21 @@ class LogSettings(BaseSettings):
             logging.Formatter(value, style="{").format(record)
         except (ValueError, KeyError, IndexError, AttributeError) as exc:
             raise ValueError(f"{info.field_name} 형식이 잘못됐습니다: {exc}") from exc
+        used = {name for _, name, _, _ in string.Formatter().parse(value) if name}
+        missing = [field for field in REQUIRED_LOG_FIELDS if field not in used]
+        if missing:
+            raise ValueError(f"{info.field_name} 에 필수 필드가 없습니다: {', '.join(missing)}")
         return value
+
+    @field_validator("LOG_APP_LEVELS")
+    @classmethod
+    def _app_levels_valid(cls, value: str) -> str:
+        _parse_app_levels(value)
+        return value
+
+    def app_levels(self) -> dict[str, int]:
+        """``LOG_APP_LEVELS`` → ``{헤더: 레벨 번호}``."""
+        return _parse_app_levels(self.LOG_APP_LEVELS)
 
     @field_validator("LOG_DATE_FORMAT")
     @classmethod
@@ -1373,6 +1413,32 @@ def validate_deployment_safety() -> None:
 
 
 SECRET_KEYS = ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY")
+
+#: 값의 원문이 로그 어디에 나와도 ``***`` 로 가릴 설정 — 정본은 여기 한 곳이다(logging-overhaul L7).
+#: 새 비밀 설정(이름에 PASSWORD·SECRET, 끝이 _KEY·_USER)을 만들면 여기에 넣는다 — 계약 테스트가 강제한다.
+LOG_REDACTED_SETTINGS = (
+    "MYSQL_USER",
+    "MYSQL_PASSWORD",
+    "MYSQL_REPLICA_USER",
+    "MYSQL_REPLICA_PASSWORD",
+    "REDIS_PASSWORD",
+    "ACCESS_TOKEN_SECRET_KEY",
+    "REFRESH_TOKEN_SECRET_KEY",
+    "SESSION_SECRET_KEY",
+)
+
+
+def log_secret_values() -> list[str]:
+    """``LOG_REDACTED_SETTINGS`` 의 현재 값(빈 값 제외) — 로그 가리기가 원문 일치로 쓴다."""
+    instances = (db_settings, redis_settings, jwt_settings, session_settings)
+    values = []
+    for name in LOG_REDACTED_SETTINGS:
+        for settings in instances:
+            value = getattr(settings, name, None)
+            if isinstance(value, str) and value.strip():
+                values.append(value)
+    return values
+
 
 validate_env_source(app_settings.ENV)
 validate_removed_settings(app_settings.ENV)

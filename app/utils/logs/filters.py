@@ -22,14 +22,37 @@ from types import FrameType
 _REPO_ROOT = str(Path(__file__).resolve().parents[3]).replace("\\", "/").rstrip("/").lower() + "/"
 
 
-def _app_from_path(pathname: str) -> str:
+#: 외부 라이브러리 헤더 — 로거 이름(앞부분) → 헤더. 우리 코드는 경로로 정하고, 여기는 ``ext`` 를 나눌 때만 본다.
+EXTERNAL_HEADERS = {
+    "celery": "celery",
+    "kombu": "celery",
+    "uvicorn": "uvicorn",
+    "sqlalchemy": "sqlalchemy",
+    "alembic": "alembic",
+}
+
+#: 기능명 말고 헤더로 나올 수 있는 이름 — ``LOG_APP_LEVELS`` 의 모르는 키 경고에 쓴다.
+FIXED_HEADERS = frozenset(
+    {"core", "celery", "utils", "migrations", "app", "ext", *EXTERNAL_HEADERS.values()}
+)
+
+
+def _app_from_path(pathname: str, logger_name: str = "") -> str:
+    """헤더(``app=``)를 정하는 단 하나의 함수 — 소스 경로, 저장소 밖이면 로거 이름."""
+    label = _label_from_path(pathname)
+    if label != "ext":
+        return label
+    return EXTERNAL_HEADERS.get(logger_name.split(".", 1)[0], "ext")
+
+
+def _label_from_path(pathname: str) -> str:
     """소스 경로에서 앱 라벨을 만든다.
 
     반환값:
         ``<기능명>``  — ``app/features/<name>/**``
         ``core`` · ``celery`` · ``utils`` · ``migrations`` — 해당 하위 시스템
         ``app``  — 그 밖의 **이 저장소 안** 코드(``main.py`` · ``config.py`` · ``tests/**`` 등)
-        ``ext``  — **저장소 밖** 코드(설치된 서드파티 패키지)
+        ``ext``  — **저장소 밖** 코드(설치된 서드파티 패키지) — ``_app_from_path`` 가 로거 이름으로 더 나눈다
 
     ``ext`` 는 "우리 코드가 아님"을 뜻한다. 예전에는 경로에 ``/app/`` 조각이 있는지로만
     판별해서 저장소 루트의 ``main.py``·``config.py``·``migrations/`` 가 ``ext`` 로 빠졌다.
@@ -71,10 +94,27 @@ class ContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "appname", None):
-            record.appname = _app_from_path(record.pathname)
+            record.appname = _app_from_path(record.pathname, record.name)
         if not getattr(record, "classname", None):
             record.classname = _class_from_stack()
         return True
+
+
+class AppLevelFilter(logging.Filter):
+    """헤더별 최소 레벨(``LOG_APP_LEVELS``) — ``ContextFilter`` 뒤에 붙어 ``appname`` 으로 거른다.
+
+    지정 없는 헤더는 ``default``(``LOG_LEVEL``)를 따른다. root 레벨은 전체 최솟값으로 내려 둔다.
+    """
+
+    def __init__(
+        self, levels: dict[str, int] | None = None, default: int | str = logging.INFO
+    ) -> None:
+        super().__init__()
+        self.levels = levels or {}
+        self.default = logging.getLevelName(default) if isinstance(default, str) else default
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= self.levels.get(getattr(record, "appname", ""), self.default)
 
 
 #: SQL 본문과 바인딩 파라미터를 찍는 로거들. ORM 과 드라이버 양쪽을 모두 막아야 한다 —

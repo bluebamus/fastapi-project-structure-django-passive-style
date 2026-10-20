@@ -13,6 +13,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 - [앱 설치 — 목록에 한 줄](#앱-설치--목록에-한-줄)
 - [ORM / Raw 데이터 접근](#orm--raw-데이터-접근)
 - [API](#api)
+- [로깅](#로깅)
 - [운영 배포 체크리스트](#운영-배포-체크리스트)
 - [문서 안내](#문서-안내)
 
@@ -383,6 +384,104 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 만든 뒤 로그인하면 access 토큰의 `su` claim 이 true 가 됩니다. **같은 계정이 `/admin` 로그인 계정입니다** — 활성 슈퍼유저만
 들어갈 수 있고, API·관리 화면에서 강등·비활성화하면 그 사용자의 관리 세션이 즉시 지워져 다음 요청부터 로그인 화면으로 돌아갑니다(refresh 토큰도 함께 지운다).
 
+## 로깅
+
+Django 의 `settings.LOGGING` 처럼 **설정 한 곳**(`app/utils/logs/config.py` 의 `build_dictconfig()`)이 모든 출력을 정하고,
+세부는 `.env` 로 바꿉니다. 앱 로거·`python main.py`·`uvicorn main:app`(`fastapi dev`)·Celery 워커·beat 가 **같은 구성·같은 형식**을 씁니다.
+
+### 한 줄의 모양
+
+```text
+[2026-10-19 09:17:25 UTC] INFO  [app=core] [resources:-:manage_application_resources:168] [startup] 애플리케이션 자원 초기화 시작 (DEBUG=False)
+[2026-10-19 09:17:26 UTC] INFO  [app=uvicorn] [httptools_impl:RequestResponseCycle:send:482] 127.0.0.1:51769 - "GET /health HTTP/1.1" 200
+[2026-10-19 09:17:56 UTC] INFO  [app=celery] [trace:-:info:128] Task celery.accumulate[40a28391-…] succeeded in 0.005s: (1, 2)
+[2026-10-19 09:17:46 UTC] INFO  [app=celery] [connection:Connection:start:22] Connected to redis://127.0.0.1:6395/0
+```
+
+`[시각 시간대] 레벨 [app=헤더] [모듈:클래스:함수:줄] 메시지`. 모듈·클래스·함수·시각은 **모든 줄에 반드시** 나옵니다 —
+`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT` 에 `{asctime}`·`{levelname}`·`{appname}`·`{module}`·`{classname}`·`{funcName}`·`{message}` 중
+하나라도 빠지면 기동이 멈춥니다. 시각은 development·test 가 `TIME_ZONE`(development 는 밀리초), staging·production 이 UTC 입니다.
+
+**헤더(`app=`)** 는 출처입니다. 우리 코드는 소스 경로로 정합니다 — `app/features/<기능>/` 은 기능 이름, 그 밖은 `core`·`celery`·`utils`·`migrations`·`app`.
+새 기능은 **아무것도 등록하지 않아도** 자기 이름의 헤더가 붙습니다. 설치된 라이브러리는 로거 이름으로 정합니다:
+
+| 로거 이름 | 헤더 |
+|---|---|
+| `celery.*` · `kombu.*` | `celery` |
+| `uvicorn.*` | `uvicorn` |
+| `sqlalchemy.*` | `sqlalchemy` |
+| `alembic.*` | `alembic` |
+| 그 밖 | `ext` |
+
+uvicorn 접속 줄은 요청 라인(`client - "GET /p HTTP/1.1" 200`)을 그대로 두고 시각·헤더만 프로젝트 형식으로 붙습니다.
+예외 하나 — `--reload`(`fastapi dev`) 의 감시 프로세스는 앱을 import 하지 않아 `Will watch for changes` 같은 몇 줄이 uvicorn 기본 형식으로 남습니다.
+
+### `.env` 키
+
+| 키 | 기본값 | 뜻 |
+|---|---|---|
+| `LOG_LEVEL` | (DEBUG 따라) | 전체 레벨. 미설정이면 `DEBUG=true` → DEBUG, 아니면 INFO |
+| `LOG_CONSOLE_LEVEL` | (DEBUG 따라) | 콘솔 핸들러 레벨 |
+| `LOG_FILE_LEVEL` | `INFO` | `app.log`·`celery.log` 레벨(에러 파일은 항상 ERROR 이상) |
+| `LOG_APP_LEVELS` | 빈 값 | 헤더별 최소 레벨 — `blog=DEBUG,celery=INFO,sqlalchemy=WARNING`. 지정 없는 헤더는 `LOG_LEVEL`. 틀린 형식·레벨은 기동 실패, 모르는 헤더는 경고 한 줄 |
+| `LOG_CONSOLE_ENABLED` | `true` | 콘솔(stdout) 출력 |
+| `LOG_FILE_ENABLED` | `true` | 파일 출력 — **staging/production 에서만** 붙는다 |
+| `LOG_DIR` | `logs` | 파일 디렉터리 |
+| `LOG_MAX_SIZE_MB` | `10` | 하루 안에서 이 크기를 넘으면 `.1`·`.2` 로 분할(`0` = 분할 없음) |
+| `LOG_RETENTION_DAYS` | `30` | 이보다 오래된 회전 파일을 회전 시점에 삭제(`0` = 삭제 안 함, 음수는 기동 실패) |
+| `LOG_CONSOLE_FORMAT` · `LOG_FILE_FORMAT` | 위 한 줄 형식 | `str.format` 형식, 필수 필드 검사 |
+| `LOG_DATE_FORMAT` | `%Y-%m-%d %H:%M:%S` | `{asctime}` 형식 |
+| `LOG_SQL_ECHO_ENABLED` | `false` | SQL 본문·바인딩 값 노출(staging/production 에서는 켤 수 없다) |
+
+### 파일
+
+`LOG_DIR` 아래, 프로세스마다 따로 씁니다(같은 파일을 두 프로세스가 회전시키지 않게).
+
+| 프로세스 | 일반 | 에러(ERROR 이상) |
+|---|---|---|
+| 웹(앱·uvicorn) | `app.log` | `error.log` |
+| Celery 워커 | `celery.log` | `celery-error.log` |
+| Celery beat | `celery-beat.log` | `celery-beat-error.log` |
+
+매일 자정(UTC)에 `app.log` → `app.log.2026-10-19` 로 넘기고, 하루 안에서 `LOG_MAX_SIZE_MB` 를 넘으면 `app.log.2026-10-19.1`·`.2`… 로 나눕니다.
+Celery `--logfile` 을 주면 그 파일에도 같은 형식으로 씁니다. Celery 워커는 `--loglevel`(기본 WARNING)이 그 워커의 바닥 레벨입니다.
+
+> **여러 워커 = 콘솔(stdout) + 수집기/`logrotate`, 파일 로그 끔.** 한 파일은 한 프로세스만 회전시킬 수 있습니다.
+> `uvicorn --workers 2` 이상이나 Celery prefork(`--concurrency` > 1)는 여러 프로세스가 같은 파일을 회전시켜 안전하지 않으니
+> `LOG_FILE_ENABLED=false` 로 두고 stdout 을 수집기로 보냅니다. 앱은 이 조합을 감지하지 않습니다.
+
+### 비밀값
+
+DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명 없는 `redis://:***@host`, 계정명만 있는 `mysql://***@host`, 인코딩 안 된 `@`·`:` 가 든 비밀번호도), `password=`·`token=` 류 값, Bearer·JWT, 그리고 설정된 비밀값의 **원문**
+(DB writer·replica 계정명·비밀번호, Redis 비밀번호, JWT access/refresh 키, `SESSION_SECRET_KEY` — `config.LOG_REDACTED_SETTINGS`)은
+메시지·인자·traceback·`stack_info` 어디에 나와도 `***` 로 바뀝니다. 4글자 미만 값(짧은 계정명)은 일반 단어를 가리지 않도록 DSN 과 `user=`·`username=` 뒤에서만 가립니다.
+새 비밀 설정을 만들면 `config.LOG_REDACTED_SETTINGS` 에 넣습니다(이름에 PASSWORD·SECRET 가 들어가거나 끝이 _KEY·_USER 면 테스트가 강제합니다).
+
+### Django `settings.LOGGING` 과 대응
+
+| Django | 이 저장소 |
+|---|---|
+| `settings.LOGGING` dict | `build_dictconfig()` — 직접 고치지 않고 `.env` 로 조정 |
+| `"formatters"` | `TzFormatter` + `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT` |
+| `"handlers"` | console · 파일 · 에러 파일(`LOG_CONSOLE_ENABLED`·`LOG_FILE_ENABLED`·`LOG_FILE_LEVEL`) |
+| `"handlers"` 의 `RotatingFileHandler`·`TimedRotatingFileHandler` | `DailySizeRotatingFileHandler` — 날짜 + 크기 + `LOG_RETENTION_DAYS` |
+| `"loggers": {"blog": {"level": ...}}` | `LOG_APP_LEVELS=blog=DEBUG` — 로거를 등록하지 않고 헤더로 거른다 |
+| `"loggers": {"django.db.backends": ...}` | `LOG_APP_LEVELS=sqlalchemy=WARNING` + `LOG_SQL_ECHO_ENABLED` |
+| `"root"` 레벨 | `LOG_LEVEL` |
+| `"filters"` | `ContextFilter`(헤더·클래스) · `AppLevelFilter`(헤더별 레벨) · `SqlNoiseFilter`(SQL 차단) |
+
+코드에서는 `get_logger(__name__)`(함수) 또는 `LoggerMixin` 의 `self.log`(클래스)를 씁니다 — [개발 가이드](docs/guides/DEVELOPMENT.md) 참고.
+
+### 업그레이드 노트 — 로그 설정
+
+- LOG_APP_FILENAME·LOG_ERROR_FILENAME·LOG_BACKUP_COUNT 를 지웠습니다. 파일 이름은 위 표로 고정이고, 개수 대신 `LOG_RETENTION_DAYS`(일수)가 보관을 정합니다.
+  `.env` 에 남은 줄은 **지워도 되고, 남아도 무시됩니다.** 예전 `{date}_app.log` 파일은 자동으로 지워지지 않으니 필요하면 손으로 정리합니다.
+- `LOG_RETENTION_DAYS`(기본 30)·`LOG_APP_LEVELS`(기본 빈 값)를 새로 넣었습니다.
+- `uvicorn main:app`·`fastapi dev`·Celery 워커의 콘솔 줄이 각 도구의 기본 형식에서 프로젝트 형식으로 바뀝니다(사용자 결정 — 모든 경로가 같은 형식).
+  로그를 도구 형식으로 파싱하던 수집 규칙이 있으면 고칩니다.
+- 사용자 지정 `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT` 에 필수 필드가 없으면 기동이 멈춥니다.
+- DSN 의 계정명도 `***` 로 가려집니다.
+
 ## 운영 배포 체크리스트
 
 전체 표는 [아키텍처 §11.1](docs/guides/ARCHITECTURE.md#111-배포-체크리스트--사람이-확인할-것)입니다. 배포 전에 해야 할 일:
@@ -406,6 +505,8 @@ uv run python -m scripts.create_superuser --username alice --set-password       
 - **접속 로그 보존** — `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `0` = 삭제 안 함)를 개인정보 정책에 맞춥니다. 삭제는 Celery **beat** 가
   매일 03:30(`TIME_ZONE`)에 `home.purge_expired_access_logs` 를 워커로 보내야 돈다 — worker 와 함께 beat 를 **하나만** 띄웁니다:
   `uv run celery -A app.celery.app worker --loglevel=info` · `uv run celery -A app.celery.app beat --loglevel=info`.
+- **로그** — uvicorn `--workers` 2 이상·Celery prefork 면 `LOG_FILE_ENABLED=false` + stdout 수집(파일 회전은 한 프로세스 전용).
+  로그 설정 이름이 바뀌었습니다 — [업그레이드 노트 — 로그 설정](#업그레이드-노트--로그-설정).
 - **업그레이드 노트 — 지운 설정** — 메일(SMTP_*)·업로드(UPLOAD_*)·SESSION_EXPIRE_SECONDS 는 읽는 코드가 없어 지웠습니다.
   `.env`·환경 변수에 남은 이 줄들은 **지워도 되고, 남아도 무시됩니다**(기동은 멈추지 않는다 — 예전 `ADMIN` 과 다르다).
   세션·토큰 만료는 [세션·토큰 만료](#세션토큰-만료) 표의 네 설정이 정합니다.

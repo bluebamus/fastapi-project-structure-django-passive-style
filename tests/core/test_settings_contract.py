@@ -148,6 +148,10 @@ REMOVED_KEYS = {
     "UPLOAD_ALLOWED_EXTENSIONS": '[".jpg"]',
     "SESSION_EXPIRE_SECONDS": "86400",
     "API_VERSION": "v1",
+    # logging-overhaul — 날짜·크기·보관일수 회전으로 바뀌며 지웠다(README 업그레이드 노트).
+    "LOG_APP_FILENAME": "{date}_app.log",
+    "LOG_ERROR_FILENAME": "{date}_error.log",
+    "LOG_BACKUP_COUNT": "5",
 }
 
 SETTINGS_CLASSES = [
@@ -200,3 +204,23 @@ def test_removed_keys_left_in_environment_are_ignored(
 
     for key in REMOVED_KEYS:
         assert not hasattr(settings, key), f"{cls.__name__} 에 지운 설정 {key} 가 남아 있다"
+
+
+# =============================================================================
+# 4. 비밀 설정은 로그 가리기 목록에 있다 (logging-overhaul L7)
+# =============================================================================
+#: 이름이 이 모양이면 비밀 설정으로 본다 — 새 필드가 생기면 LOG_REDACTED_SETTINGS 에도 넣어야 한다.
+SECRET_FIELD_NAME = re.compile(r"PASSWORD|SECRET|_KEY$|_USER$")
+
+
+def test_every_secret_setting_is_redacted_from_logs():
+    """비밀처럼 생긴 설정 필드는 모두 ``config.LOG_REDACTED_SETTINGS`` 에 있고, 목록의 이름은 실제 필드다."""
+    fields = _config_setting_fields()
+    secret_like = {name for name in fields if SECRET_FIELD_NAME.search(name)}
+    assert len(secret_like) >= 8, "검사 대상이 비어 헛통과한다"
+
+    listed = set(config_module.LOG_REDACTED_SETTINGS)
+    assert (
+        not secret_like - listed
+    ), f"로그 가리기 목록에 없는 비밀 설정: {sorted(secret_like - listed)}"
+    assert not listed - fields, f"목록에 있지만 설정 필드가 아니다: {sorted(listed - fields)}"

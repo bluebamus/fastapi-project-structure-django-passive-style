@@ -121,15 +121,19 @@ def test_third_party_logger_through_root_is_redacted(restore_logging):
     logging.getLogger("sqlalchemy.engine").error("pool 연결 실패 %s", DSN)
 
     assert "secret42" not in buf.getvalue()
-    assert f"u:{MASK}@h/db" in buf.getvalue()
+    assert f"//{MASK}:{MASK}@h/db" in buf.getvalue()
 
 
 # =============================================================================
 # uvicorn — 직접 실행(setup_uvicorn_logging) · CLI(uvicorn 자체 LOGGING_CONFIG)
 # =============================================================================
+def _root_console() -> logging.Handler:
+    return next(h for h in logging.getLogger().handlers if type(h) is logging.StreamHandler)
+
+
 def test_uvicorn_direct_run_handlers_are_redacted(restore_logging):
     dictConfig(setup_uvicorn_logging())
-    buf = _swap_stream(logging.getLogger("uvicorn").handlers[0])
+    buf = _swap_stream(_root_console())  # uvicorn 로거는 root(앱 콘솔)로 전파된다
 
     line = _log_exception(logging.getLogger("uvicorn.error"))
 
@@ -188,7 +192,7 @@ def test_uvicorn_access_line_survives_redaction(
 
     dictConfig(copy.deepcopy(LOGGING_CONFIG) if path == "cli" else setup_uvicorn_logging())
     access = logging.getLogger("uvicorn.access")
-    buf = _swap_stream(access.handlers[0])
+    buf = _swap_stream(access.handlers[0] if path == "cli" else _root_console())
 
     access.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", target, "1.1", 200)
 
@@ -222,7 +226,7 @@ def test_celery_formatter_output_is_redacted(restore_logging):
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        (DSN, f"mysql+asyncmy://u:{MASK}@h/db"),
+        (DSN, f"mysql+asyncmy://{MASK}:{MASK}@h/db"),
         ("redis://:p%40ss@localhost:6379/0", f"redis://:{MASK}@localhost:6379/0"),
         ("password=secret42 user=kim", f"password={MASK} user=kim"),
         ("MYSQL_PASSWORD: 'secret42'", f"MYSQL_PASSWORD: '{MASK}'"),

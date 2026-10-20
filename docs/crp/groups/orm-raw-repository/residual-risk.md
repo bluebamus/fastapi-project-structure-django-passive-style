@@ -53,3 +53,7 @@
 
 > 최종 정리는 `completion-report.md` §4~5 를 본다 — 실행하지 않은 검증 7항목과
 > 수용한 잔여 위험을 한 곳에 모았다.
+
+## 상태 갱신 (2026-10-19, logging-overhaul — 브랜치 `feat/logging-overhaul`, 병합 대기)
+
+- R-003 그대로(Queue logging 없음). 파일 핸들러는 `RotatingFileHandler` 에서 날짜·크기 회전 `DailySizeRotatingFileHandler` 로 바뀌었고 파일 I/O 는 여전히 호출 흐름에서 동기다.

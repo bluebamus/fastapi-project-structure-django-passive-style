@@ -35,6 +35,22 @@
 - 다른 기능을 import 하지 않는다(예외: `auth → user`). `app/core` 에 특정 기능 import 를 추가하지 않는다 — core 에 붙어야 하면 등록 훅을 만든다.
 - 요구가 없는데 UnitOfWork·Factory·Strategy·DI 컨테이너를 추가하지 않는다. Service 는 생성자 주입(`Service(session)`)이라 요청 밖·테스트에서도 그대로 쓴다.
 - 앱별 로깅 설정은 필요 없다 — `self.log`(`LoggerMixin`) 또는 `get_logger("이름")` 을 쓰면 `app=` 라벨은 경로로 정해진다.
+- **새 기능의 로그는 무엇을 하지 않아도 헤더가 붙는다.** `app/features/<기능>/` 아래 코드의 줄은 `[app=<기능>]`, 모듈·클래스·함수·시각도
+  자동으로 채워진다. 클래스는 `LoggerMixin` 을 상속해 `self.log`(클래스명을 extra 로 주입), 함수·모듈은 `get_logger(__name__)` 을 쓴다:
+
+  ```python
+  from app.utils.logs import LoggerMixin, get_logger
+
+  logger = get_logger(__name__)
+
+
+  class ItemService(LoggerMixin):
+      async def create(self, payload):
+          self.log.info("item 생성 title=%s", payload.title)   # [app=blog] [item_service:ItemService:create:12]
+  ```
+
+  레벨은 코드가 아니라 `.env` 의 `LOG_APP_LEVELS=blog=DEBUG` 로 기능별로 바꾼다(키·파일·회전·비밀값 규칙은 README "로깅" 절).
+  비밀번호·토큰은 로그에 넣지 않는다 — 들어가도 가려지지만(`password=`·DSN·설정 비밀값 원문) 그것은 안전망이지 허용이 아니다.
 - 선택 모듈의 내부 오류를 삼키지 않는다.
 
 ---

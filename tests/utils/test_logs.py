@@ -131,7 +131,7 @@ def _build_with(monkeypatch, tmp_path, **overrides):
 
 
 def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
-    """production 에서는 콘솔에 더해 회전 파일·에러 파일 핸들러가 붙고 UTC 를 쓴다."""
+    """production 에서는 콘솔에 더해 날짜·크기 회전 파일·에러 파일 핸들러가 붙고 UTC 를 쓴다."""
     cfg = _build_with(monkeypatch, tmp_path, env="production", LOG_FILE_ENABLED=True)
 
     assert set(cfg["handlers"]) == {"console", "file", "error_file"}
@@ -140,12 +140,12 @@ def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
 
     for name in ("file", "error_file"):
         handler = cfg["handlers"][name]
-        assert handler["class"] == "logging.handlers.RotatingFileHandler"
-        assert handler["backupCount"] == logs_config.log_settings.LOG_BACKUP_COUNT
-        assert handler["maxBytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
+        assert handler["()"] == "app.utils.logs.handlers.DailySizeRotatingFileHandler"
+        assert handler["retention_days"] == logs_config.log_settings.LOG_RETENTION_DAYS
+        assert handler["max_bytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
         # 핸들러마다 컨텍스트 필터가 붙어야 appname/classname 이 채워진다.
         # 목록 전체를 고정하지 않는다 — SQL 유출 차단 필터(sql_noise)가 함께 붙는다(C-5).
-        # ADR-019 가 지키는 것은 "console + RotatingFileHandler" 라는 handler 구성이지
+        # ADR-019 가 지키는 것은 "console + 회전 파일" 이라는 handler 구성이지
         # 필터 개수가 아니다.
         assert "context" in handler["filters"]
         assert str(tmp_path) in handler["filename"]
@@ -180,36 +180,32 @@ def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
     """ADR-019 — 앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
 
     이 프로젝트는 Django 의 ``settings.LOGGING["loggers"]`` 식 등록을 쓰지 않고
-    소스 경로에서 앱을 판별한다. ``loggers`` 키가 생기면 그 설계가 바뀐 것이므로,
-    코드보다 charter §2-4 비목표를 먼저 고쳐야 한다. 이 테스트가 그 관문이다.
+    소스 경로에서 앱을 판별한다. 앱별 레벨은 ``LOG_APP_LEVELS`` 필터가 맡는다(logging-overhaul).
+    ``loggers`` 에 있는 것은 uvicorn 로거를 root 로 보내는 항목뿐이다 — 핸들러를 달지 않는다.
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
-        assert "loggers" not in cfg, (
-            f"ENV={env} 의 dictConfig 에 loggers 키가 생겼습니다. "
-            "앱별 로거 등록은 ADR-019 의 비목표입니다 — charter §2-4 를 먼저 개정하세요."
+        assert set(cfg["loggers"]) == set(logs_config.UVICORN_LOGGERS), (
+            f"ENV={env} 의 dictConfig 에 uvicorn 말고 다른 로거가 생겼습니다. "
+            "앱별 로거 등록은 ADR-019 의 비목표입니다 — 레벨은 LOG_APP_LEVELS 로 주세요."
         )
+        for spec in cfg["loggers"].values():
+            assert spec["handlers"] == [] and spec["propagate"] is True
         assert cfg["root"]["handlers"], "root 에 핸들러가 없으면 아무 로그도 나가지 않는다"
 
 
-def test_uvicorn_config_isolates_three_loggers():
-    """uvicorn 3종 로거가 각자 핸들러를 갖고 root 로 전파하지 않는다.
+def test_uvicorn_config_is_the_app_config():
+    """``python main.py`` 의 uvicorn 구성 = 앱 구성 — 접속 줄 전용 포매터·핸들러가 없다(logging-overhaul L1).
 
-    propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
+    uvicorn 로거는 자기 핸들러 없이 root 로 전파되므로 줄이 한 번만 찍힌다(중복 없음).
+    렌더 결과는 test_log_settings.test_uvicorn_direct_run_access_line_renders 가 본다.
     """
     cfg = setup_uvicorn_logging()
 
+    assert cfg == logs_config.build_dictconfig()
     assert set(cfg["loggers"]) == {"uvicorn", "uvicorn.error", "uvicorn.access"}
     for name, spec in cfg["loggers"].items():
-        assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
-        assert spec["handlers"], f"{name} 에 핸들러가 없다"
-
-    # access 로그만 전용 포맷을 쓴다 — 요청 라인은 uvicorn 이 넘기는 메시지 그대로({message}).
-    # 렌더 결과는 test_log_settings.test_uvicorn_direct_run_access_line_renders 가 본다.
-    assert cfg["loggers"]["uvicorn.access"]["handlers"] == ["access"]
-    assert "[app=uvicorn] {message}" in cfg["formatters"]["access"]["fmt"]
-    for handler in cfg["handlers"].values():
-        assert handler["filters"] == ["context"]
+        assert spec["handlers"] == [] and spec["propagate"] is True, name
 
 
 def test_configure_logging_applies_once(monkeypatch):

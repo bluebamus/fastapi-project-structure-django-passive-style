@@ -15,19 +15,22 @@ from celery.signals import setup_logging
 
 from app.core.apps import Apps
 from app.utils.logs import configure_logging
+from app.utils.logs.setup import entry_process
 from config import INSTALLED_APPS, redis_settings, timezone_settings
 
 
 @setup_logging.connect
-def use_app_logging(loglevel: int | str | None = None, **_: Any) -> None:
-    """워커도 앱 로깅 구성(``build_dictconfig``)을 쓴다.
+def use_app_logging(
+    loglevel: int | str | None = None, logfile: str | None = None, **_: Any
+) -> None:
+    """워커·beat 도 앱 로깅 구성(``build_dictconfig``)을 쓴다 — Celery 쪽 로깅 진입점.
 
-    수신자가 있으면 Celery 는 root 핸들러를 자기 포매터로 갈아끼우지 않는다 — 그래서
-    ``LOG_CONSOLE_ENABLED``·``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT`` 과 파일 핸들러가 워커에도
-    그대로 적용된다. ``--loglevel`` 은 root 레벨로 따른다(``--logfile`` 은 쓰지 않는다 — 파일은
-    ``LOG_FILE_ENABLED`` 가 정한다).
+    수신자가 있으면 Celery 는 root 핸들러를 자기 포매터로 갈아끼우지 않는다 — 그래서 콘솔 스위치·
+    포맷·헤더·앱별 레벨이 워커에도 그대로 적용되고, 파일은 ``celery.log``·``celery-error.log``(beat 는
+    ``celery-beat.log``·``celery-beat-error.log``)로 간다.
+    ``--loglevel`` 은 root 레벨로 따르고, ``--logfile`` 을 주면 그 파일에도 같은 형식으로 쓴다.
     """
-    configure_logging(force=True)
+    configure_logging(force=True, process=entry_process(default="celery"), logfile=logfile)
     if loglevel:
         logging.getLogger().setLevel(loglevel)
 
