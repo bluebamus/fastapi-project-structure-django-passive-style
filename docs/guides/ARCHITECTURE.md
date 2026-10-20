@@ -108,7 +108,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 | 모듈 | 책임 |
 |---|---|
-| `app/core/bootstrap.py` | `create_app()` factory, `lifespan`, 전역 예외 핸들러 4종, `/health`·`/ready`·Scalar `/docs` |
+| `app/core/bootstrap.py` | `create_app()` factory, `lifespan`, 전역 예외 핸들러 5종, `/health`·`/ready`·Scalar `/docs` |
 | `app/core/resources.py` | `manage_application_resources()` — Redis 검증, 개발용 테이블 생성, 종료 순서 |
 | `app/core/apps/` | `AppConfig`·`Apps`·예외(Django lifecycle) + `wiring.py`(FastAPI·SQLAdmin adapter) |
 | `app/core/db/session.py` | 엔진·세션 팩토리(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`), 세션 Dependency, `background_session()`, `owned_tables()`, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` |
@@ -432,7 +432,7 @@ def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -> Fa
 1. 설치 목록 결정(`config.INSTALLED_APPS` 또는 주입값), registry 결정(전역 `apps` 또는 주입값)
 2. `registry.populate(apps_list)` — config → models → `ready()`
 3. `FastAPI(...)` 생성 — `docs_url=None`, `redoc_url=None`, `openapi_url` 은 `DEBUG` 일 때만 `/openapi.json`, `lifespan` 연결
-4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 4종
+4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 5종
 5. `install_routers(app, registry)`
 6. `/health`, `/ready`, `DEBUG` 일 때만 Scalar `/docs`
 7. `app.state.app_registry` 저장, `admin_disabled`(기본 `ADMIN_DISABLED`)가 false 면 `create_admin(...)` — 끈 경우 로그에도 경로를 싣지 않는다
@@ -462,6 +462,8 @@ INFO 를 막아 둔 관리형 Redis·버전을 알려 주지 않는 서버(테�
 `DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 `app.state.redis` 에 보관되고,
 요청 코드는 주입 provider `get_redis(request) -> Redis`(`app/core/redis.py`) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
 `ServiceUnavailableException`(503). 기능이 `Redis.from_url` 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 `/ready` 가 다시 본다(§3.5).
+기동 뒤 Redis 가 사라지면 Redis 를 필수로 쓰는 요청은 503(SERVICE_UNAVAILABLE) 이다(§3.5 예외 표, fail-closed). Redis 를 쓰지 않는
+조회(예: 글 목록)는 영향이 없고, 재기동하면 다시 연결된다(연결 풀이 재접속한다 — e2e L5 가 확인).
 
 **개발용 테이블 생성** — `_prepare_database()` 는 `create_app()` 이 조립에 쓴 registry(`app.state.app_registry`)를
 받아 `owned_tables(registry)` 로 **그 registry 가 소유한 테이블만** 센다. 전역 `apps` 를 따로 읽거나 다시 채우지 않는다.
@@ -503,12 +505,13 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | 요청 중 오류 | 전역 예외 핸들러 |
 | background 저장 오류 | 이미 나간 응답과 무관(로그만) |
 
-전역 핸들러 4종은 모두 `ErrorResponse{error_code, message, detail}` 로 응답한다.
+전역 핸들러 5종은 모두 `ErrorResponse{error_code, message, detail}` 로 응답한다.
 
 | 예외 | 처리 |
 |---|---|
 | `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`). 로그는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR |
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록 |
+| Redis 연결 오류(`redis.exceptions.ConnectionError`·`TimeoutError`) | 503 SERVICE_UNAVAILABLE, detail 없음. **예외 클래스 전용** 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 **한 번**, keep-alive 연결도 유지된다(`Exception` 핸들러로 가면 Starlette `ServerErrorMiddleware` 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). `ResponseError` 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009) |
 | Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow`·401 `WWW-Authenticate` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`) |
 | 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
 

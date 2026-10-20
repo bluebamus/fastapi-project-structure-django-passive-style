@@ -63,6 +63,7 @@ def probe(stack: Stack, method: str, path: str, **kwargs: Any) -> dict[str, Any]
         "body": body.decode("utf-8", "replace"),
         "closed": closed,
         "unhandled": sum(logged.count(m) for m in UNHANDLED_MARKERS),
+        "redis_unavailable": logged.count("[RedisUnavailable]"),
         "tracebacks": logged.count("Traceback (most recent call last)"),
     }
 
@@ -110,7 +111,8 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
             == 1
         )
 
-        # Redis 를 필수로 쓰는 API 경로 — 현행: 처리되지 않은 예외 500(F-004 결정 전 기록).
+        # Redis 를 필수로 쓰는 API 경로 — 503 SERVICE_UNAVAILABLE, 정상 HTTP 응답(keep-alive 유지), 기록 한 번
+        # (사용자 결정 1 · F-004). 가입·로그인(레이트 리밋)·refresh(회전 기록)·비활성화(세션 폐기).
         results = {
             "login": probe(
                 stack,
@@ -139,12 +141,21 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
                 f"/api/v1/user/users/{victim['id']}",
                 **as_json({"is_active": False}, superuser["access"]),
             ),
-            "admin-anonymous": probe(stack, "GET", "/admin/login"),
         }
         for name, result in results.items():
-            assert result["status"] == 500, (name, result)
+            assert result["status"] == 503, (name, result)
+            assert json.loads(result["body"])["error_code"] == "SERVICE_UNAVAILABLE", (
+                name,
+                result["body"],
+            )
             assert not any(word in result["body"] for word in INTERNALS), (name, result["body"])
-        _record_unhandled(results)
+            assert not result["closed"], f"{name}: keep-alive 연결이 끊겼다"
+            assert result["unhandled"] == 0 and result["redis_unavailable"] == 1, (name, result)
+
+        # 관리 화면, 쿠키 없는 첫 요청 — 세션 **저장**(응답 직전)이 실패하면 현행 500(문서화된 동작, 정책 결정 대상).
+        anonymous = probe(stack, "GET", "/admin/login")
+        assert anonymous["status"] == 500, anonymous
+        _record_unhandled({"admin-anonymous": anonymous})
         # fail-closed — 폐기(Redis)가 실패하면 비활성화 커밋도 하지 않는다.
         assert (
             stack.sql("SELECT is_active FROM users WHERE id=%s", (victim["id"],))[0]["is_active"]

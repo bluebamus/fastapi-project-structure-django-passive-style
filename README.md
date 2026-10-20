@@ -504,6 +504,8 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 - **첫 관리자** — `scripts/create_superuser.py` 로 만듭니다(대화형 또는 `--password-stdin`). 이 계정이 `/admin` 로그인 계정입니다.
   일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지도 확인합니다.
 - **`/admin` 은 슈퍼유저 로그인이 필요합니다** — 관리 세션은 Redis 에 있습니다. Redis 를 쓸 수 없으면 관리 화면은 503 입니다(fail-closed).
+  API 도 Redis 를 필수로 쓰는 경로(가입·로그인·refresh·logout·사용자 비활성화·강등·삭제)는 503(SERVICE_UNAVAILABLE) 로 거부합니다 —
+  Redis 를 쓰지 않는 조회는 그대로 동작하고, Redis 가 돌아오면 재시작 없이 회복합니다.
   `SESSION_SECRET_KEY` 는 세션 ID 를 Redis 키로 바꾸는 HMAC 키라 바꾸면 모든 관리 세션이 끊깁니다(다시 로그인하면 된다).
   staging/production 은 쿠키에 `Secure` 가 붙으므로 HTTPS 로 접속해야 로그인이 유지됩니다.
 - **관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`** — 마운트·링크·세션 미들웨어가 모두 사라집니다. 예전 `ADMIN` 줄이 `.env`·환경에
