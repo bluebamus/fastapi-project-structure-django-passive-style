@@ -770,6 +770,10 @@ Celery `--loglevel` 은 워커 root 레벨로 따르고, `--logfile` 을 주면 
   | Celery beat | `celery-beat.log` | `celery-beat-error.log` |
 
   웹과 워커가 한 `error.log` 를 함께 쓰면 두 프로세스가 같은 파일을 회전시켜 깨진다 — 그래서 에러 파일도 프로세스별이다(ADR-003).
+  **기동 초기 줄도 파일에 남는다**: 설정 로드 직후 첫 `get_logger()` 가 진입 명령으로 프로세스 종류를 정하고 파일 핸들러까지 붙인다 —
+  import 중에 나는 줄(예: `[database] 라우팅 구성`)이 콘솔에만 있고 파일에서 빠지지 않는다. 웹·`python main.py`·`uvicorn main:app`·
+  워커·beat 모두 같고, 핸들러는 한 번만 붙는다(`tests/utils/test_log_early_lines.py`, e2e L6 이 실제 프로세스로 대조한다 —
+  integration-e2e ADR-011).
 - **회전·보관** — `app/utils/logs/handlers.py` 의 `DailySizeRotatingFileHandler`(표준 `TimedRotatingFileHandler` 상속). 매일 자정(UTC —
   파일은 UTC 를 쓰는 staging/production 에만 있다)에 `app.log` → `app.log.2026-10-19`, 하루 안에서 `LOG_MAX_SIZE_MB` 를 넘으면
   `app.log.2026-10-19.1`·`.2`…. 회전할 때마다 `LOG_RETENTION_DAYS`(기본 30, `0` = 지우지 않음)보다 오래된 날짜·분할 파일을 지운다
