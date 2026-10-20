@@ -557,7 +557,7 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 | 마커 | 준비 | 실행 |
 |---|---|---|
 | `mysql` | `docker compose -f compose.test.yaml up -d --wait` (MySQL 8.4, `127.0.0.1:3309` — 포트는 환경변수 MYSQL_TEST_PORT 로 변경, tmpfs) | `uv run python -m pytest -m mysql` → 끝나면 `docker compose -f compose.test.yaml down -v` |
-| `browser` | `uv run python -m playwright install chromium` + 위 compose(MySQL 과 함께 Redis `127.0.0.1:6380` 이 뜬다 — 포트는 환경변수 REDIS_TEST_PORT 로 변경) | `uv run python -m pytest -m browser` — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
+| `browser` | `uv run python -m playwright install chromium` + 위 compose(MySQL 과 함께 Redis `127.0.0.1:6380` 이 뜬다 — 포트는 환경변수 REDIS_TEST_PORT 로 변경) | `REDIS_HOST=127.0.0.1 REDIS_PORT=6380 uv run python -m pytest -m browser` — 두 변수가 없으면 실패한다(남의 Redis 에 붙지 않게) — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
 
 `review_gate` 단계(순서대로): `ruff format` → `ruff check` → `mypy` → `bandit`(`app`·`scripts`·`main.py`·`config.py`, 파싱 실패도 실패) → `pip-audit`(`--strict`) → `pytest`(인프라 제외, 커버리지 측정·하한)
 → OpenAPI 규칙 fail-on-revert(`scripts/openapi_revert_check.py`) → `pytest -m mysql`(skip 금지) → `pytest -m browser`(skip 금지).

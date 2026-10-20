@@ -79,9 +79,21 @@ def server_env() -> dict[str, str]:
     """live server 와 그 서버에 붙는 보조 프로세스(예: ``scripts.create_superuser``)가 함께 쓰는 환경.
 
     MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
-    갈린다). Redis 는 ``compose.test.yaml`` 의 ``redis-test`` 다. 호스트·포트·비밀번호를 **모두**
-    덮어쓴다 — 하나라도 빠지면 개발자의 ``.env`` 값이 섞여 다른 DB·Redis 에 붙는다.
+    갈린다). 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 ``.env`` 값이
+    섞여 다른 DB·Redis 에 붙는다.
+
+    Redis 대상은 **명시해야 한다**(``REDIS_HOST``·``REDIS_PORT``, integration-e2e W0). 기본 포트로
+    떨어지면 개발 머신의 남의 Redis 에 붙는다 — 실제로 그런 사고가 있었다. 없으면 접속을 시도하기
+    전에 실패한다. ``compose.test.yaml`` 의 ``redis-test`` 를 쓰면 ``REDIS_PORT=${REDIS_TEST_PORT:-6380}``.
     """
+    missing = [name for name in ("REDIS_HOST", "REDIS_PORT") if not os.getenv(name)]
+    if missing:
+        pytest.fail(
+            f"{', '.join(missing)} 가 환경에 없다 — 브라우저 테스트의 자식 서버가 붙을 Redis 를 "
+            "명시해야 한다(기본값으로 떨어지면 남의 Redis 에 붙는다). 예: "
+            "REDIS_HOST=127.0.0.1 REDIS_PORT=6380 uv run python -m pytest -m browser",
+            pytrace=False,
+        )
     from tests.integration.conftest import (
         MYSQL_DATABASE,
         MYSQL_HOST,
@@ -98,8 +110,8 @@ def server_env() -> dict[str, str]:
         "MYSQL_USER": MYSQL_USER,
         "MYSQL_PASSWORD": MYSQL_PASSWORD,
         "MYSQL_DATABASE": MYSQL_DATABASE,
-        "REDIS_HOST": "127.0.0.1",
-        "REDIS_PORT": os.getenv("REDIS_TEST_PORT", "6380"),
+        "REDIS_HOST": os.environ["REDIS_HOST"],
+        "REDIS_PORT": os.environ["REDIS_PORT"],
         "REDIS_PASSWORD": "",
         "PYTHONIOENCODING": "utf-8",
     }
@@ -115,8 +127,8 @@ def live_server() -> Iterator[str]:
     startup 이 `create_db_tables()` 로 DB 에 붙고 Redis 에 `ping()` 을 보낸다. 둘 중 하나라도
     없으면 앱이 아예 뜨지 않는다 — 그래서 `compose.test.yaml` 의 테스트 인스턴스를 가리킨다.
     MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
-    갈린다). Redis 는 `compose.test.yaml` 의 `redis-test`(`127.0.0.1:${REDIS_TEST_PORT:-6380}`)를
-    가리킨다. 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 `.env` 값이
+    갈린다). Redis 는 환경의 `REDIS_HOST`·`REDIS_PORT` 로 명시한 곳(보통 `compose.test.yaml` 의
+    `redis-test`)을 가리킨다 — 없으면 실패한다(``server_env``). 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 `.env` 값이
     섞여 다른 Redis 에 붙거나 인증에 실패한다.
 
     stdout/stderr 는 버리지 않고 파이프로 받는다 — 시작이 실패했을 때 그 이유가

@@ -117,7 +117,7 @@ markers = [
     # 실제 브라우저(Chromium)로 Scalar 문서를 여는 테스트. 스키마가 규격에 맞는 것과
     # 화면이 그려지는 것은 다르다 — 그 사이를 잇는다.
     #   uv run python -m playwright install chromium
-    #   uv run python -m pytest -m browser   (compose MySQL + localhost:6379 Redis 도 필요)
+    #   uv run python -m pytest -m browser   (compose MySQL·Redis + REDIS_HOST=127.0.0.1 REDIS_PORT=6380 명시 필요)
     "browser: Playwright 브라우저 테스트 (chromium 설치 필요)",
 ]
 
