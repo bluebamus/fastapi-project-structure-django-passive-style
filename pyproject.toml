@@ -56,6 +56,7 @@ dev = [
     "pip-audit>=2.7",
     "playwright>=1.49.0,<2.0.0",
     "fakeredis>=2.39.0",
+    "pytest-timeout>=2.3",
 ]
 
 
@@ -119,6 +120,10 @@ markers = [
     #   uv run python -m playwright install chromium
     #   uv run python -m pytest -m browser   (compose MySQL·Redis + REDIS_HOST=127.0.0.1 REDIS_PORT=6380 명시 필요)
     "browser: Playwright 브라우저 테스트 (chromium 설치 필요)",
+    # 전수 통합 — compose.e2e.yaml(MySQL 복제·Redis)을 하네스가 띄우고 실제 uvicorn·Celery 를 돌린다.
+    # `-m` 식에 e2e 가 있을 때만 수집된다(루트 conftest.py). 포트 13341·13342·16393·18093.
+    #   uv run python -m pytest -m e2e
+    "e2e: 전수 통합 테스트 (compose.e2e.yaml — 하네스가 기동)",
 ]
 
 # 환경 변수 설정
