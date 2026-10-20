@@ -202,6 +202,7 @@ def test_admin_login_rate_limit(stack: Stack, superuser):
             keys = stack.redis().keys("rl:admin-login:user:127.0.0.1:*")
             assert keys and 0 < stack.redis().ttl(keys[0]) <= 5
             assert stack.redis().exists("rl:admin-login:ip:127.0.0.1")
+            stack.snapshot_redis_keys()  # 로그인에 성공하면 사용자 키는 지워진다 — 지우기 전에 관찰
             wait_for(
                 lambda: not stack.redis().keys("rl:admin-login:user:127.0.0.1:*"),
                 12,

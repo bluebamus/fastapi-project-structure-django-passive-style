@@ -107,3 +107,17 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
+
+  # 기동 거부 검사(L6) 전용 — 최소 버전(7.0) 미달 Redis. 평소에는 뜨지 않는다(profile).
+  # 하네스가 redis 를 멈춘 뒤 같은 포트로 잠깐 띄우고 내린다.
+  redis-old:
+    image: redis:6.2-alpine
+    profiles: ["redis-old"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${E2E_REDIS_PORT:-16393}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

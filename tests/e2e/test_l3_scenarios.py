@@ -23,7 +23,7 @@ from tests.e2e.conftest import (
     unique,
     wait_for,
 )
-from tests.e2e.ledger import covers
+from tests.e2e.ledger import OBSERVATIONS, covers
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(600)]
 
@@ -420,3 +420,37 @@ def test_write_then_read_consistency_under_replication_lag(stack: Stack, api: ht
     )
     assert api.get(f"/api/v1/blog/posts/{post_id}").json()["title"] == "lag-2"
     covers("scenario", "L3-8 sticky·지연")
+
+
+def test_me_right_after_register_under_replication_lag(stack: Stack, api: httpx.Client):
+    """현행 기록 — 복제가 밀린 상태에서 가입 직후 ``/me`` 는 **유효한 토큰에 401**(AUTH_INVALID_TOKEN)이다.
+
+    로그인은 쓰기 세션(primary)으로 사용자를 읽어 토큰을 주지만, ``/me`` 의 ``get_current_user`` 는 읽기 전용
+    세션(replica)으로 다시 읽고 없으면 토큰 무효로 답한다. 요청 사이에는 sticky 가 없다(설계). 클라이언트가
+    이 401 을 "다시 로그인" 으로 처리하면 로그인 직후 튕긴다 — 고칠지(쓰기 세션으로 읽기·404/503 등)는 정책 결정이다.
+    """
+    name = unique("lag")
+    stack.sql("STOP REPLICA SQL_THREAD", target="replica", root=True)
+    try:
+        assert (
+            api.post(
+                "/api/v1/auth/register",
+                json={"username": name, "email": f"{name}@example.com", "password": USER_PASSWORD},
+            ).status_code
+            == 201
+        )
+        tokens = login(api, name)
+        me = api.get("/api/v1/auth/me", headers=bearer(tokens["access"]))
+        assert me.status_code == 401 and me.json()["error_code"] == "AUTH_INVALID_TOKEN"
+    finally:
+        stack.sql("START REPLICA SQL_THREAD", target="replica", root=True)
+    wait_for(
+        lambda: api.get("/api/v1/auth/me", headers=bearer(tokens["access"])).status_code == 200,
+        20,
+        "복제 뒤에도 /me 가 401",
+    )
+    OBSERVATIONS.add(
+        "복제 지연 중 가입 직후 /me 가 유효한 토큰에 401(AUTH_INVALID_TOKEN) — get_current_user 가 replica 에서 사용자를 읽는다. "
+        "정책 결정 필요(쓰기 세션으로 읽기 또는 다른 응답)"
+    )
+    covers("scenario", "L3-8 가입 직후 /me 지연")

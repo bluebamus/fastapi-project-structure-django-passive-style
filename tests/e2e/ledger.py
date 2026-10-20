@@ -15,7 +15,7 @@ COVERED: dict[str, set[str]] = defaultdict(set)
 #: 실행 중 Redis 에서 관찰한 키(인벤토리의 Redis 접두어 대조용).
 SEEN_REDIS_KEYS: set[str] = set()
 
-#: 실행 중 발급된 Bearer·refresh 토큰 — 로그 비밀값 검사(L6-4)가 찾는다.
+#: 실행 중 발급된 Bearer·refresh 토큰과 테스트가 만든 비밀번호 — 로그 비밀값 검사(L6-4)가 찾는다.
 ISSUED_TOKENS: set[str] = set()
 
 

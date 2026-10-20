@@ -244,6 +244,16 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 먼저이고, 필요해지면 그 값 하나만 올립니다(올리는 법은 개발 가이드 §6.1).
 `mysql`·`browser` 마커 테스트의 준비물과 CI 구성은 [개발 가이드 §6](docs/guides/DEVELOPMENT.md#6-테스트와-품질-게이트)에 있습니다.
 
+**전수 통합(e2e)** — 실제 MySQL 8.4 복제(primary + GTID replica)·Redis 7.4·uvicorn·Celery worker·Chromium 위에서
+모든 API operation·관리 뷰·태스크·Redis 키를 실행하고, 장애(Redis·MySQL·worker)를 주입합니다. 하네스가 compose 를 직접
+띄우고 내리므로 명령은 하나입니다(Docker 가 필요합니다 — Windows 면 WSL 안의 Docker 를 `wsl -e docker` 로 씁니다):
+
+```bash
+REDIS_HOST=127.0.0.1 REDIS_PORT=16393 uv run python -m pytest -m e2e   # 포트 13341·13342·16393·18093 (127.0.0.1)
+```
+
+무엇을 보장하는지·새 API 를 추가하면 무엇을 해야 하는지는 [개발 가이드 §6.6](docs/guides/DEVELOPMENT.md#66-전수-통합-e2e)에 있습니다.
+
 ### 자주 막히는 지점
 
 | 증상 | 원인 | 조치 |

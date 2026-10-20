@@ -392,7 +392,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         with contextlib.suppress(Exception):
             _collect_artifacts(instance)
         if os.getenv("E2E_KEEP_STACK") != "1":
-            instance.compose("down", check=False)
+            instance.compose("--profile", "redis-old", "down", check=False)
 
 
 @pytest.fixture(autouse=True)
@@ -430,8 +430,14 @@ def register_and_login(api: httpx.Client, username: str | None = None) -> dict[s
     )
     assert created.status_code == 201, created.text
     tokens = login(api, username)
-    me = api.get("/api/v1/auth/me", headers=bearer(tokens["access"]))
-    assert me.status_code == 200, me.text
+    # /me 는 사용자를 replica 에서 다시 읽는다 — 복제가 따라잡기 전이면 401 이다(L3 가 따로 고정한다).
+    me = wait_for(
+        lambda: (r := api.get("/api/v1/auth/me", headers=bearer(tokens["access"]))).status_code
+        == 200
+        and r,
+        15,
+        "가입한 사용자가 /me 에 보이지 않는다(복제 지연?)",
+    )
     return {"username": username, "id": me.json()["id"], **tokens}
 
 
@@ -517,3 +523,37 @@ def admin_client() -> Iterator[AdminClient]:
     client = AdminClient()
     yield client
     client.close()
+
+
+def keepalive_request(
+    method: str, path: str, *, headers: dict[str, str] | None = None, body: bytes | None = None
+) -> tuple[int, bytes, bool, float]:
+    """한 연결로 요청하고 ``(status, body, 서버가 연결을 닫았나, 응답까지 걸린 초)`` 를 돌려준다.
+
+    처리되지 않은 예외가 응답 뒤 다시 던져지면 uvicorn 은 keep-alive 연결을 닫는다 — 정상 HTTP 응답으로
+    끝났는지는 상태 코드만으로 알 수 없어 소켓을 직접 본다.
+    """
+    import http.client
+    import select
+    import socket
+
+    conn = http.client.HTTPConnection(HOST, PORTS["app"], timeout=60)
+    try:
+        started = time.perf_counter()
+        conn.request(
+            method, path, body=body, headers={"Connection": "keep-alive", **(headers or {})}
+        )
+        response = conn.getresponse()
+        data = response.read()
+        elapsed = time.perf_counter() - started
+        sock = conn.sock
+        closed = response.will_close or sock is None
+        if not closed:
+            readable, _, _ = select.select([sock], [], [], 1.0)
+            closed = bool(readable) and sock.recv(1, socket.MSG_PEEK) == b""
+        return response.status, data, closed, elapsed
+    finally:
+        conn.close()
+
+
+TRACEBACK = "Traceback (most recent call last)"
