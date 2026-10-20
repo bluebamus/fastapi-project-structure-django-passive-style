@@ -230,15 +230,18 @@ def test_replica_outage(stack: Stack):
         user = register_and_login(api)
     stack.sql("SET GLOBAL offline_mode = ON", target="replica", root=True)
     try:
+        # replica 연결 오류 → primary 로 한 번 다시 읽는다(사용자 결정 2 · F-005). 정상 응답·연결 유지·WARNING 한 줄.
+        mark = len(stack.app_output())
         read = probe(stack, "GET", "/api/v1/blog/posts")
-        # 현행(R-004 결정 전 기록): replica 연결 오류는 처리되지 않은 예외 500 이다.
-        assert read["status"] == 500, read
-        assert not any(word in read["body"] for word in INTERNALS), read["body"]
-        if read["unhandled"] >= 2 or read["closed"]:
-            OBSERVATIONS.add(
-                f"replica 장애 읽기 500 — 처리되지 않은 예외 기록 {read['unhandled']}건, keep-alive 끊김={read['closed']} "
-                "(Redis 외 예외도 Exception 핸들러 경로에서 같은 현상)"
-            )
+        assert read["status"] == 200 and not read["closed"] and read["unhandled"] == 0, read
+        logged = stack.app_output()[mark:]
+        assert "[DBRouter] replica 연결 오류 — primary 로 다시 읽는다" in logged
+        assert "WARNING" in next(line for line in logged.splitlines() if "[DBRouter]" in line)
+        assert not any(
+            word in logged for word in (stack.secrets["E2E_MYSQL_PASSWORD"], "fastapi_passive_e2e:")
+        )
+        me = probe(stack, "GET", "/api/v1/auth/me", headers=bearer(user["access"]))
+        assert me["status"] == 200, "읽기 전용 세션의 인증 읽기도 primary 로 넘어간다"
         write = probe(
             stack,
             "POST",

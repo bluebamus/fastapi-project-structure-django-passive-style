@@ -613,6 +613,12 @@ flowchart TD
 - `DB_READ_STICKY_AFTER_WRITE=true`(기본)면 쓰기 이후 같은 세션의 SELECT 는 writer 로 간다(read-after-write).
   새 요청의 read-only 세션까지 복제 지연을 없애 주지는 않는다.
 - 한 세션은 라운드로빈으로 고른 replica 하나에 고정된다(트랜잭션이 여러 서버로 흩어지지 않도록).
+- **replica 장애 → primary 로 한 번 재시도**(integration-e2e ADR-010): **읽기 전용 세션**의 읽기가 replica 에 **연결하지 못하면**
+  (MySQL 2002·2003 접속 불가, 2006·2013·2055 연결 끊김, 1053 종료 중, 3032 `offline_mode`, 4031 유휴 끊김, 또는 SQLAlchemy 가
+  연결 무효화로 표시한 오류) 같은 구문을 primary 로 한 번 다시 실행하고 WARNING `[DBRouter] replica 연결 오류 — primary 로 다시
+  읽는다 (<예외 종류>, driver_code=<코드>)` 를 남긴다(DSN·메시지는 싣지 않는다). 그 뒤 그 세션은 writer 에 고정된다. 쿼리 자체의
+  오류(문법·제약·없는 테이블)는 재시도하지 않는다. 쓰기와 섞일 수 있는 일반(라우팅) 세션도 재시도하지 않는다. primary 도 실패하면
+  그 오류가 그대로 올라간다. replica 가 없는 구성은 동작 변화가 없다. `/ready` 는 그대로 writer 만 본다.
 - `DB_REPLICATION_ENABLED=true` 는 `DB_ROUTER_ENABLED=true` 와 `MYSQL_REPLICA_HOSTS` 를 요구한다. replica 계정·DB 를
   비우면 primary 값을 재사용한다. replica 없이 라우터만 켜면 읽기도 writer 로 간다.
 - 복제 지연을 허용할 수 없는 읽기는 `using_writer(session)` 으로 writer 에 고정한다.

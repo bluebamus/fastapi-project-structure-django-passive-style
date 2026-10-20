@@ -48,8 +48,13 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Engine, Select, TextClause, UpdateBase, event
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import ORMExecuteState, Session
+
+from app.utils.logs import get_logger
+
+logger = get_logger("db.router")
 
 # 세션 단위 라우팅 상태를 담는 ``Session.info`` 키.
 # (세션 객체에 직접 속성을 붙이지 않고 SQLAlchemy 가 제공하는 info 딕셔너리를 쓴다.)
@@ -67,6 +72,23 @@ _READ_ONLY = "_db_router_read_only"  # 이 세션은 쓰기 금지
 DB_INTENT = "db_intent"
 READ_INTENT = "read"
 WRITE_INTENT = "write"
+
+
+#: "연결이 안 된다" 를 뜻하는 MySQL 드라이버 코드 — 쿼리 자체의 오류(문법·제약)는 넣지 않는다.
+#: 2002/2003 접속 불가, 2006/2013/2055 연결 끊김·읽기 실패, 1053 서버 종료 중, 3032 offline_mode,
+#: 4031 서버가 유휴 연결을 끊음.
+REPLICA_CONNECTION_ERRORS = frozenset({1053, 2002, 2003, 2006, 2013, 2055, 3032, 4031})
+
+
+def is_connection_error(exc: BaseException) -> bool:
+    """replica 를 포기하고 primary 로 다시 읽을 만한 오류인가 — 연결 계열만 참이다."""
+    if not isinstance(exc, DBAPIError):
+        return False
+    if exc.connection_invalidated:
+        return True
+    orig = getattr(exc, "orig", None)
+    args = getattr(orig, "args", None)
+    return bool(args) and args[0] in REPLICA_CONNECTION_ERRORS
 
 
 class ReadOnlyRoutingError(RuntimeError):
@@ -281,6 +303,33 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
                 reader = router.next_reader()
                 info[_READER_PINNED] = reader
             return reader.sync_engine
+
+    @event.listens_for(RoutingSession, "do_orm_execute")
+    def _fall_back_to_writer(state: ORMExecuteState) -> Any:
+        """읽기 전용 세션의 replica 읽기가 **연결 계열 오류**로 실패하면 primary 로 한 번 다시 읽는다(ADR-010).
+
+        읽기 전용 세션만이다 — 쓰기와 섞일 수 있는 세션에서 일부 구문만 서버를 바꾸면 트랜잭션의 의미가 깨진다.
+        재시도 뒤에는 세션을 writer 에 고정한다(같은 세션이 죽은 replica 를 다시 두드리지 않게, 스냅샷도 한 서버).
+        primary 도 실패하면 그 오류가 그대로 올라간다(재시도는 한 번). 로그에는 드라이버 코드만 — 메시지에는 DSN 이 있다.
+        """
+        session = state.session
+        info = session.info
+        if not info.get(_READ_ONLY) or info.get(_WRITER_PINNED) or not router.replicated:
+            return None
+        try:
+            return state.invoke_statement()
+        except DBAPIError as exc:
+            if not is_connection_error(exc):
+                raise
+            orig = getattr(exc, "orig", None)
+            code = getattr(orig, "args", (None,))[0]
+            logger.warning(
+                "[DBRouter] replica 연결 오류 — primary 로 다시 읽는다 (%s, driver_code=%s)",
+                type(exc).__name__,
+                code,
+            )
+            info[_WRITER_PINNED] = True
+            return state.invoke_statement(bind_arguments={"bind": router.writer.sync_engine})
 
     return RoutingSession
 
