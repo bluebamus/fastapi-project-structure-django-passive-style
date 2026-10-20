@@ -191,6 +191,19 @@ async def test_protected_operation_without_token_is_401(client, key):
     assert resp.headers["WWW-Authenticate"] == "Bearer"
 
 
+@pytest.mark.parametrize("key", PROTECTED, ids=lambda k: f"{k[0]} {k[1]}")
+async def test_protected_operation_with_invalid_token_is_401_with_bearer_challenge(client, key):
+    """토큰이 **있지만** 위조·만료면 401 에도 ``WWW-Authenticate: Bearer`` 가 붙는다(RFC 6750 §3).
+
+    없을 때만 붙고 틀렸을 때 빠지면 클라이언트는 다시 인증해야 한다는 신호를 받지 못한다(integration-e2e F-001).
+    """
+    resp = await _call(client, key, headers={"Authorization": "Bearer not-a-jwt"})
+
+    assert resp.status_code == 401, resp.text
+    assert resp.json()["error_code"] == "AUTH_INVALID_TOKEN"
+    assert resp.headers["WWW-Authenticate"] == "Bearer"
+
+
 @pytest.mark.parametrize("key", ADMIN_ONLY, ids=lambda k: f"{k[0]} {k[1]}")
 async def test_admin_operation_rejects_a_normal_user(client, key):
     resp = await _call(client, key, headers=user_headers())

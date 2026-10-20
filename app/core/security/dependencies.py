@@ -25,7 +25,12 @@ from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from redis.asyncio import Redis
 
-from app.core.exception import ErrorResponse, ForbiddenException, UnauthorizedException
+from app.core.exception import (
+    ErrorResponse,
+    ForbiddenException,
+    InvalidTokenException,
+    UnauthorizedException,
+)
 from app.core.redis import get_redis
 from app.core.security.admin_session import AdminSessionStore, default_admin_session_store
 from app.core.security.passwords import PasswordHasher
@@ -117,7 +122,13 @@ async def get_current_principal(
     """
     if not token:
         raise UnauthorizedException(headers=dict(_BEARER_CHALLENGE))
-    claims = token_service.decode(token, ACCESS)
+    try:
+        claims = token_service.decode(token, ACCESS)
+    except InvalidTokenException as exc:
+        # 위조·만료도 같은 도전 헤더를 싣는다(RFC 6750 §3) — 없을 때만 붙으면 클라이언트가
+        # "다시 인증하라" 는 신호를 놓친다(integration-e2e F-001).
+        exc.headers = {**(exc.headers or {}), **_BEARER_CHALLENGE}
+        raise
     principal = Principal(id=claims["sub"], username=claims["username"], is_superuser=claims["su"])
     request.state.user_id = principal.id
     return principal
