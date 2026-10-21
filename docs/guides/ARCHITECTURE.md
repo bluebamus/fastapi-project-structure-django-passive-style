@@ -108,7 +108,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 | 모듈 | 책임 |
 |---|---|
-| `app/core/bootstrap.py` | `create_app()` factory, `lifespan`, 전역 예외 핸들러 4종, `/health`·`/ready`·Scalar `/docs` |
+| `app/core/bootstrap.py` | `create_app()` factory, `lifespan`, 전역 예외 핸들러 5종, `/health`·`/ready`·Scalar `/docs` |
 | `app/core/resources.py` | `manage_application_resources()` — Redis 검증, 개발용 테이블 생성, 종료 순서 |
 | `app/core/apps/` | `AppConfig`·`Apps`·예외(Django lifecycle) + `wiring.py`(FastAPI·SQLAdmin adapter) |
 | `app/core/db/session.py` | 엔진·세션 팩토리(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`), 세션 Dependency, `background_session()`, `owned_tables()`, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` |
@@ -432,7 +432,7 @@ def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -> Fa
 1. 설치 목록 결정(`config.INSTALLED_APPS` 또는 주입값), registry 결정(전역 `apps` 또는 주입값)
 2. `registry.populate(apps_list)` — config → models → `ready()`
 3. `FastAPI(...)` 생성 — `docs_url=None`, `redoc_url=None`, `openapi_url` 은 `DEBUG` 일 때만 `/openapi.json`, `lifespan` 연결
-4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 4종
+4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 5종
 5. `install_routers(app, registry)`
 6. `/health`, `/ready`, `DEBUG` 일 때만 Scalar `/docs`
 7. `app.state.app_registry` 저장, `admin_disabled`(기본 `ADMIN_DISABLED`)가 false 면 `create_admin(...)` — 끈 경우 로그에도 경로를 싣지 않는다
@@ -462,6 +462,8 @@ INFO 를 막아 둔 관리형 Redis·버전을 알려 주지 않는 서버(테�
 `DEBUG` 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 `app.state.redis` 에 보관되고,
 요청 코드는 주입 provider `get_redis(request) -> Redis`(`app/core/redis.py`) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
 `ServiceUnavailableException`(503). 기능이 `Redis.from_url` 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 `/ready` 가 다시 본다(§3.5).
+기동 뒤 Redis 가 사라지면 Redis 를 필수로 쓰는 요청은 503(SERVICE_UNAVAILABLE) 이다(§3.5 예외 표, fail-closed). Redis 를 쓰지 않는
+조회(예: 글 목록)는 영향이 없고, 재기동하면 다시 연결된다(연결 풀이 재접속한다 — e2e L5 가 확인).
 
 **개발용 테이블 생성** — `_prepare_database()` 는 `create_app()` 이 조립에 쓴 registry(`app.state.app_registry`)를
 받아 `owned_tables(registry)` 로 **그 registry 가 소유한 테이블만** 센다. 전역 `apps` 를 따로 읽거나 다시 채우지 않는다.
@@ -503,12 +505,13 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | 요청 중 오류 | 전역 예외 핸들러 |
 | background 저장 오류 | 이미 나간 응답과 무관(로그만) |
 
-전역 핸들러 4종은 모두 `ErrorResponse{error_code, message, detail}` 로 응답한다.
+전역 핸들러 5종은 모두 `ErrorResponse{error_code, message, detail}` 로 응답한다.
 
 | 예외 | 처리 |
 |---|---|
 | `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`). 로그는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR |
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록 |
+| Redis 연결 오류(`redis.exceptions.ConnectionError`·`TimeoutError`) | 503 SERVICE_UNAVAILABLE, detail 없음. **예외 클래스 전용** 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 **한 번**, keep-alive 연결도 유지된다(`Exception` 핸들러로 가면 Starlette `ServerErrorMiddleware` 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). `ResponseError` 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009) |
 | Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow`·401 `WWW-Authenticate` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`) |
 | 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
 
@@ -610,6 +613,12 @@ flowchart TD
 - `DB_READ_STICKY_AFTER_WRITE=true`(기본)면 쓰기 이후 같은 세션의 SELECT 는 writer 로 간다(read-after-write).
   새 요청의 read-only 세션까지 복제 지연을 없애 주지는 않는다.
 - 한 세션은 라운드로빈으로 고른 replica 하나에 고정된다(트랜잭션이 여러 서버로 흩어지지 않도록).
+- **replica 장애 → primary 로 한 번 재시도**(integration-e2e ADR-010): **읽기 전용 세션**의 읽기가 replica 에 **연결하지 못하면**
+  (MySQL 2002·2003 접속 불가, 2006·2013·2055 연결 끊김, 1053 종료 중, 3032 `offline_mode`, 4031 유휴 끊김, 또는 SQLAlchemy 가
+  연결 무효화로 표시한 오류) 같은 구문을 primary 로 한 번 다시 실행하고 WARNING `[DBRouter] replica 연결 오류 — primary 로 다시
+  읽는다 (<예외 종류>, driver_code=<코드>)` 를 남긴다(DSN·메시지는 싣지 않는다). 그 뒤 그 세션은 writer 에 고정된다. 쿼리 자체의
+  오류(문법·제약·없는 테이블)는 재시도하지 않는다. 쓰기와 섞일 수 있는 일반(라우팅) 세션도 재시도하지 않는다. primary 도 실패하면
+  그 오류가 그대로 올라간다. replica 가 없는 구성은 동작 변화가 없다. `/ready` 는 그대로 writer 만 본다.
 - `DB_REPLICATION_ENABLED=true` 는 `DB_ROUTER_ENABLED=true` 와 `MYSQL_REPLICA_HOSTS` 를 요구한다. replica 계정·DB 를
   비우면 primary 값을 재사용한다. replica 없이 라우터만 켜면 읽기도 writer 로 간다.
 - 복제 지연을 허용할 수 없는 읽기는 `using_writer(session)` 으로 writer 에 고정한다.
@@ -761,6 +770,10 @@ Celery `--loglevel` 은 워커 root 레벨로 따르고, `--logfile` 을 주면 
   | Celery beat | `celery-beat.log` | `celery-beat-error.log` |
 
   웹과 워커가 한 `error.log` 를 함께 쓰면 두 프로세스가 같은 파일을 회전시켜 깨진다 — 그래서 에러 파일도 프로세스별이다(ADR-003).
+  **기동 초기 줄도 파일에 남는다**: 설정 로드 직후 첫 `get_logger()` 가 진입 명령으로 프로세스 종류를 정하고 파일 핸들러까지 붙인다 —
+  import 중에 나는 줄(예: `[database] 라우팅 구성`)이 콘솔에만 있고 파일에서 빠지지 않는다. 웹·`python main.py`·`uvicorn main:app`·
+  워커·beat 모두 같고, 핸들러는 한 번만 붙는다(`tests/utils/test_log_early_lines.py`, e2e L6 이 실제 프로세스로 대조한다 —
+  integration-e2e ADR-011).
 - **회전·보관** — `app/utils/logs/handlers.py` 의 `DailySizeRotatingFileHandler`(표준 `TimedRotatingFileHandler` 상속). 매일 자정(UTC —
   파일은 UTC 를 쓰는 staging/production 에만 있다)에 `app.log` → `app.log.2026-10-19`, 하루 안에서 `LOG_MAX_SIZE_MB` 를 넘으면
   `app.log.2026-10-19.1`·`.2`…. 회전할 때마다 `LOG_RETENTION_DAYS`(기본 30, `0` = 지우지 않음)보다 오래된 날짜·분할 파일을 지운다

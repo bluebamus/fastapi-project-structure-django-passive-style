@@ -1,0 +1,123 @@
+# 전수 통합(e2e) 환경 — MySQL 8.4 primary + GTID replica + Redis 7.4 (integration-e2e ADR-001).
+#
+# 기존 `compose.test.yaml`(mysql·browser 마커용 단일 MySQL)과 **분리한** 파일이다. 복제·장애 주입이
+# 단일 인스턴스 테스트를 흔들지 않게 하고, 프로젝트 이름(`itest-passive`)과 포트로 완전히 격리한다.
+#
+# 보통은 직접 띄우지 않는다 — `tests/e2e/conftest.py` 하네스가 실행마다 무작위 비밀번호를 만들어
+# `up -d --wait` 하고, 끝나면 `down` 한다(볼륨은 tmpfs 라 `-v` 가 필요 없다):
+#
+#   uv run python -m pytest -m e2e            # Windows 면 하네스가 `wsl -e docker` 를 쓴다
+#
+# 손으로 띄울 때는 비밀번호 세 개를 환경 변수로 준다(파일에 적지 않는다 — CRLF 의 `\r` 이 섞이면
+# replica 초기화가 인증에 실패한다):
+#
+#   E2E_MYSQL_ROOT_PASSWORD=… E2E_MYSQL_PASSWORD=… E2E_REPL_PASSWORD=… \
+#     docker compose -p itest-passive -f compose.e2e.yaml up -d --wait
+#
+# 포트는 모두 127.0.0.1 바인딩이다(primary 13341 · replica 13342 · Redis 16393). 하네스는 이 값이
+# 아니면 시작하지 않는다 — 남의 MySQL·Redis 에 붙는 사고를 구조로 막는다.
+#
+# 데이터 디렉터리는 tmpfs 다. 그래서 MySQL 을 `stop` 하면 스키마가 사라진다 — 장애 주입은 컨테이너를
+# 멈추지 않고 `offline_mode` 로 한다(ADR-002). Redis 는 영속 데이터가 없어 `stop`/`start` 한다.
+
+name: itest-passive
+
+services:
+  mysql-primary:
+    image: mysql:8.4
+    # 설정 파일을 마운트하지 않고 전부 명령줄로 준다 — WSL 의 0777 마운트에서 mysqld 는
+    # world-writable 설정 파일을 무시한다. 명령줄은 파일 권한과 무관하게 항상 적용된다.
+    command:
+      - --server-id=1
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-flush-log-at-trx-commit=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${E2E_MYSQL_ROOT_PASSWORD:?E2E_MYSQL_ROOT_PASSWORD 가 필요하다}
+      MYSQL_DATABASE: fastapi_passive_e2e
+      MYSQL_USER: fastapi_passive_e2e
+      MYSQL_PASSWORD: ${E2E_MYSQL_PASSWORD:?E2E_MYSQL_PASSWORD 가 필요하다}
+      E2E_REPL_PASSWORD: ${E2E_REPL_PASSWORD:?E2E_REPL_PASSWORD 가 필요하다}
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:${E2E_MYSQL_PRIMARY_PORT:-13341}:3306"
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./tests/e2e/mysql/primary:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP ping 은 초기화(소켓 전용 임시 서버)가 끝나 정식 서버가 뜬 뒤에만 성공한다.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  mysql-replica:
+    image: mysql:8.4
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+    command:
+      - --server-id=2
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      # 앱 계정(SUPER 없음)의 쓰기를 막는다. 복제 스레드는 read_only 의 영향을 받지 않는다.
+      - --read-only=ON
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-flush-log-at-trx-commit=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${E2E_MYSQL_ROOT_PASSWORD:?E2E_MYSQL_ROOT_PASSWORD 가 필요하다}
+      MYSQL_DATABASE: fastapi_passive_e2e
+      MYSQL_USER: fastapi_passive_e2e
+      MYSQL_PASSWORD: ${E2E_MYSQL_PASSWORD:?E2E_MYSQL_PASSWORD 가 필요하다}
+      E2E_REPL_PASSWORD: ${E2E_REPL_PASSWORD:?E2E_REPL_PASSWORD 가 필요하다}
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:${E2E_MYSQL_REPLICA_PORT:-13342}:3306"
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./tests/e2e/mysql/replica:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 복제 두 스레드가 모두 Yes 여야 healthy 다. `-N`(열 이름 생략)을 쓰지 않는다 — `\G` 출력의
+      # "Replica_IO_Running: Yes" 에서 필드 이름이 사라지면 판정이 깨진다.
+      test:
+        - CMD-SHELL
+        - >-
+          s=$$(mysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -e 'SHOW REPLICA STATUS\G' 2>/dev/null);
+          echo "$$s" | grep -q 'Replica_IO_Running: Yes' &&
+          echo "$$s" | grep -q 'Replica_SQL_Running: Yes'
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  redis:
+    # 7.0 이상이어야 앱이 뜬다(EXPIRE NX — app/core/redis.py REDIS_MIN_VERSION).
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${E2E_REDIS_PORT:-16393}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # 기동 거부 검사(L6) 전용 — 최소 버전(7.0) 미달 Redis. 평소에는 뜨지 않는다(profile).
+  # 하네스가 redis 를 멈춘 뒤 같은 포트로 잠깐 띄우고 내린다.
+  redis-old:
+    image: redis:6.2-alpine
+    profiles: ["redis-old"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${E2E_REDIS_PORT:-16393}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

@@ -48,15 +48,18 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
-def _wait_until_serving(port: int, process: subprocess.Popen[bytes]) -> None:
+def _tail(log: Path) -> str:
+    text = log.read_text("utf-8", "replace") if log.exists() else ""
+    return "\n".join(text.strip().splitlines()[-15:])
+
+
+def _wait_until_serving(port: int, process: subprocess.Popen[bytes], log: Path) -> None:
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            output = b""
-            if process.stdout is not None:
-                output = process.stdout.read() or b""
-            tail = "\n".join(output.decode("utf-8", "replace").strip().splitlines()[-15:])
-            raise RuntimeError(f"uvicorn 이 시작 중에 종료했다 (코드 {process.returncode})\n{tail}")
+            raise RuntimeError(
+                f"uvicorn 이 시작 중에 종료했다 (코드 {process.returncode})\n{_tail(log)}"
+            )
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                 return
@@ -64,24 +67,35 @@ def _wait_until_serving(port: int, process: subprocess.Popen[bytes]) -> None:
             time.sleep(0.2)
     # 시간 초과 쪽에도 출력을 붙인다. 위 종료 경로에만 붙어 있어서, 프로세스가 **살아 있는 채로**
     # 못 뜨면(예: Redis 가 없어 startup 이 재시도를 돈다) "40s 안에 안 떴다" 한 줄만 남고 원인이
-    # 통째로 사라졌다. 읽기 전에 먼저 죽인다 — 살아 있으면 `read()` 가 막힌다.
+    # 통째로 사라졌다.
     process.terminate()
     try:
-        output = process.communicate(timeout=10)[0] or b""
+        process.wait(timeout=10)
     except subprocess.TimeoutExpired:
         process.kill()
-        output = process.communicate()[0] or b""
-    tail = "\n".join(output.decode("utf-8", "replace").strip().splitlines()[-15:])
-    raise TimeoutError(f"{STARTUP_TIMEOUT_SECONDS:.0f}s 안에 uvicorn 이 뜨지 않았다\n{tail}")
+        process.wait(timeout=10)
+    raise TimeoutError(f"{STARTUP_TIMEOUT_SECONDS:.0f}s 안에 uvicorn 이 뜨지 않았다\n{_tail(log)}")
 
 
 def server_env() -> dict[str, str]:
     """live server 와 그 서버에 붙는 보조 프로세스(예: ``scripts.create_superuser``)가 함께 쓰는 환경.
 
     MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
-    갈린다). Redis 는 ``compose.test.yaml`` 의 ``redis-test`` 다. 호스트·포트·비밀번호를 **모두**
-    덮어쓴다 — 하나라도 빠지면 개발자의 ``.env`` 값이 섞여 다른 DB·Redis 에 붙는다.
+    갈린다). 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 ``.env`` 값이
+    섞여 다른 DB·Redis 에 붙는다.
+
+    Redis 대상은 **명시해야 한다**(``REDIS_HOST``·``REDIS_PORT``, integration-e2e W0). 기본 포트로
+    떨어지면 개발 머신의 남의 Redis 에 붙는다 — 실제로 그런 사고가 있었다. 없으면 접속을 시도하기
+    전에 실패한다. ``compose.test.yaml`` 의 ``redis-test`` 를 쓰면 ``REDIS_PORT=${REDIS_TEST_PORT:-6380}``.
     """
+    missing = [name for name in ("REDIS_HOST", "REDIS_PORT") if not os.getenv(name)]
+    if missing:
+        pytest.fail(
+            f"{', '.join(missing)} 가 환경에 없다 — 브라우저 테스트의 자식 서버가 붙을 Redis 를 "
+            "명시해야 한다(기본값으로 떨어지면 남의 Redis 에 붙는다). 예: "
+            "REDIS_HOST=127.0.0.1 REDIS_PORT=6380 uv run python -m pytest -m browser",
+            pytrace=False,
+        )
     from tests.integration.conftest import (
         MYSQL_DATABASE,
         MYSQL_HOST,
@@ -98,15 +112,15 @@ def server_env() -> dict[str, str]:
         "MYSQL_USER": MYSQL_USER,
         "MYSQL_PASSWORD": MYSQL_PASSWORD,
         "MYSQL_DATABASE": MYSQL_DATABASE,
-        "REDIS_HOST": "127.0.0.1",
-        "REDIS_PORT": os.getenv("REDIS_TEST_PORT", "6380"),
+        "REDIS_HOST": os.environ["REDIS_HOST"],
+        "REDIS_PORT": os.environ["REDIS_PORT"],
         "REDIS_PASSWORD": "",
         "PYTHONIOENCODING": "utf-8",
     }
 
 
 @pytest.fixture(scope="session")
-def live_server() -> Iterator[str]:
+def live_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     """실제 uvicorn 프로세스를 띄우고 base URL 을 돌려준다.
 
     `DEBUG=true` 여야 `/docs` 가 열린다 — 운영 모드에서는 의도적으로 차단된다.
@@ -115,17 +129,21 @@ def live_server() -> Iterator[str]:
     startup 이 `create_db_tables()` 로 DB 에 붙고 Redis 에 `ping()` 을 보낸다. 둘 중 하나라도
     없으면 앱이 아예 뜨지 않는다 — 그래서 `compose.test.yaml` 의 테스트 인스턴스를 가리킨다.
     MySQL 자격증명은 통합 테스트 하네스가 소유한 값을 그대로 쓴다(여기서 다시 적으면 두 곳이
-    갈린다). Redis 는 `compose.test.yaml` 의 `redis-test`(`127.0.0.1:${REDIS_TEST_PORT:-6380}`)를
-    가리킨다. 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 `.env` 값이
+    갈린다). Redis 는 환경의 `REDIS_HOST`·`REDIS_PORT` 로 명시한 곳(보통 `compose.test.yaml` 의
+    `redis-test`)을 가리킨다 — 없으면 실패한다(``server_env``). 호스트·포트·비밀번호를 **모두** 덮어쓴다 — 하나라도 빠지면 개발자의 `.env` 값이
     섞여 다른 Redis 에 붙거나 인증에 실패한다.
 
-    stdout/stderr 는 버리지 않고 파이프로 받는다 — 시작이 실패했을 때 그 이유가
-    보여야 한다(처음에 DEVNULL 로 버려서 "연결 거부" 만 보고 원인을 몰랐다).
+    stdout/stderr 는 버리지 않고 **파일로** 받는다 — 시작이 실패했을 때 그 이유가 보여야 한다(처음에
+    DEVNULL 로 버려서 "연결 거부" 만 보고 원인을 몰랐다). 파이프(``PIPE``)로 받으면 아무도 읽지 않는 동안
+    버퍼가 차서 서버가 로그 한 줄을 쓰다 멈춘다 — Windows 는 접속 로그 몇 줄(실측 9요청)이면 막혀 뒤의
+    브라우저 테스트가 전부 ``goto`` 시간 초과로 보였다(integration-e2e F-002).
     """
     port = _free_port()
     # `-X utf8` 은 저장소 계약이다(C-7). Windows 기본 인코딩(cp949)으로 자식이 쓰면
     # 부모가 stderr 를 디코딩하다 터져 **실패 원인이 통째로 사라진다**.
     # 한 줄로 두는 이유: 계약 검사가 줄 단위라 여러 줄로 쪼개면 못 본다.
+    log = tmp_path_factory.mktemp("live-server") / "uvicorn.out"
+    log_file = log.open("wb")
     launcher = [sys.executable, "-X", "utf8", "-m", "uvicorn"]
     process = subprocess.Popen(
         [
@@ -139,12 +157,12 @@ def live_server() -> Iterator[str]:
             "warning",
         ],
         cwd=REPO_ROOT,
-        stdout=subprocess.PIPE,
+        stdout=log_file,
         stderr=subprocess.STDOUT,
         env=server_env(),
     )
     try:
-        _wait_until_serving(port, process)
+        _wait_until_serving(port, process, log)
         yield f"http://127.0.0.1:{port}"
     finally:
         process.terminate()
@@ -153,6 +171,7 @@ def live_server() -> Iterator[str]:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=10)
+        log_file.close()
 
 
 #: Scalar 가 그려졌다고 볼 최소 본문 길이. `test_scalar_page_renders` 가 쓰는 신호와 같다.

@@ -19,8 +19,10 @@
 #
 # Redis 도 함께 띄운다. `-m browser` 테스트는 실제 서버를 띄우므로 startup ping 이 통과할
 # Redis 가 있어야 한다 — 없으면 앱이 뜨지 않아 7건이 모두 에러가 된다. 포트는 6380 이다:
-# 개발 머신의 6379 에는 보통 개발용 Redis 가 이미 떠 있다. REDIS_TEST_PORT 로 덮어쓰며,
-# tests/browser/conftest.py 가 같은 환경변수를 읽는다.
+# 개발 머신의 6379 에는 보통 개발용 Redis 가 이미 떠 있다. 발행 포트는 REDIS_TEST_PORT 로 덮어쓴다.
+# 테스트가 붙는 대상은 따로 명시한다 — tests/browser/conftest.py 는 REDIS_HOST·REDIS_PORT 가 없으면
+# 실패한다(기본값으로 떨어져 남의 Redis 에 붙는 사고를 막는다):
+#   REDIS_HOST=127.0.0.1 REDIS_PORT=6380 uv run python -m pytest -m browser
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
 # WSL2 의 localhost forwarding 으로 127.0.0.1:3309 가 그대로 연결된다.

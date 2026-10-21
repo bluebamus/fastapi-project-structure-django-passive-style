@@ -105,7 +105,11 @@ def test_alembic_env_escapes_percent_for_configparser(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("password", [TRICKY_PASSWORD, "plain"])
 def test_redis_url_round_trips_password(password: str):
-    settings = RedisSettings(_env_file=None, REDIS_HOST="cache", REDIS_PASSWORD=password)
+    # 포트를 고정한다 — 테스트 실행은 REDIS_PORT 를 명시하므로(integration-e2e W0) 기본값에 기대면
+    # 환경에 따라 결과가 갈린다. 이 검사의 대상은 비밀번호 왕복이다.
+    settings = RedisSettings(
+        _env_file=None, REDIS_HOST="cache", REDIS_PORT=6379, REDIS_PASSWORD=password
+    )
 
     parsed = parse_url(settings.REDIS_URL)
 

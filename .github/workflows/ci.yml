@@ -114,9 +114,13 @@ jobs:
       # 커버리지 데이터·pytest tmp·로그를 실행별 경로로 보낸다. 저장소 루트의
       # `.coverage` 를 쓰면 앞선 실행의 병렬 데이터가 남아 combine 이 형식 충돌로
       # 터진다 — 경로를 격리하면 `rm -f` 로 지우는 습관 자체가 필요 없다.
+      # Redis 대상을 명시한다(integration-e2e W0) — 이 단계는 Redis 에 붙지 않지만, 앞으로 붙는 테스트가
+      # 생겨도 기본 6379(남의 Redis 일 수 있다)로 떨어지지 않게 한다.
       - name: pytest (coverage 게이트)
         env:
           COVERAGE_FILE: ${{ env.GATE_TMP }}/.coverage
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6380"
         run: |
           set -o pipefail
           uv run python -m pytest --cov=app --cov-report=term-missing \
@@ -226,6 +230,9 @@ jobs:
       # (`bash -e {0}`)에는 pipefail 이 없다. 그러면 failed·error 가 나도 아래 grep 은
       # skip 만 보므로 단계가 초록으로 끝난다(브라우저 단계가 실제로 7 errors 인 채 초록이었다).
       - name: pytest -m mysql (skip 금지)
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6380"
         run: |
           set -o pipefail
           uv run python -m pytest -m mysql -q -rsxX | tee mysql.log
@@ -259,7 +266,12 @@ jobs:
 
       # 실제 uvicorn 을 띄우므로 startup ping·버전 확인(7.0 이상)이 통과할 Redis 가 필요하다 — 위 compose 의
       # redis-test 가 그 자리다. pipefail 이유는 mysql 단계와 같다.
+      # 대상은 명시한다 — tests/browser/conftest.py 는 REDIS_HOST·REDIS_PORT 가 없으면 실패한다(W0).
+      # 6380 은 compose.test.yaml 의 redis-test 기본 발행 포트다.
       - name: pytest -m browser (skip 금지)
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6380"
         run: |
           set -o pipefail
           uv run python -m pytest -m browser -q -rsxX | tee browser.log
@@ -275,3 +287,79 @@ jobs:
       - name: 정리
         if: always()
         run: docker compose -f compose.test.yaml down -v
+
+  # ── 전수 통합 e2e (integration-e2e) ──────────────────────────────────────
+  # compose.e2e.yaml(MySQL 8.4 primary + GTID replica + Redis 7.4)을 하네스(tests/e2e/conftest.py)가
+  # 띄우고, 실제 uvicorn·Celery worker·Chromium 으로 API 전수 매트릭스·관리 화면·장애 주입·운영을 본다.
+  # 매 push 에 돈다. skip·xfail·xpass 가 하나라도 있거나 0건이면 실패다.
+  e2e:
+    name: 전수 통합 e2e (compose.e2e.yaml)
+    runs-on: ubuntu-24.04  # ubuntu-latest 는 2026-10-19 부터 Ubuntu 26 으로 바뀐다 — 검증 전까지 고정
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 의존성 설치
+        run: uv sync --locked
+
+      # 비밀번호는 실행마다 새로 만들고 로그에서 가린다. 하네스는 이 값을 받아 compose 에 넘긴다
+      # (없으면 스스로 만든다). 파일에 적지 않는다.
+      - name: 실행별 무작위 비밀번호(마스킹)
+        run: |
+          for name in E2E_MYSQL_ROOT_PASSWORD E2E_MYSQL_PASSWORD E2E_REPL_PASSWORD; do
+            value=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "${GITHUB_ENV}"
+          done
+          echo "E2E_ARTIFACT_DIR=${RUNNER_TEMP}/e2e-artifacts" >> "${GITHUB_ENV}"
+
+      - name: Chromium 캐시
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Chromium 설치
+        run: uv run python -m playwright install --with-deps chromium
+
+      # 요약 줄은 정규식으로 찾는다 — 로그 처리기 종료 줄 등이 그 뒤에 붙을 수 있어 마지막 줄이 아니다.
+      # `deselected` 는 세지 않는다(`-m e2e` 가 나머지를 거른 결과다).
+      - name: pytest -m e2e (skip·xfail 0, 0건 금지)
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "16393"
+        run: |
+          set -o pipefail
+          uv run python -m pytest -m e2e -q -rsxX -p no:cacheprovider --basetemp="${RUNNER_TEMP}/e2e-pytest" | tee e2e.log
+          summary=$(grep -E '[0-9]+ (passed|failed|errors?).* in [0-9.]+s' e2e.log | tail -1)
+          echo "요약: ${summary}"
+          if echo "${summary}" | grep -qE '[0-9]+ (skipped|xfailed|xpassed)'; then
+            echo "::error::e2e 에 skip·xfail·xpass 가 있다 — 안 돈 것은 통과가 아니다."
+            exit 1
+          fi
+          if ! echo "${summary}" | grep -qE '[1-9][0-9]* passed'; then
+            echo "::error::e2e 가 0건이다."
+            exit 1
+          fi
+
+      - name: 실패 산출물 업로드(앱·워커·MySQL·Redis 로그, 인벤토리 대조표)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: e2e-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.E2E_ARTIFACT_DIR }}
+            e2e.log
+          if-no-files-found: warn
+
+      # 하네스도 끝에 내리지만, 하네스가 중간에 죽어도 남지 않게 여기서 한 번 더 내린다(-v 없음 — tmpfs).
+      - name: 정리
+        if: always()
+        run: docker compose -p itest-passive -f compose.e2e.yaml --profile redis-old down

@@ -244,6 +244,16 @@ uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MyS
 먼저이고, 필요해지면 그 값 하나만 올립니다(올리는 법은 개발 가이드 §6.1).
 `mysql`·`browser` 마커 테스트의 준비물과 CI 구성은 [개발 가이드 §6](docs/guides/DEVELOPMENT.md#6-테스트와-품질-게이트)에 있습니다.
 
+**전수 통합(e2e)** — 실제 MySQL 8.4 복제(primary + GTID replica)·Redis 7.4·uvicorn·Celery worker·Chromium 위에서
+모든 API operation·관리 뷰·태스크·Redis 키를 실행하고, 장애(Redis·MySQL·worker)를 주입합니다. 하네스가 compose 를 직접
+띄우고 내리므로 명령은 하나입니다(Docker 가 필요합니다 — Windows 면 WSL 안의 Docker 를 `wsl -e docker` 로 씁니다):
+
+```bash
+REDIS_HOST=127.0.0.1 REDIS_PORT=16393 uv run python -m pytest -m e2e   # 포트 13341·13342·16393·18093 (127.0.0.1)
+```
+
+무엇을 보장하는지·새 API 를 추가하면 무엇을 해야 하는지는 [개발 가이드 §6.6](docs/guides/DEVELOPMENT.md#66-전수-통합-e2e)에 있습니다.
+
 ### 자주 막히는 지점
 
 | 증상 | 원인 | 조치 |
@@ -494,6 +504,8 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 - **첫 관리자** — `scripts/create_superuser.py` 로 만듭니다(대화형 또는 `--password-stdin`). 이 계정이 `/admin` 로그인 계정입니다.
   일반 사용자 토큰으로 관리 API(예: `/api/v1/user/users`)가 403 인지도 확인합니다.
 - **`/admin` 은 슈퍼유저 로그인이 필요합니다** — 관리 세션은 Redis 에 있습니다. Redis 를 쓸 수 없으면 관리 화면은 503 입니다(fail-closed).
+  API 도 Redis 를 필수로 쓰는 경로(가입·로그인·refresh·logout·사용자 비활성화·강등·삭제)는 503(SERVICE_UNAVAILABLE) 로 거부합니다 —
+  Redis 를 쓰지 않는 조회는 그대로 동작하고, Redis 가 돌아오면 재시작 없이 회복합니다.
   `SESSION_SECRET_KEY` 는 세션 ID 를 Redis 키로 바꾸는 HMAC 키라 바꾸면 모든 관리 세션이 끊깁니다(다시 로그인하면 된다).
   staging/production 은 쿠키에 `Secure` 가 붙으므로 HTTPS 로 접속해야 로그인이 유지됩니다.
 - **관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`** — 마운트·링크·세션 미들웨어가 모두 사라집니다. 예전 `ADMIN` 줄이 `.env`·환경에

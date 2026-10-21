@@ -557,7 +557,8 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 | 마커 | 준비 | 실행 |
 |---|---|---|
 | `mysql` | `docker compose -f compose.test.yaml up -d --wait` (MySQL 8.4, `127.0.0.1:3309` — 포트는 환경변수 MYSQL_TEST_PORT 로 변경, tmpfs) | `uv run python -m pytest -m mysql` → 끝나면 `docker compose -f compose.test.yaml down -v` |
-| `browser` | `uv run python -m playwright install chromium` + 위 compose(MySQL 과 함께 Redis `127.0.0.1:6380` 이 뜬다 — 포트는 환경변수 REDIS_TEST_PORT 로 변경) | `uv run python -m pytest -m browser` — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
+| `e2e` | Docker(Windows 는 WSL 안) + `uv run python -m playwright install chromium`. compose 는 하네스가 띄운다(§6.6) | `REDIS_HOST=127.0.0.1 REDIS_PORT=16393 uv run python -m pytest -m e2e` — `-m` 식에 `e2e` 가 있을 때만 수집된다 |
+| `browser` | `uv run python -m playwright install chromium` + 위 compose(MySQL 과 함께 Redis `127.0.0.1:6380` 이 뜬다 — 포트는 환경변수 REDIS_TEST_PORT 로 변경) | `REDIS_HOST=127.0.0.1 REDIS_PORT=6380 uv run python -m pytest -m browser` — 두 변수가 없으면 실패한다(남의 Redis 에 붙지 않게) — 실제 uvicorn 을 `DEBUG=true` 로 띄워 Scalar 렌더링 확인 |
 
 `review_gate` 단계(순서대로): `ruff format` → `ruff check` → `mypy` → `bandit`(`app`·`scripts`·`main.py`·`config.py`, 파싱 실패도 실패) → `pip-audit`(`--strict`) → `pytest`(인프라 제외, 커버리지 측정·하한)
 → OpenAPI 규칙 fail-on-revert(`scripts/openapi_revert_check.py`) → `pytest -m mysql`(skip 금지) → `pytest -m browser`(skip 금지).
@@ -577,6 +578,10 @@ uv run python -m scripts.review_gate                             # 아래 전 �
 |---|---|
 | gate | `uv sync --locked` → ruff check·format → mypy(콜드 캐시) → bandit gate → pip-audit(`--strict`) → pytest 커버리지 측정·하한(`fail_under`, 기본 0, `-m "not mysql and not browser"`) → skipped·xfailed·xpassed 0건 확인 → OpenAPI 규칙 fail-on-revert → alembic 단일 head → SQLite `upgrade head` + `alembic check` |
 | mysql | compose 기동 → `upgrade head` → `downgrade -1` → 재-upgrade → `alembic check` → `pytest -m mysql`(skip·xfail·0건이면 실패) → Chromium 설치 → `pytest -m browser`(skip·xfail·0건이면 실패) → `down -v` |
+| e2e | 실행별 무작위 MySQL 비밀번호(마스킹) → Chromium 설치 → `pytest -m e2e`(하네스가 `compose.e2e.yaml` 기동·종료, skip·xfail·xpass 가 있거나 0건이면 실패) → 실패 시 앱·worker·MySQL·Redis 로그와 인벤토리 대조표를 artifact 로 업로드 → 항상 `compose down` |
+
+gate·mysql job 의 pytest 단계는 `REDIS_HOST`·`REDIS_PORT` 를 명시한다 — 브라우저 하네스는 둘이 없으면 접속 전에 실패한다
+(기본 포트로 떨어져 남의 Redis 에 붙는 사고를 막는다, integration-e2e W0).
 
 ### 6.2 테스트 위치
 
@@ -641,6 +646,35 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 실제 DB | MySQL Decimal·날짜·제약·잠금·동시 수정·Raw 방언·migration |
 
 SQLite 통과는 MySQL 정확성의 근거가 아니다(ADR-004). 인프라가 없어 skip·미실행인 것은 검증된 것이 아니다.
+
+### 6.6 전수 통합 (e2e)
+
+`tests/e2e/` 는 실제 환경 전체를 띄운다 — `compose.e2e.yaml`(MySQL 8.4 primary `127.0.0.1:13341` + GTID replica `:13342` +
+Redis 7.4 `:16393`, 프로젝트 `itest-passive`, 데이터는 tmpfs)과, `.env` 가 없는 실행 디렉터리에서 `ENV=production` 으로 띄운
+uvicorn(`:18093`)·Celery worker. 실행마다 비밀번호·JWT 키를 새로 만든다(CI 는 미리 만들어 마스킹한 E2E_* 를 넘긴다).
+
+```bash
+REDIS_HOST=127.0.0.1 REDIS_PORT=16393 uv run python -m pytest -m e2e    # 전체(약 7분) — 끝나면 compose down
+E2E_KEEP_STACK=1 ... -m e2e tests/e2e/test_l2_api_matrix.py              # 파일 하나 + 컨테이너 남기기(디버깅)
+```
+
+- **Windows**: Docker 는 WSL 안에만 있어도 된다 — 하네스가 `wsl -e docker compose …` 를 쓰고 비밀번호는 WSLENV 로 넘긴다.
+  WSL 은 안에 살아 있는 프로세스가 없으면 유휴 종료되며 컨테이너를 함께 죽인다 — 오래 돌릴 때는 `wsl -e sleep 7000` 같은
+  keepalive 를 따로 띄워 두고 끝나면 내린다.
+- **안전장치**: 하네스는 시작 전에 모든 DSN·Redis 의 host 가 `127.0.0.1` 이고 포트가 위 값인지 본다 — 아니면 아무 데도
+  접속하지 않고 멈춘다. MySQL 장애는 컨테이너를 멈추지 않고 `offline_mode` 로 주입한다(tmpfs 라 `stop` 하면 스키마가 사라진다).
+- **보장하는 것**(층): L2 operation 마다 정상(OpenAPI 스키마·DB 반영)·검증 오류·미인증(401 + `WWW-Authenticate`)·권한 부족·없음·
+  잘못된 메서드·선언된 접근 수준 대조 / L3 인증 수명·레이트 리밋·소유권·사용자 변경 시 세션 폐기·접속 로그·보존 삭제(worker)·
+  매출·Celery 왕복·beat 일정·읽기/쓰기 분리(replica 전용 행·복제 지연) / L4 관리 화면 7 뷰의 목록·상세·생성·수정·삭제·일괄 삭제·
+  내보내기·날짜 필터 4종·기간 필터 UI, CSRF, 로그아웃, 세션 만료·폐기, `ADMIN_DISABLED` / L5 Redis·primary·replica·worker 장애와
+  회복, CSRF 본문 버퍼링 측정 / L6 Alembic 왕복, `create_superuser`, 기동 거부, 로그 경로·파일·회전·레벨, 인증 캐시가 빈 첫 연결 /
+  마지막에 인벤토리 대조(빈 칸 = 실패)와 로그 비밀값 검사.
+- **새 API·관리 뷰·태스크·Redis 키를 추가하면**: 인벤토리 대조기(`test_zz_inventory.py`)가 앱에서 대상을 다시 뽑으므로, 칸을
+  채우지 않으면 e2e 가 실패한다. operation 이면 `test_l2_api_matrix.py` 의 REQUESTS(유효한 요청)와 필요하면 INVALID·
+  OWNERSHIP 에 한 줄씩 더하고, 해당하지 않는 칸은 NOT_APPLICABLE 에 **사유와 함께** 적는다. 관리 뷰는 `test_l4_admin.py` 의
+  VIEWS, 새 Redis 키 리터럴은 그 키를 만드는 시나리오가 실행 중에 한 번은 지나가야 한다.
+- 실패하면 실행 디렉터리(`--basetemp` 아래 `e2e-run*`)에 uvicorn·worker 출력, `logs/`, `inventory-table.txt`, `observations.txt`
+  가 남는다. E2E_ARTIFACT_DIR 을 주면 그리로 복사한다(CI 산출물).
 
 ---
 

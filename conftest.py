@@ -19,6 +19,19 @@ sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, lambda value: value.isoformat(sep=" "))
 
 
+def pytest_ignore_collect(collection_path, config):
+    """``tests/e2e`` 는 ``-m`` 식에 ``e2e`` 가 있을 때만 수집한다 (integration-e2e ADR-003).
+
+    e2e 는 compose·uvicorn·Celery 를 띄운다. 마커식 없이 ``pytest`` 를 돌리거나 기존 마커식
+    (``not mysql and not browser``)으로 돌릴 때 수집조차 하지 않아야, 기존 게이트·CI 의 마커식을
+    고치지 않고도 인프라 없는 실행이 그대로 유지된다.
+    """
+    if collection_path.name == "e2e" and collection_path.parent.name == "tests":
+        if "e2e" not in (config.getoption("markexpr") or ""):
+            return True
+    return None
+
+
 @pytest.fixture
 def restore_config():
     """``importlib.reload(config)`` 를 하는 테스트가 끝나면 원래 설정 **객체**로 되돌린다.
