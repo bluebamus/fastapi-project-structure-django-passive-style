@@ -563,3 +563,104 @@ def test_our_base_template_extends_the_original_and_is_picked_first(env):
 
     assert Path(ours.filename).parent.name == "sqladmin" and "app" in Path(ours.filename).parts
     assert Path(original.filename).resolve() == (SQLADMIN_DIR / "templates/sqladmin/base.html")
+
+
+# ---------------------------------------------------------------------------
+# 폼 본문 상한 (e2e-policy-2 결정 7 · integration-e2e F-007)
+# ---------------------------------------------------------------------------
+MIB = 1024 * 1024
+
+
+async def _csrf_call(
+    headers: dict[str, str], chunks: list[bytes]
+) -> tuple[int, bytes, int, list[bool]]:
+    """미들웨어만 raw ASGI 로 부른다 — ``(상태, 본문, receive 호출 수, 다운스트림 도달)``."""
+    from starlette.responses import PlainTextResponse
+
+    reached: list[bool] = []
+    reads = 0
+    sent: list[dict] = []
+
+    async def downstream(scope, receive, send) -> None:  # pragma: no cover - 도달하면 실패
+        reached.append(True)
+        await PlainTextResponse("ok")(scope, receive, send)
+
+    async def on_failure(request) -> PlainTextResponse:
+        return PlainTextResponse(CSRF_FAILED_MESSAGE, status_code=403)
+
+    async def receive() -> dict:
+        nonlocal reads
+        reads += 1
+        if reads <= len(chunks):
+            return {
+                "type": "http.request",
+                "body": chunks[reads - 1],
+                "more_body": reads < len(chunks),
+            }
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/admin/login",
+        "query_string": b"",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+        "session": {},
+    }
+    await AdminCsrfMiddleware(downstream, on_failure=on_failure)(scope, receive, send)
+    status = next(m["status"] for m in sent if m["type"] == "http.response.start")
+    body = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    return status, body, reads, reached
+
+
+_URLENCODED = {"Content-Type": "application/x-www-form-urlencoded"}
+
+
+async def test_declared_body_over_the_limit_is_413_without_reading_it():
+    from app.core.security.admin_auth import MAX_FORM_BODY_BYTES
+
+    headers = {**_URLENCODED, "Content-Length": str(MAX_FORM_BODY_BYTES + 1)}
+    status, _, reads, reached = await _csrf_call(headers, [b"x" * MIB])
+
+    assert (status, reads, reached) == (413, 0, [])
+
+
+@pytest.mark.parametrize("declared", [None, "100"], ids=["no-length", "understated-length"])
+async def test_streamed_body_over_the_limit_is_413_while_reading(declared):
+    """``Content-Length`` 가 없거나 거짓이면 읽는 도중 누적 크기로 자른다 — 나머지는 읽지 않는다."""
+    headers = dict(_URLENCODED) | ({"Content-Length": declared} if declared else {})
+    chunks = [b"a=" + b"x" * MIB] + [b"x" * MIB] * 20
+
+    status, _, reads, reached = await _csrf_call(headers, chunks)
+
+    assert status == 413 and reached == []
+    assert reads <= 11, f"상한을 넘은 뒤에도 {reads}번 읽었다"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        ("application/x-www-form-urlencoded", b"username=a&pad=" + b"x" * (MIB + 1)),
+        (
+            "multipart/form-data; boundary=B",
+            b'--B\r\nContent-Disposition: form-data; name="pad"\r\n\r\n'
+            + b"x" * (MIB + 1)
+            + b"\r\n--B--\r\n",
+        ),
+    ],
+    ids=["urlencoded", "multipart"],
+)
+async def test_one_field_over_1mib_is_400_not_500(content_type, body):
+    status, _, _, reached = await _csrf_call({"Content-Type": content_type}, [body])
+
+    assert (status, reached) == (400, [])
+
+
+async def test_body_within_the_limit_is_still_checked_for_the_token():
+    status, body, _, reached = await _csrf_call(_URLENCODED, [b"username=a&password=b"])
+
+    assert (status, reached) == (403, [])
+    assert CSRF_FAILED_MESSAGE in body.decode()

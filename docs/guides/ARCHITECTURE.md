@@ -1044,7 +1044,8 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
     (`revocation.REVOKE_ON_PASSWORD_CHANGE`). Redis 실패면 종료 코드 1(`비밀번호는 바뀌었지만 세션을 지우지 못했습니다`)이다.
 - **CSRF**(ADR-002): `AdminCsrfMiddleware`(`app/core/security/admin_auth.py`)가 `/admin` 아래 POST·PUT·PATCH·DELETE 전부(로그인 포함 — 검사는 여기 하나)에서
   헤더 `X-CSRF-Token`, 없으면 폼 필드 `csrf_token` 을 세션 토큰(`AdminCsrf`)과 `hmac.compare_digest` 로 비교한다. 폼은 본문을 한 번 버퍼링해 파싱하고
-  같은 본문을 다운스트림에 다시 흘려 준다. 실패는 403 이다 — 로그인은 로그인 화면, 로그인한 세션은 관리 화면 `error.html`, 로그인 전 요청은 문구만.
+  같은 본문을 다운스트림에 다시 흘려 준다. 버퍼링 상한은 10 MiB(`admin_auth.py` 의 상수 — 설정이 아니다) — `Content-Length` 로 먼저, 없거나 거짓이면 읽는 도중
+  누적 크기로 판정해 413, 필드 하나가 1 MiB 를 넘으면 400 이다(500·연결 끊김 없음, e2e-policy-2 결정 7). 실패는 403 이다 — 로그인은 로그인 화면, 로그인한 세션은 관리 화면 `error.html`, 로그인 전 요청은 문구만.
   로그는 WARNING `[AdminCsrf] 토큰 불일치 METHOD PATH`. 레이트 리밋·자격 확인보다 먼저라 위조 요청이 카운터를 올리지 못한다.
 - 로그인 화면은 `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, SRI)이 sqladmin 기본 템플릿을 덮어쓴다 — `templates_dir` 의 로더가 패키지 템플릿보다 먼저다.
   폼은 `csrf_token(request)`(백엔드가 템플릿에 건 전역 함수 — 세션에 토큰이 없으면 `secrets.token_urlsafe(32)` 로 만든다)를 hidden 입력으로 싣는다.

@@ -667,7 +667,7 @@ E2E_KEEP_STACK=1 ... -m e2e tests/e2e/test_l2_api_matrix.py              # 파�
   잘못된 메서드·선언된 접근 수준 대조 / L3 인증 수명·레이트 리밋·소유권·사용자 변경 시 세션 폐기·접속 로그·보존 삭제(worker)·
   매출·Celery 왕복·beat 일정·읽기/쓰기 분리(replica 전용 행·복제 지연) / L4 관리 화면 7 뷰의 목록·상세·생성·수정·삭제·일괄 삭제·
   내보내기·날짜 필터 4종·기간 필터 UI, CSRF, 로그아웃, 세션 만료·폐기, `ADMIN_DISABLED` / L5 Redis·primary·replica·worker 장애와
-  회복, CSRF 본문 버퍼링 측정 / L6 Alembic 왕복, `create_superuser`, 기동 거부, 로그 경로·파일·회전·레벨, 인증 캐시가 빈 첫 연결 /
+  회복, CSRF 본문 상한(413·400)·측정 / L6 Alembic 왕복, `create_superuser`, 기동 거부, 로그 경로·파일·회전·레벨, 인증 캐시가 빈 첫 연결 /
   마지막에 인벤토리 대조(빈 칸 = 실패)와 로그 비밀값 검사.
 - **새 API·관리 뷰·태스크·Redis 키를 추가하면**: 인벤토리 대조기(`test_zz_inventory.py`)가 앱에서 대상을 다시 뽑으므로, 칸을
   채우지 않으면 e2e 가 실패한다. operation 이면 `test_l2_api_matrix.py` 의 REQUESTS(유효한 요청)와 필요하면 INVALID·

@@ -349,25 +349,28 @@ def _measure(stack: Stack, pid: int, label: str, mib: int, body: bytes) -> dict[
 
 
 def test_measure_csrf_form_body_buffering(stack: Stack):
-    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어는 본문 전체를 메모리에 읽고 파싱한다.
+    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어의 본문 상한(e2e-policy-2 결정 7, F-007).
 
-    상한을 둘지는 사용자 결정이다(계획서 §5-2) — 응답·시간·RSS 를 재서 기록만 한다. 두 모양으로 잰다.
+    본문이 10 MiB 를 넘으면 413(``Content-Length`` 로 먼저, 읽지 않는다), 필드 하나가 1 MiB 를 넘으면 400,
+    그 밖은 끝까지 읽고 토큰이 없어 403 이다. 500 은 없다. 응답·시간·RSS 를 재서 기록한다. 두 모양:
 
-    * ``fields-512KiB``: 512 KiB 필드 여러 개 — 끝까지 읽고 파싱한 뒤 토큰이 없어 403.
-    * ``one-field``: 필드 하나 — Starlette 폼 파서의 필드 상한(1 MiB)을 넘으면 미들웨어 안에서 예외가 난다.
+    * ``fields-512KiB``: 512 KiB 필드 여러 개.
+    * ``one-field``: 필드 하나.
     """
+    from app.core.security.admin_auth import MAX_FORM_BODY_BYTES
+
     pid = _server_pid(stack)
     results = []
+    expected = {}
     for mib in (1, 10, 50):
         chunk = b"x" * (512 * 1024)
         many = b"username=a&password=b&" + b"&".join(b"f%d=" % i + chunk for i in range(mib * 2))
-        results.append(_measure(stack, pid, "fields-512KiB", mib, many))
-        results.append(
-            _measure(
-                stack, pid, "one-field", mib, b"username=a&password=b&pad=" + b"x" * (mib * 2**20)
-            )
-        )
-    assert all(r["status"] == 403 for r in results if r["shape"] == "fields-512KiB"), results
+        one = b"username=a&password=b&pad=" + b"x" * (mib * 2**20)
+        for label, body, small in (("fields-512KiB", many, 403), ("one-field", one, 400)):
+            results.append(_measure(stack, pid, label, mib, body))
+            expected[(label, mib)] = 413 if len(body) > MAX_FORM_BODY_BYTES else small
+    assert {(r["shape"], r["MiB"]): r["status"] for r in results} == expected, results
+    assert not any(r["connection_closed"] for r in results if r["status"] in (400, 403)), results
     (stack.run_dir / "csrf-body-measure.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), "utf-8"
     )
