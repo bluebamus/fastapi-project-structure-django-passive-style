@@ -69,7 +69,7 @@ async def create_product(
     description=(
         "상품 목록을 페이지네이션하여 조회합니다. active_only=true 이면 판매 중인 상품만 "
         "SKU 오름차순으로, false 이면 최신 등록순(created_at 내림차순, 동률은 id)으로 돌려줍니다. "
-        "total 은 필터와 무관한 전체 상품 수입니다."
+        "total 은 목록과 같은 조건으로 셉니다(active_only=true 면 판매 중 상품 수, false 면 전체 상품 수)."
     ),
     dependencies=[Public],
     operation_id="listProducts",
