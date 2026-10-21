@@ -513,7 +513,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록. OpenAPI 도 모든 operation 의 422 를 같은 `ErrorResponse` 로 광고한다 — FastAPI 기본 `HTTPValidationError` 는 `create_app()` 의 OpenAPI 후처리 한 곳에서 걷어낸다(`_document_real_validation_error`, e2e-policy-2 결정 1) |
 | Redis 연결 오류(`redis.exceptions.ConnectionError`·`TimeoutError`) | 503 SERVICE_UNAVAILABLE, detail 없음. **예외 클래스 전용** 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 **한 번**, keep-alive 연결도 유지된다(`Exception` 핸들러로 가면 Starlette `ServerErrorMiddleware` 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). `ResponseError` 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009) |
 | Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`). **401 은 두 핸들러가 모두 `WWW-Authenticate: Bearer` 를 붙인다**(`_challenge` 한 곳 — 보호 라우트·로그인·refresh·logout·비활성 사용자 `/me` 모두, e2e-policy-2 결정 3) |
-| 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
+| 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그. 사용자 미들웨어 중 가장 바깥의 `answer_unhandled_exception` 이 같은 처리기로 응답을 끝내 Starlette `ServerErrorMiddleware` 의 재던짐을 막는다 — 기록은 **한 번**, keep-alive 연결 유지, CORS·UserInfo 미들웨어 안에서 난 예외도 같다. `DEBUG=true` 면 지금처럼 다시 던진다. 응답이 시작된 뒤(스트리밍 본문 중)의 예외는 이 미들웨어에 오지 않아 기존대로다(e2e-policy-2 결정 2) |
 
 ---
 

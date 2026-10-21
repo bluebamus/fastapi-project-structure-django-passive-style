@@ -24,13 +24,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -265,6 +265,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=None,
             ).model_dump(mode="json"),
         )
+
+    # 사용자 미들웨어 중 **가장 바깥**(마지막 등록)이어야 한다 — CORS·UserInfo 안에서 난 예외도 받는다.
+    # create_app() 이 미들웨어를 붙인 뒤 이 함수를 부른다(tests/core/test_unhandled_exception.py 가 순서를 고정).
+    @app.middleware("http")
+    async def answer_unhandled_exception(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다(e2e-policy-2 결정 2).
+
+        ``ServerErrorMiddleware`` 는 ``Exception`` 처리기로 응답한 뒤 예외를 다시 던진다 — uvicorn 이 traceback 을
+        한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기(로그 형식·마스킹·본문)로 끝내면 기록은 한 번,
+        연결은 유지된다. 응답이 시작된 뒤의 예외(스트리밍 본문)는 ``call_next`` 밖이라 여기 오지 않는다 — 기존대로다.
+        ``DEBUG=true`` 면 지금처럼 다시 던진다.
+        """
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            if app_settings.DEBUG:
+                raise
+            return await general_exception_handler(request, exc)
 
 
 def _document_real_validation_error(app: FastAPI) -> None:
