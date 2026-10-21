@@ -441,12 +441,8 @@ def test_invalid_input_is_422_in_the_project_error_format(world: World, op: str)
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR", body
     assert body["detail"] and {"field", "message", "type"} <= set(body["detail"][0]), body
-    mismatch = response_errors(op, 422, body)
-    if mismatch:
-        OBSERVATIONS.add(
-            "422 응답 형식이 OpenAPI 광고(HTTPValidationError: detail[loc,msg,type])와 다르다 — 실제는 "
-            "ErrorResponse(error_code·message·detail[field,message,type])"
-        )
+    # 422 광고 = 실제 본문(e2e-policy-2 결정 1, F-010).
+    assert not response_errors(op, 422, body), response_errors(op, 422, body)
     covers(f"op:{op}", "검증오류")
 
 

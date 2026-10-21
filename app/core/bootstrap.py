@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -255,6 +256,36 @@ def _register_exception_handlers(app: FastAPI) -> None:
         )
 
 
+def _document_real_validation_error(app: FastAPI) -> None:
+    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다(e2e-policy-2 결정 1, F-010).
+
+    FastAPI 는 모든 operation 의 422 를 기본 ``HTTPValidationError``(``detail[loc,msg,type]``)로 적지만, 이 앱의
+    검증 핸들러는 ``ErrorResponse``(``detail[field,message,type]``)를 낸다. 응답은 그대로 두고 문서만 한 곳에서
+    바로잡는다 — 라우트마다 ``responses`` 를 덧붙이면 빠지는 라우트가 생긴다.
+    """
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = generate()
+            components = schema.setdefault("components", {}).setdefault("schemas", {})
+            for name in ("HTTPValidationError", "ValidationError"):
+                components.pop(name, None)
+            components.setdefault("ErrorResponse", ErrorResponse.model_json_schema())
+            for item in schema.get("paths", {}).values():
+                for operation in item.values():
+                    response = operation.get("responses", {}).get("422")
+                    if response is not None:
+                        response["content"] = {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                            }
+                        }
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
+
+
 class HealthResponse(BaseModel):
     """헬스체크 응답 스키마"""
 
@@ -414,6 +445,7 @@ def create_app(
         logger.info("API 문서 비활성화 (운영 모드): /docs, /openapi.json 접근 차단")
 
     _register_exception_handlers(app)
+    _document_real_validation_error(app)
 
     # 5. registry 기반 Router 설치 — main.py 에 include_router 한 줄을 더하지 않는다.
     install_routers(app, app_registry)
