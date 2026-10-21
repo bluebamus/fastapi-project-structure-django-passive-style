@@ -17,7 +17,7 @@ header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{
 </head>
 <body>
 <a class="skip" href="#main-content">본문으로 바로 이동</a>
-<header><div class="eyebrow">FastAPI Project Structure — Django Passive Style · 관리 화면 인증 가이드</div><h1>/admin 로그인: 세션은 관리 화면 전용이고, Redis 에 있다</h1><p>SQLAdmin 관리 화면의 슈퍼유저 로그인을 Redis 서버 세션·CSRF·즉시 폐기까지 설계·흐름·쿠키·위협 모델·운영 순서로 설명한다. 표·수치의 정본은 <a href="../ARCHITECTURE.md#8-관리-화면-sqladmin">ARCHITECTURE §8</a>·코드이고, 이 가이드는 그 동작을 따라 읽는 설명이다.</p><p>기준일: 2026-10-19 · 기준: 현재 작업 트리의 소스·테스트(CRP admin-login → security-ops-hardening → admin-session-hardening) · <a href="../../../README.md#문서-안내">문서 안내(README)</a> · <a href="../ARCHITECTURE.md">아키텍처 레퍼런스</a> · <a href="../DEVELOPMENT.md">개발 가이드</a> · <a href="server-lifecycle.html">서버 수명주기 안내서</a></p></header>
+<header><div class="eyebrow">FastAPI Project Structure — Django Passive Style · 관리 화면 인증 가이드</div><h1>/admin 로그인: 세션은 관리 화면 전용이고, Redis 에 있다</h1><p>SQLAdmin 관리 화면의 슈퍼유저 로그인을 Redis 서버 세션·CSRF·즉시 폐기까지 설계·흐름·쿠키·위협 모델·운영 순서로 설명한다. 표·수치의 정본은 <a href="../ARCHITECTURE.md#8-관리-화면-sqladmin">ARCHITECTURE §8</a>·코드이고, 이 가이드는 그 동작을 따라 읽는 설명이다.</p><p>기준일: 2026-10-21 · 기준: main 8553cdc 의 소스·테스트(CRP admin-login → security-ops-hardening → admin-session-hardening → integration-e2e) · <a href="../../../README.md#문서-안내">문서 안내(README)</a> · <a href="../ARCHITECTURE.md">아키텍처 레퍼런스</a> · <a href="../DEVELOPMENT.md">개발 가이드</a> · <a href="server-lifecycle.html">서버 수명주기 안내서</a></p></header>
 <div class="layout">
 <nav aria-label="문서 목차"><strong>목차</strong><ol><li><a href="#scope">개요와 범위</a></li><li><a href="#architecture">구성도</a></li><li><a href="#startup">기동 결정 흐름</a></li><li><a href="#session-store">Redis 세션 구조와 만료</a></li><li><a href="#login">로그인 시퀀스</a></li><li><a href="#per-request">요청별 인증 흐름</a></li><li><a href="#csrf">CSRF 보호</a></li><li><a href="#failures">실패 경로</a></li><li><a href="#logout">로그아웃 흐름</a></li><li><a href="#revocation">즉시 폐기</a></li><li><a href="#cookie">세션 쿠키 구조와 속성</a></li><li><a href="#lifecycle">계정 수명주기</a></li><li><a href="#security">보안 설계 근거와 위협 모델</a></li><li><a href="#operations">운영</a></li><li><a href="#date-filter">목록 날짜·기간 필터</a></li><li><a href="#extending">확장할 때 주의</a></li></ol></nav>
 <main id="main-content">
@@ -31,7 +31,7 @@ header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{
 <li>관리 세션 쿠키는 <code>/admin</code> 밖 응답에서 설정되지 않는다(쿠키 path 도 <code>/admin</code>). 테스트: <code>test_admin_session_cookie_is_never_set_outside_admin</code>.</li>
 <li><code>SESSION_COOKIE_NAME</code>(기본 <code>session</code>)은 접속 로그 미들웨어가 그 쿠키 <strong>값을 기록</strong>할 때만 읽는다(<code>app/core/middlewares/user_info_middleware.py</code>) — 인증에는 쓰이지 않는다. 관리 쿠키 이름과 같으면 기동을 멈춘다(관리자 세션 ID 가 접속 로그에 남지 않게, <code>create_admin</code>).</li>
 <li><code>SESSION_SECRET_KEY</code> 의 소비처는 정확히 둘이다: ① 관리 세션 ID → Redis 키 HMAC(<code>default_admin_session_store</code> → <code>AdminSessionStore.key_for</code>), ② 설정 검증(<code>config.py</code> 의 <code>REQUIRED_WITHOUT_ENV_FILE</code>·<code>validate_deployment_safety()</code> — placeholder·32자 미만 거부). 다른 코드는 이 키를 읽지 않는다.</li>
-<li>Celery 태스크·접속 로그 저장은 관리 세션을 쓰지 않는다. <code>scripts/create_superuser.py</code> 는 세션을 읽지 않고, <code>--set-password</code> 로 비밀번호를 바꾼 뒤 그 사용자의 관리 세션을 지우기만 한다.</li>
+<li>Celery 태스크·접속 로그 저장은 관리 세션을 쓰지 않는다. <code>scripts/create_superuser.py</code> 는 세션을 읽지 않고, <code>--set-password</code> 로 비밀번호를 바꾼 뒤 그 사용자의 관리 세션과 refresh 를 지우기만 한다(<code>REVOKE_ON_PASSWORD_CHANGE</code>).</li>
 </ul></aside>
 <h3>두 인증 체계 비교</h3>
 <div class="table-wrap"><table><thead><tr><th scope="col">항목</th><th scope="col">API — JWT Bearer</th><th scope="col">관리 화면 — Redis 서버 세션</th></tr></thead><tbody><tr><td>적용 경로</td><td><code>/api/...</code> 의 모든 뷰 — 뷰마다 <code>Public</code>·<code>PublicWrite</code>·<code>LoginRequired</code>·<code>SuperuserRequired</code> 중 하나를 선언하고, 선언이 없으면 기동이 거부된다(<code>AccessPolicyGuard</code>)</td><td><code>/admin</code> 하위 전부(로그인·정적 파일 제외)</td></tr><tr><td>자격 증명 저장 위치</td><td>클라이언트가 보관해 <code>Authorization</code> 헤더로 보낸다</td><td>브라우저 쿠키 <code>admin_session</code>(HttpOnly)에는 세션 ID 만, 내용은 Redis <code>admin:sess:{HMAC}</code></td></tr><tr><td>담는 값</td><td><code>sub·username·su</code> 등 claims(서명)</td><td>쿠키: <code>secrets.token_urlsafe(32)</code> 세션 ID. Redis: 사용자 id·CSRF 토큰·생성 시각</td></tr><tr><td>수명</td><td>access 15분 · refresh 7일(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)</td><td>절대 8시간(<code>ADMIN_SESSION_MAX_AGE_SECONDS</code>, 연장 불가) · 미사용 30분(<code>ADMIN_SESSION_IDLE_SECONDS</code>)</td></tr><tr><td>폐기</td><td>refresh family 폐기(logout·재사용 탐지·비활성화·강등·비밀번호 변경·삭제). access 는 만료까지 유효</td><td><strong>즉시</strong> — 로그아웃은 그 세션 키를, 강등·비활성화·삭제·비밀번호 변경은 그 사용자의 세션 키 전부를 Redis 에서 지운다(§10)</td></tr><tr><td>권한 확인 시점</td><td>토큰 claims 로 판정 — DB 조회 없음</td><td><strong>매 요청 DB 조회</strong>(활성·슈퍼유저) — 즉시 폐기와 이중 방어</td></tr><tr><td>강등 즉시 반영</td><td>아니오(access 만료까지, 최대 15분)</td><td>예(세션 삭제 + 다음 요청 DB 확인)</td></tr><tr><td>CSRF</td><td>해당 없음(헤더 토큰은 브라우저가 자동으로 붙이지 않는다)</td><td>상태를 바꾸는 모든 요청(로그인·생성·수정·삭제·가져오기·로그아웃)에 세션 동기화 토큰(§7) + <code>SameSite=Strict</code> 쿠키</td></tr><tr><td>레이트 리밋</td><td><code>login:ip:</code>·<code>login:user:</code> 키, <code>AUTH_LOGIN_*</code> 한도</td><td><code>admin-login:ip:</code>·<code>admin-login:user:</code> 키, 같은 <code>AUTH_LOGIN_*</code> 한도(카운터는 분리)</td></tr><tr><td>실패 응답</td><td>401(JSON 오류 봉투) · 429 + <code>Retry-After</code></td><td>400 로그인 화면(사유 미구분) · 403(CSRF) · 429 + <code>Retry-After</code> · 503(Redis 를 쓸 수 없음)</td></tr><tr><td>끄는 법</td><td>뷰 선언으로 정한다 — 인증 없는 쓰기도 <code>PublicWrite</code> 로 명시해야 열린다</td><td><code>ADMIN_DISABLED=true</code> — 관리 화면·세션 미들웨어·세션 저장소가 모두 사라진다</td></tr></tbody></table></div>
@@ -41,9 +41,10 @@ header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{
   browser[&quot;브라우저&quot;] --&gt; mainApp[&quot;메인 FastAPI 앱&quot;]
   apiClient[&quot;API 클라이언트&quot;] --&gt; mainApp
   subgraph mainStack[&quot;메인 앱 미들웨어 체인 (세션 없음)&quot;]
+    unhandled[&quot;answer_unhandled_exception / 처리기 없는 예외 → 500&quot;] --&gt; userInfo
     userInfo[&quot;UserInfoMiddleware / 접속 로그&quot;] --&gt; cors[&quot;CustomCORSMiddleware&quot;]
   end
-  mainApp --&gt; userInfo
+  mainApp --&gt; unhandled
   cors --&gt; apiRouters[&quot;API 라우터 /api/...&quot;]
   apiRouters --&gt; jwtDep[&quot;get_current_principal / JWT Bearer&quot;]
   cors --&gt; adminMount[&quot;Mount /admin&quot;]
@@ -69,9 +70,10 @@ header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{
   browser[&quot;브라우저&quot;] --&gt; mainApp[&quot;메인 FastAPI 앱&quot;]
   apiClient[&quot;API 클라이언트&quot;] --&gt; mainApp
   subgraph mainStack[&quot;메인 앱 미들웨어 체인 (세션 없음)&quot;]
+    unhandled[&quot;answer_unhandled_exception / 처리기 없는 예외 → 500&quot;] --&gt; userInfo
     userInfo[&quot;UserInfoMiddleware / 접속 로그&quot;] --&gt; cors[&quot;CustomCORSMiddleware&quot;]
   end
-  mainApp --&gt; userInfo
+  mainApp --&gt; unhandled
   cors --&gt; apiRouters[&quot;API 라우터 /api/...&quot;]
   apiRouters --&gt; jwtDep[&quot;get_current_principal / JWT Bearer&quot;]
   cors --&gt; adminMount[&quot;Mount /admin&quot;]
@@ -552,7 +554,7 @@ printf '%s\n' "$ADMIN_PASSWORD" | uv run python -m scripts.create_superuser --us
 <p class="source">코드 근거: <a data-source="app/core/security/admin_credentials.py" data-symbol="AdminCredentials" href="../../../app/core/security/admin_credentials.py">app/core/security/admin_credentials.py · AdminCredentials</a> · <a data-source="app/templates/admin/sqladmin/login.html" href="../../../app/templates/admin/sqladmin/login.html">app/templates/admin/sqladmin/login.html</a> · <a data-source="app/templates/admin/sqladmin/base.html" href="../../../app/templates/admin/sqladmin/base.html">app/templates/admin/sqladmin/base.html</a> · <a data-source="scripts/new_app.py" href="../../../scripts/new_app.py">scripts/new_app.py</a></p></section>
 </main>
 </div>
-<footer><p>코드와 문서가 어긋나면 코드가 정답이다. 기준일 2026-10-19(CRP admin-session-hardening). 줄 번호 대신 심볼 이름(코드 근거 링크)으로 찾는다. 이 문서는 관리 화면을 실행하지 않는다.</p></footer>
+<footer><p>코드와 문서가 어긋나면 코드가 정답이다. 기준일 2026-10-21(main 8553cdc). 줄 번호 대신 심볼 이름(코드 근거 링크)으로 찾는다. 이 문서는 관리 화면을 실행하지 않는다.</p></footer>
 
 <script type="module">
 const status = document.getElementById("diagram-status");
