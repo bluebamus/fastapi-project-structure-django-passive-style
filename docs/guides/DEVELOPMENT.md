@@ -311,7 +311,7 @@ POST /api/v1/catalog/products
 ```
 
 - `Product` 는 `catalog_products`, `sku` unique, 금액은 `Numeric(12, 2)` ↔ `Decimal`. API 는 price·stock 에 `ge=0` 을 두지만 DB 선언이 같은 규칙을 강제하지는 않는다 — 입력은 스키마, 동시성 상황의 최종 무결성은 DB 제약이 지킨다.
-- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 `get_all()` 의 기본 정렬(`created_at DESC, id DESC`)을 쓰고(OpenAPI 설명도 그렇게 적는다), `total` 은 필터와 무관한 전체 `count()` 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
+- 도메인 조회 `ProductRepository.get_active()` 는 `order_by(Product.sku)` 로 정렬한다. `active_only=false` 목록은 `get_all()` 의 기본 정렬(`created_at DESC, id DESC`)을 쓰고(OpenAPI 설명도 그렇게 적는다), `total` 은 목록과 같은 조건으로 센다(`active_only=true` 면 `count(is_active=True)`, 아니면 `count()`) — 새 기능도 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.
 - 수정은 대상 조회로 존재를 보장한 뒤 `model_dump(exclude_unset=True)` 로 보낸 필드만 반영한다. 보낸 필드가 없으면 기존 값을 그대로 돌려준다(`tests/test_update_noop.py`).
 
 ### 3.5 Raw 예제 — reports 일별 매출

@@ -43,3 +43,10 @@
 | replica→primary 재시도 | server-lifecycle #requests | Fixed | `6864018` |
 | aiomysql[rsa] | ARCH §4.3 | Fixed | `069bbe1` |
 | 문서 표 행 | DEV §7 | Fixed (F25) | `069bbe1` |
+
+## 후속 (2026-10-21, 사용자 "고쳐줘")
+
+| ID | 구분 | 위치 | 내용 | 상태 |
+|---|---|---|---|---|
+| R-001 | 코드(OpenAPI 설명) | `listProducts` description | total 은 목록과 같은 조건으로 센다(`CatalogService.list_products`) — 설명을 실제 동작으로 | Fixed |
+| R-001b | 문서 | DEVELOPMENT §5 | 같은 문장 "total 은 필터와 무관" 정정(검수에서 빠졌던 곳) | Fixed |
