@@ -264,6 +264,27 @@ async def test_redis_failure_is_503_and_never_reaches_the_app():
     assert reached == []
 
 
+async def test_redis_failure_while_saving_before_the_response_is_503_too():
+    """쿠키 없는 첫 요청이 세션에 값을 넣으면 응답 직전 저장이 Redis 장애로 실패한다 — 그것도 503 이다
+    (e2e-policy-2 결정 6, integration-e2e F-009). 500·연결 끊김도, 세션 쿠키 발급도 없다.
+    """
+    from redis.asyncio import Redis
+
+    # 실제 클라이언트가 닫힌 포트에 붙는다 — 쿠키가 없어 읽기는 건너뛰고 응답 직전 저장에서 처음 실패한다.
+    down = Redis(host="127.0.0.1", port=1, socket_connect_timeout=1)
+    store = AdminSessionStore(down, SECRET, max_age=MAX_AGE, idle=IDLE)
+    transport = ASGITransport(app=_app(lambda: store), raise_app_exceptions=False)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/admin/put", params={"v": "x"})
+    finally:
+        await down.aclose()
+
+    assert response.status_code == 503
+    assert response.text == UNAVAILABLE_MESSAGE
+    assert "set-cookie" not in response.headers
+
+
 async def test_missing_redis_client_is_503_too():
     app = _app(lambda: default_admin_session_store(None))
     async with _client(app) as client:

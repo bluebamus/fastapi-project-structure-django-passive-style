@@ -1016,7 +1016,7 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
   - 만료: 절대 `ADMIN_SESSION_MAX_AGE_SECONDS`(기본 8시간, 연장 불가 — 읽을 때 `created_at` 으로도 검사), 미사용 `ADMIN_SESSION_IDLE_SECONDS`(기본 30분).
     쿠키의 ID 가 Redis 에 없으면(만료·폐기·위조) 빈 세션이고 쿠키를 지운다(`Max-Age=0`).
   - `SESSION_SECRET_KEY` 는 세션 ID → Redis 키 HMAC 키다 — Redis 키가 새도 쿠키를 만들 수 없고, 키를 바꾸면 모든 관리 세션이 무효다.
-  - **Redis 장애는 fail-closed**: 세션을 읽지 못하면(lifespan 밖이라 클라이언트가 없는 경우 포함) 관리 화면은 503 이고 앱에 닿지 않는다. 응답 직전 저장 실패는 500.
+  - **Redis 장애는 fail-closed**: 세션을 읽지 못하면(lifespan 밖이라 클라이언트가 없는 경우 포함) 관리 화면은 503 이고 앱에 닿지 않는다. 응답 직전 저장 실패(쿠키 없는 첫 요청의 세션 생성 등)도 앱이 만든 응답 대신 같은 503 이다 — 응답 시작 전이라 바꿀 수 있다(e2e-policy-2 결정 6).
   - 미들웨어 순서는 `RedisSessionMiddleware`(바깥) → `AdminCsrfMiddleware`(안쪽)이고 **SQLAdmin 하위 앱에만** 있다 — 메인 앱에는 세션 미들웨어가 없고
     API 인증(JWT Bearer)은 세션을 보지 않는다(`tests/core/test_admin_login_flow.py`).
 - **즉시 폐기**(ADR-005·ADR-008·ADR-010): 판정 한 곳 — `revocation_for_change(before, changes)`(`app/core/security/revocation.py`)가 변경 **전** 값과 비교해

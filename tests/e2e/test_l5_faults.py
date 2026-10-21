@@ -152,10 +152,11 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
             assert not result["closed"], f"{name}: keep-alive 연결이 끊겼다"
             assert result["unhandled"] == 0 and result["redis_unavailable"] == 1, (name, result)
 
-        # 관리 화면, 쿠키 없는 첫 요청 — 세션 **저장**(응답 직전)이 실패하면 현행 500(문서화된 동작, 정책 결정 대상).
+        # 관리 화면, 쿠키 없는 첫 요청 — 응답 직전 세션 **저장** 실패도 503(e2e-policy-2 결정 6, F-009).
         anonymous = probe(stack, "GET", "/admin/login")
-        assert anonymous["status"] == 500, anonymous
-        _record_unhandled({"admin-anonymous": anonymous})
+        assert anonymous["status"] == 503, anonymous
+        assert "관리 세션 저장소(Redis)를 사용할 수 없습니다" in anonymous["body"], anonymous
+        assert not anonymous["closed"] and anonymous["unhandled"] == 0, anonymous
         # fail-closed — 폐기(Redis)가 실패하면 비활성화 커밋도 하지 않는다.
         assert (
             stack.sql("SELECT is_active FROM users WHERE id=%s", (victim["id"],))[0]["is_active"]
@@ -177,16 +178,6 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
         fresh.close()
         admin.close()
     covers("fault", "Redis 정지", "Redis 재기동")
-
-
-def _record_unhandled(results: dict[str, dict[str, Any]]) -> None:
-    doubled = sorted(n for n, r in results.items() if r["unhandled"] >= 2)
-    closed = sorted(n for n, r in results.items() if r["closed"])
-    if doubled or closed:
-        OBSERVATIONS.add(
-            f"Redis 장애 500 경로({', '.join(sorted(results))}) — 처리되지 않은 예외 기록 2건 이상: "
-            f"{', '.join(doubled) or '없음'}, keep-alive 연결 끊김: {', '.join(closed) or '없음'}"
-        )
 
 
 # ── MySQL primary ─────────────────────────────────────────────────────────

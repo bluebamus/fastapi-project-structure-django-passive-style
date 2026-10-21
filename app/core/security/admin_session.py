@@ -215,7 +215,8 @@ class RedisSessionMiddleware:
     * 쿠키의 세션 ID 가 Redis 에 없으면(만료·폐기) 빈 세션으로 다루고 쿠키를 지운다.
     * 세션이 비면(로그아웃) Redis 키를 지우고 쿠키를 지운다.
     * ``rotate`` 가 요청되면(로그인 성공) 새 세션 ID 를 발급하고 이전 키를 지운다(세션 고정 방지).
-    * Redis 를 쓸 수 없으면 통과시키지 않는다 — 503(fail-closed).
+    * Redis 를 쓸 수 없으면 통과시키지 않는다 — 503(fail-closed). 응답 직전 저장(쿠키 없는 첫 요청의 세션
+      생성 등)이 실패해도 앱이 만든 응답 대신 같은 503 을 낸다(e2e-policy-2 결정 6) — 응답 시작 전이라 바꿀 수 있다.
 
     Args:
         store: 요청 시점에 저장소를 돌려주는 provider — Redis 는 lifespan 이 기동 때 만든다.
@@ -239,23 +240,35 @@ class RedisSessionMiddleware:
             await self.app(scope, receive, send)
             return
 
+        async def unavailable(exc: RedisError) -> None:
+            logger.error(
+                "[AdminSession] Redis 사용 불가 — 관리 화면 요청 거부(%s)", type(exc).__name__
+            )
+            await PlainTextResponse(UNAVAILABLE_MESSAGE, status_code=503)(scope, receive, send)
+
         sid = HTTPConnection(scope).cookies.get(self.cookie.name) or None
         try:
             store = self.store()
             loaded = await store.load(sid) if sid else None
         except RedisError as exc:
-            logger.error(
-                "[AdminSession] Redis 사용 불가 — 관리 화면 요청 거부(%s)", type(exc).__name__
-            )
-            await PlainTextResponse(UNAVAILABLE_MESSAGE, status_code=503)(scope, receive, send)
+            await unavailable(exc)
             return
 
         scope["session"] = dict(loaded.data) if loaded else {}
         scope[STORE_SCOPE_KEY] = store
+        replaced = False
 
         async def send_wrapper(message: Message) -> None:
+            nonlocal replaced
+            if replaced:
+                return  # 503 으로 바꾼 응답의 나머지 본문은 버린다
             if message["type"] == "http.response.start":
-                await self._commit(scope, store, sid, loaded, MutableHeaders(scope=message))
+                try:
+                    await self._commit(scope, store, sid, loaded, MutableHeaders(scope=message))
+                except RedisError as exc:
+                    replaced = True
+                    await unavailable(exc)
+                    return
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
