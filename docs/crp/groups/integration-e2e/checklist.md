@@ -31,3 +31,14 @@
 - [x] ruff·ruff format·mypy(1.20.2 순수 Python)·`review_gate --fast` 7단계
 - [x] README·DEVELOPMENT §6.6·ARCHITECTURE(예외 표·replica 재시도·초기 로그 줄)
 - [ ] (F-007·F-008·F-009·F-012) 정책 결정 대기 — 사용자
+
+## Round 5 — 2026-10-21 · e2e 정책 결정 2차 (e2e-policy-2)
+- [x] (F-010) 결정 1 — OpenAPI 422 = `ErrorResponse`, 계약 테스트·e2e L2 단정 (`371d896`·`95ae048`)
+- [x] (F-013) 결정 2 — 처리기 없는 예외 기록 1번·keep-alive, 실제 uvicorn 테스트 (`8665236`)
+- [x] (F-012) 결정 3 — 모든 401 에 `WWW-Authenticate: Bearer` (`6788468`·`62da6f6`)
+- [x] 결정 4 — `create_superuser --set-password` 세션 폐기: 이미 충족, 계약 고정 (`ddaadc7`)
+- [x] (F-008) 결정 5 — 인증 사용자 조회 primary, e2e L3 기대값 갱신 (`4743b1c`)
+- [x] (F-009) 결정 6 — 관리 화면 저장 실패 503, e2e L5 기대값 갱신 (`c3e8280`)
+- [x] (F-007) 결정 7 — CSRF 본문 413·필드 400, L5 측정 기대값 갱신 (`6bfc431`)
+- [x] (F-014) 의존성 `aiomysql[rsa]` 통일 (`ab7f15d`)
+- [x] 검사: e2e 309·단위 1386·`-m mysql` 27·ruff·mypy·`review_gate --fast`(pip-audit 포함)

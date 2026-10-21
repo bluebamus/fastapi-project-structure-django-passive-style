@@ -78,3 +78,45 @@ W7 문서, 결함은 테스트 고정 후 별도 커밋, 정책 변경은 보고
 |---|---|---|---|---|
 | 512 KiB 필드 여러 개 | 1 / 10 / 50 MiB | 403 · 0.008 / 0.062 / 0.381초 | 403 · 0.006 / 0.036 / 0.175초 | 50 MiB 에서 +101(Win)·+85(Linux) MiB |
 | 필드 하나 | 1 / 10 / 50 MiB | 500·연결 끊김 · 0.006 / 0.05 / 0.276초 | 500·연결 끊김 · 0.003 / 0.019 / 0.147초 | 50 MiB 뒤 RSS +54(Win)·+59(Linux) MiB 잔존 |
+
+## Round 5 — 2026-10-21 · e2e 정책 결정 2차 (e2e-policy-2, 브랜치 `fix/e2e-policy-2`)
+
+**해당 여부 확인** — 결정 1~7 모두 이 저장소에 해당했다. 결정 4 만 이미 충족(`create_superuser --set-password` 가 커밋 뒤 refresh·관리 세션을
+폐기, Redis 실패면 종료 코드 1) → 계약 테스트로 고정. 결정 2 는 한때 보류됐다가 사용자가 ①(미들웨어로 직접 받기)로 확정했다.
+
+| 결정 | 커밋 | RED(수정 전) | fail-on-revert |
+|---|---|---|---|
+| 1 422 문서 | `371d896`·`95ae048`(mypy) | 계약 2 failed(`HTTPValidationError` 광고) | 후처리 호출 제거 → 3 failed, 복원 |
+| 2 처리기 없는 예외 | `8665236` | 실제 uvicorn: traceback 2·`Exception in ASGI application` 1·연결 종료(ConnectionResetError), TestClient 로 예외 재던짐 | HEAD 로 되돌림 → 4 failed, 복원 |
+| 3 401 헤더 | `6788468`·`62da6f6`(mypy) | 4 failed(로그인·refresh·logout·비활성 `/me`·헤더 없는 401) | `_challenge` 무력화 → 52 failed, 복원 |
+| 4 CLI 폐기 | `ddaadc7` | 이미 충족(통과) | 폐기 호출 제거 → 3 failed, 폐기를 커밋 앞으로 → 1 failed, 복원 |
+| 5 primary 조회 | `4743b1c` | 2 failed(지연 중 200 대신 401, 비활성 직후 401 대신 200) | `using_writer` 제거 → 2 failed, 복원 |
+| 6 저장 실패 503 | `c3e8280` | 500 | HEAD 로 → 1 failed, 복원 |
+| 7 CSRF 상한 | `6bfc431` | 5 failed(MultiPartException 이 미들웨어 밖으로) | HEAD 로 → 5 failed, 복원 |
+| 의존성 `aiomysql[rsa]` | `ab7f15d` | 1 failed(선언) | RED 가 수정 전 선언 |
+
+- systematic-debugging: (a) 결정 6 첫 GREEN 실패 — 테스트 대역(`__getattr__` 코루틴)이 `pipeline()` 의 동기 컨텍스트 관리자 계약을 어겨
+  `TypeError` → 대역을 닫힌 포트(127.0.0.1:1)의 실제 Redis 클라이언트로 바꿈. (b) `-m mysql` 1 failed — 내가 만든 테스트 DB 의
+  `CHARACTER SET` 만 지정해 기본 콜레이션 `utf8mb4_0900_ai_ci` → `ALTER DATABASE … COLLATE utf8mb4_unicode_ci`(환경 원인, 코드 무관).
+  (c) mypy 2건(결정 1·3 타입) → 결정별 커밋. (d) 결정 2 첫 GREEN 실패 — pytest env 가 `DEBUG=true` 라 재던짐 분기 → 테스트가 DEBUG 를 끈다.
+- 결정 2 원인 위치: Starlette `ServerErrorMiddleware.__call__`(`starlette/middleware/errors.py` 164~186, 처리기 응답 뒤 `raise exc`),
+  FastAPI `build_middleware_stack`(`fastapi/applications.py` 1027~1031, `Exception` 키는 `ServerErrorMiddleware` 처리기로),
+  uvicorn `run_asgi`(`uvicorn/protocols/http/httptools_impl.py` 424~430, `Exception in ASGI application` 기록 후 응답 시작됐으면 `transport.close()`).
+  미들웨어 순서(바깥→안): ServerErrorMiddleware → UserInfoMiddleware → CORSMiddleware → ExceptionMiddleware → 라우터. 수정 뒤 맨 바깥 사용자 미들웨어가 `answer_unhandled_exception`.
+
+| 검사 | 결과 |
+|---|---|
+| `pytest -m e2e`(Windows) | 309 passed, skip·xfail 0, 7분 7초 |
+| 인프라 제외 `-m "not mysql and not browser"` | 1386 passed, 37 deselected |
+| `-m mysql`(e2e primary 13341 안 전용 DB `fastapi_passive_test`) | 27 passed |
+| ruff·format·mypy(1.20.2 순수 Python) | 클린, 223 파일 0 오류 |
+| `review_gate --fast` | 7단계 통과(pip-audit 포함) |
+
+**CSRF 본문 상한 재측정**(익명 `POST /admin/login`, 토큰 없음, Windows):
+
+| 모양 | 크기 | 응답 | 시간 | 연결 | RSS(전→후) |
+|---|---|---|---|---|---|
+| 512 KiB 필드 여러 개 | 1 / 10 / 50 MiB | 403 / 413 / 413 | 0.043 / 0.007 / 0.027초 | 유지 | 112.7→113.3 / 114.3→114.3 / 114.3→114.3 MiB |
+| 필드 하나 | 1 / 10 / 50 MiB | 400 / 413 / 413 | 0.007 / 0.005 / 0.035초 | 유지 | 113.3→114.3 / 114.3→114.3 / 114.3→114.3 MiB |
+
+최대 RSS 증가는 6건 모두 0 MiB(이전 최고치를 넘지 않음) — 수정 전 50 MiB 에서 +101 MiB 였다.
