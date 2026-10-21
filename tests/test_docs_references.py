@@ -36,7 +36,7 @@ ENTRY_DOCS = ("README.md", "docs/guides/ARCHITECTURE.md", "docs/guides/DEVELOPME
 BASE_DOCS = ENTRY_DOCS
 
 #: 재구성으로 사라진 문서 위치. 현행 문서가 이곳을 가리키면 학습자를 없는 문서로 보낸다.
-#: HTML 안내서 2편(``server-lifecycle-guide.html``·``feature-development-guide.html``)은
+#: HTML 안내서(``workflows/server-lifecycle.html``·``workflows/feature-development.html``)는
 #: 2026-09-17 재구성에서 지웠다가 같은 날 되살렸으므로 이 목록에서 뺐다 — 대신 아래
 #: ``HTML_GUIDES`` 검사가 실재·링크·코드 경로를 본다.
 RETIRED_DOC_LOCATIONS = (
@@ -344,6 +344,7 @@ def test_readme_structure_tree_lists_both_example_features():
 #: README 「문서 안내」가 나열하는 문서 — 이 순서가 계약이다.
 DOC_INDEX_ORDER = (
     "README.md",
+    "docs/guides/index.html",
     "docs/guides/ARCHITECTURE.md",
     "docs/guides/DEVELOPMENT.md",
     "docs/guides/workflows/server-lifecycle.html",
@@ -355,10 +356,17 @@ DOC_INDEX_ORDER = (
     "docs/crp/groups/",
 )
 
-HTML_GUIDES = (
+INDEXED_HTML_GUIDES = (
     "docs/guides/workflows/server-lifecycle.html",
     "docs/guides/workflows/feature-development.html",
     "docs/guides/workflows/admin-authentication.html",
+)
+HTML_GUIDES = tuple(
+    path.relative_to(REPO_ROOT).as_posix()
+    for path in sorted((REPO_ROOT / "docs" / "guides").rglob("*.html"))
+)
+SOURCE_HTML_GUIDES = tuple(
+    path for path in HTML_GUIDES if path not in {"docs/guides/index.html", "docs/guides/features/index.html"}
 )
 
 #: ``<code>`` 안에서 저장소 루트 기준으로 해석하는 최상위 파일.
@@ -456,7 +464,7 @@ def _anchor_exists(target: Path, anchor: str) -> bool:
     return True
 
 
-@pytest.mark.parametrize("path", HTML_GUIDES)
+@pytest.mark.parametrize("path", INDEXED_HTML_GUIDES)
 def test_html_guide_exists_and_is_indexed_in_readme(path: str):
     """HTML 안내서가 실재하고 README 「문서 안내」에서 링크된다."""
     assert (REPO_ROOT / path).is_file(), f"{path} 가 없다"
@@ -472,6 +480,7 @@ def test_readme_doc_index_lists_documents_in_order():
     section = readme[start : following if following != -1 else len(readme)]
 
     assert "| 문서 | 역할 | 언제 보나 |" in section, "문서 안내 표 머리글이 다르다"
+    section = section[section.index("| 문서 | 역할 | 언제 보나 |") :]
     positions = []
     for doc in DOC_INDEX_ORDER:
         assert doc in section, f"문서 안내에 {doc} 가 없다"
@@ -479,7 +488,7 @@ def test_readme_doc_index_lists_documents_in_order():
     assert positions == sorted(positions), "문서 안내의 나열 순서가 약속과 다르다"
 
 
-@pytest.mark.parametrize("path", HTML_GUIDES)
+@pytest.mark.parametrize("path", SOURCE_HTML_GUIDES)
 def test_html_guide_data_sources_exist(path: str):
     """``data-source`` 가 실제 파일을, ``data-symbol`` 이 그 파일 안의 정의를 가리킨다."""
     scan = _scan_html(path)
@@ -501,7 +510,7 @@ def test_html_guide_data_sources_exist(path: str):
     assert not problems, f"{path}: {sorted(set(problems))}"
 
 
-@pytest.mark.parametrize("path", HTML_GUIDES)
+@pytest.mark.parametrize("path", SOURCE_HTML_GUIDES)
 def test_html_guide_code_paths_exist(path: str):
     """``<code>`` 안의 저장소 경로(루트 디렉터리·최상위 파일)가 실재한다."""
     candidates = {code.strip() for code in _scan_html(path).codes}
@@ -601,4 +610,4 @@ def test_lifecycle_guide_appendix_lists_every_setting():
     assert fields, "config.py 에서 설정 필드를 못 찾았다 — 검사가 헛통과한다"
 
     missing = sorted(fields - codes)
-    assert not missing, f"server-lifecycle-guide.html 부록에 없는 설정: {missing}"
+    assert not missing, f"workflows/server-lifecycle.html 부록에 없는 설정: {missing}"

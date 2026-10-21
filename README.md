@@ -531,6 +531,7 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 | 문서 | 역할 | 언제 보나 |
 |---|---|---|
 | `README.md` (이 문서) | 개요 · 빠른 시작 · 문서 안내 | 처음 받았을 때, 실행 방법·API 목록을 볼 때 |
+| [docs/guides/index.html](docs/guides/index.html) | HTML 가이드 허브 — 부팅, 설계, API, 요청 처리, 인증, 기능, 개발, 테스트, 운영 문서를 주제별로 연결 | 브라우저에서 전체 매뉴얼을 탐색할 때 |
 | [docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 | App Registry·수명주기·설정·세션/트랜잭션·Repository API·운영 체크리스트·변경 이력을 확인할 때 |
 | [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 | 새 기능·API·테이블을 만들 때, ORM/Raw 를 고를 때, 테스트·CI 게이트를 돌릴 때 |
 | [docs/guides/workflows/server-lifecycle.html](docs/guides/workflows/server-lifecycle.html) | 서버 수명주기 안내서 (설정 → 기동 → 요청 → 종료 추적) | 기동 실패·로그 레벨·요청별 세션·종료 순서를 코드 흐름대로 따라갈 때 |
