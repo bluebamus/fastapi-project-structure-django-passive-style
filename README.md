@@ -181,7 +181,7 @@ uv run uvicorn main:app --reload --port 8000
 
 기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, `MYSQL_DATABASE=fastapi_db`)에 맞춘 로컬 전용 예시입니다.
 빈 비밀번호는 개발 환경에서도 설정 검증이 거부하므로 비밀번호를 지정합니다.
-MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
+MySQL 8.4 의 기본 인증(`caching_sha2_password`, TLS 아닌 연결의 전체 인증 RSA 암호화)은 `aiomysql[rsa]` 가 끌어오는 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
 `CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;` 를 씁니다.
 
 - API 문서: <http://127.0.0.1:8000/docs> · 관리 화면: <http://127.0.0.1:8000/admin> (먼저 [첫 관리자 만들기](#첫-관리자-만들기)로
