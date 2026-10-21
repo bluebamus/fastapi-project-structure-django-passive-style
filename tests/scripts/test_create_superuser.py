@@ -160,6 +160,64 @@ async def test_production_revoker_deletes_that_users_sessions_in_redis(monkeypat
     assert not await refresh.is_family_revoked("fam-o")
 
 
+def test_cli_set_password_revokes_refresh_and_admin_sessions(db, monkeypatch):
+    """계약(e2e-policy-2 결정 4): ``--set-password`` 는 API 비밀번호 변경과 같게 그 사용자의 refresh family 와
+    관리 세션을 지운다 — ``main()`` 의 기본 조립(``revoke_sessions_in_redis``)으로, 다른 사용자는 건드리지 않는다.
+    """
+    import asyncio
+
+    from fakeredis import FakeServer
+    from fakeredis.aioredis import FakeRedis
+
+    from app.core.security.admin_session import SESSION_USER_KEY, default_admin_session_store
+    from app.core.security.dependencies import get_refresh_token_store
+
+    factory, engine = db
+    _run(factory, "--username", "erin", "--email", "e@x.com", "--password-stdin")
+    with engine.connect() as connection:
+        erin = connection.execute(sa.text("SELECT id FROM users WHERE username='erin'")).scalar()
+
+    server = FakeServer()
+
+    class _Factory:
+        @staticmethod
+        def from_url(url: str) -> FakeRedis:
+            return FakeRedis(server=server)
+
+    monkeypatch.setattr("redis.asyncio.Redis", _Factory)
+
+    async def seed() -> tuple[str, str]:
+        store = default_admin_session_store(FakeRedis(server=server))
+        refresh = get_refresh_token_store(FakeRedis(server=server))
+        await refresh.register("jti-e", erin, "fam-e")
+        await refresh.register("jti-o", "u-other", "fam-o")
+        return (
+            await store.create({SESSION_USER_KEY: erin}),
+            await store.create({SESSION_USER_KEY: "u-other"}),
+        )
+
+    mine, other = asyncio.run(seed())
+
+    code = create_superuser.main(
+        ["--username", "erin", "--set-password", "--password-stdin"],
+        session_factory=factory,
+        stdin=io.StringIO("new-pass-789\n"),
+    )
+
+    async def state() -> tuple[bool, bool, bool, bool]:
+        store = default_admin_session_store(FakeRedis(server=server))
+        refresh = get_refresh_token_store(FakeRedis(server=server))
+        return (
+            await store.load(mine) is None,
+            await store.load(other) is None,
+            await refresh.is_family_revoked("fam-e"),
+            await refresh.is_family_revoked("fam-o"),
+        )
+
+    assert code == 0
+    assert asyncio.run(state()) == (True, False, True, False)
+
+
 def test_redis_failure_after_password_change_exits_1(db, capsys):
     from redis.exceptions import ConnectionError as RedisConnectionError
 
@@ -178,6 +236,10 @@ def test_redis_failure_after_password_change_exits_1(db, capsys):
 
     assert code == 1
     assert "세션을 지우지 못했습니다" in capsys.readouterr().err
+    # 순서 계약: 비밀번호는 커밋된 뒤 폐기한다 — 폐기가 실패해도 새 비밀번호는 남고, 종료 코드 1 과 메시지가
+    # "다시 실행하라" 를 알린다(다시 실행하면 같은 비밀번호로 폐기만 다시 한다).
+    [(_, _, _, hashed)] = _users(db[1])
+    assert get_password_hasher().verify_and_update("new-pass-456", hashed)[0] is True
 
 
 def test_interactive_password_must_match(db, monkeypatch):
