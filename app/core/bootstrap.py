@@ -277,22 +277,24 @@ def _document_real_validation_error(app: FastAPI) -> None:
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
-        if app.openapi_schema is None:
-            schema = generate()
-            components = schema.setdefault("components", {}).setdefault("schemas", {})
-            for name in ("HTTPValidationError", "ValidationError"):
-                components.pop(name, None)
-            components.setdefault("ErrorResponse", ErrorResponse.model_json_schema())
-            for item in schema.get("paths", {}).values():
-                for operation in item.values():
-                    response = operation.get("responses", {}).get("422")
-                    if response is not None:
-                        response["content"] = {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
-                            }
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        # generate() 는 app.openapi_schema 에 같은 객체를 캐시한다 — 아래 수정이 캐시에 남는다.
+        schema = generate()
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        for name in ("HTTPValidationError", "ValidationError"):
+            components.pop(name, None)
+        components.setdefault("ErrorResponse", ErrorResponse.model_json_schema())
+        for item in schema.get("paths", {}).values():
+            for operation in item.values():
+                response = operation.get("responses", {}).get("422")
+                if response is not None:
+                    response["content"] = {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
                         }
-        return app.openapi_schema
+                    }
+        return schema
 
     app.openapi = openapi  # type: ignore[method-assign]
 
