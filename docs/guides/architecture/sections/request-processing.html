@@ -1,0 +1,416 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4. 요청·세션·트랜잭션</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>4. 요청·세션·트랜잭션</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="4">4. 요청·세션·트랜잭션</h2>
+<h3 id="41">4.1 요청 흐름</h3>
+<div class="mermaid">sequenceDiagram
+    participant C as Client
+    participant M as Middleware
+    participant R as Router
+    participant D as Dependency
+    participant S as Service
+    participant P as Repository
+    participant DB as Database
+    C->>M: HTTP request
+    M->>M: UserInfo 수집 · CORS
+    M->>R: 설치된 route
+    R->>D: get_<name>_service(_readonly)
+    D-->>R: Service(session)
+    R->>S: 유스케이스
+    S->>P: 데이터 접근
+    P->>DB: SQL / flush
+    opt 쓰기
+        R->>S: await service.commit()
+    end
+    R-->>C: 응답 DTO
+    M-->>M: 접속 로그 태스크 spawn (별도 풀)
+</div>
+<ol>
+<li><code>UserInfoMiddleware</code> 가 활성·제외 규칙을 보고 요청 정보를 수집한다. CORS 가 preflight·헤더를 처리한다.</li>
+<li>registry 가 설치한 route 가 선택되고 FastAPI 가 path/query/body/form/header 와 Dependency 를 검증·해석한다.</li>
+<li>Dependency 그래프: 세션 generator → <code>get_&lt;name&gt;_service</code> → <code>Service(session)</code> → Repository.</li>
+<li>쓰기 핸들러는 업무 후 <code>await service.commit()</code> 을 부르고 응답을 만든다. 조회는 커밋하지 않는다.</li>
+<li>예외로 빠져나가면 세션 컨텍스트(<code>async with</code>)의 <code>close()</code> 가 활성 트랜잭션을 롤백하고 예외는 그대로 재전파되며, 전역 핸들러가 오류 응답을 만든다.</li>
+<li>미들웨어가 응답 상태·소요 시간을 붙여 접속 로그 저장 태스크를 제출한다(§6).</li>
+</ol>
+<p>FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(<code>use_cache=True</code>)한다. writer getter 와 read-only getter 는
+서로 다른 callable 이라 같은 세션이 아니다. Service 를 전역 싱글턴으로 두면 세션이 요청을 넘나들므로 금지한다.</p>
+<h3 id="42-api">4.2 세션 API</h3>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>용도</th>
+<th>특성</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get_read_only_db_session()</code></td>
+<td>조회 endpoint (기능 앱 표준)</td>
+<td>세션을 read-only 로 표시 → 쓰기 차단(라우터 설정과 무관). 라우터 활성 시 replica 고정. 예외 시 rollback</td>
+</tr>
+<tr>
+<td><code>get_writer_db_session()</code></td>
+<td>쓰기 endpoint (기능 앱 표준)</td>
+<td>첫 구문부터 writer 고정. 예외 시 rollback</td>
+</tr>
+<tr>
+<td><code>get_routed_db_session()</code></td>
+<td>의도를 미리 정할 수 없는 예외 경로</td>
+<td>구문 성격으로 자동 라우팅. 기능 앱은 쓰지 않는다</td>
+</tr>
+<tr>
+<td><code>background_session()</code></td>
+<td>요청 밖(sink·Celery) async context</td>
+<td>background 풀, 예외 시 rollback, <strong>커밋은 호출자</strong></td>
+</tr>
+<tr>
+<td><code>get_background_session()</code></td>
+<td>요청 밖 generator 방식</td>
+<td>background 풀, 예외 시 rollback</td>
+</tr>
+</tbody>
+</table>
+<p>세션 팩토리는 <code>expire_on_commit=False</code>, <code>autoflush=False</code> 다. <code>session.add</code> 는 메모리 등록이라 동기, <code>flush</code>·<code>refresh</code>·<code>execute</code>·<code>commit</code> 은 await 한다.</p>
+<h3 id="43">4.3 엔진과 연결 예산</h3>
+<table>
+<thead>
+<tr>
+<th>엔진</th>
+<th>풀 (기본값)</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code> (= <code>writer_engine</code>)</td>
+<td><code>DB_POOL_SIZE</code> 20 + <code>DB_MAX_OVERFLOW</code> 20, timeout 30초</td>
+<td>요청 처리·DDL·readiness·SQLAdmin</td>
+</tr>
+<tr>
+<td><code>read_engines</code></td>
+<td>replica 마다 writer 와 같은 크기</td>
+<td>복제 활성 시 SELECT</td>
+</tr>
+<tr>
+<td><code>background_engine</code></td>
+<td><code>DB_BACKGROUND_POOL_SIZE</code> 10 + <code>DB_BACKGROUND_MAX_OVERFLOW</code> 10, timeout 60초</td>
+<td>접속 로그·요청 밖 작업, 라우팅 없이 primary</td>
+</tr>
+</tbody>
+</table>
+<p>모든 엔진은 <code>pool_pre_ping</code>, <code>pool_recycle=DB_POOL_RECYCLE</code>(280초 — DB/프록시 <code>wait_timeout</code> 보다 짧게),
+반환 시 rollback, <code>connect_timeout</code> 10초, utf8mb4 를 쓴다. 엔진 생성은 import 시점이지만 <strong>실제 연결은 첫 사용 때</strong>다.</p>
+<p>모든 엔진(writer·reader·background, Alembic 의 <code>engine_from_config</code> 포함)은 <code>session.ENGINE_SAFETY_OPTIONS</code> 를 펼쳐 받는다 — 지금은
+<code>hide_parameters=True</code> 하나다. DB 오류(<code>IntegrityError</code> 등)의 메시지와 SQLAlchemy 로그에서 <strong>바인드 값</strong>(이메일·비밀번호 해시·토큰)이
+빠지고 SQL 문과 <code>[SQL parameters hidden due to hide_parameters=True]</code> 만 남는다. 새 엔진을 만들면 같은 옵션을 넣는다 —
+<code>tests/core/test_engine_hide_parameters.py</code> 가 모든 생성 지점을 AST 로 확인한다(security-ops-hardening ADR-001).</p>
+<p>최대 연결 수(<code>db_settings.max_total_connections</code>)는 프로세스마다 다음과 같고 <code>DB_WORKER_PROCESSES</code>(uvicorn + celery worker 수)를 곱한다.</p>
+<pre><code class="language-text">(DB_POOL_SIZE + DB_MAX_OVERFLOW) × (1 + 복제 활성 시 replica 수) + (DB_BACKGROUND_POOL_SIZE + DB_BACKGROUND_MAX_OVERFLOW)
+</code></pre>
+<p><code>DB_MAX_SERVER_CONNECTIONS</code> 를 주면 이 값이 넘칠 때 기동이 실패한다(0 이면 검증하지 않음).</p>
+<h3 id="44">4.4 읽기/쓰기 라우팅</h3>
+<p><code>DB_ROUTER_ENABLED=false</code>(기본)면 세션이 writer 엔진에 직접 바인딩되고 바인딩 선택은 쓰이지 않는다.
+켜면 <code>RoutingSession.get_bind()</code> 가 구문마다 엔진을 고른다. read-only 세션의 쓰기 차단은 이 설정과 무관하다(아래 "read-only 차단의 범위").</p>
+<div class="mermaid">flowchart TD
+    A[구문] --> B{ORM flush 또는 Core DML?}
+    B -- 예 --> W[writer + 이후 sticky]
+    B -- 아니오 --> T{TextClause?}
+    T -- 예 --> I{read 의도가 붙었나?}
+    I -- 아니오 --> W
+    I -- 예 --> P
+    T -- 아니오 --> P{writer 고정 세션?}
+    P -- 예 --> W2[writer]
+    P -- 아니오 --> R[세션에 고정된 replica<br/>없으면 writer]
+</div>
+<ul>
+<li>쓰기 판정 시 세션이 read-only 로 표시돼 있으면 <code>ReadOnlyRoutingError</code>.</li>
+<li><code>DB_READ_STICKY_AFTER_WRITE=true</code>(기본)면 쓰기 이후 같은 세션의 SELECT 는 writer 로 간다(read-after-write).
+  새 요청의 read-only 세션까지 복제 지연을 없애 주지는 않는다.</li>
+<li>한 세션은 라운드로빈으로 고른 replica 하나에 고정된다(트랜잭션이 여러 서버로 흩어지지 않도록).</li>
+<li><strong>replica 장애 → primary 로 한 번 재시도</strong>(integration-e2e ADR-010): <strong>읽기 전용 세션</strong>의 읽기가 replica 에 <strong>연결하지 못하면</strong>
+  (MySQL 2002·2003 접속 불가, 2006·2013·2055 연결 끊김, 1053 종료 중, 3032 <code>offline_mode</code>, 4031 유휴 끊김, 또는 SQLAlchemy 가
+  연결 무효화로 표시한 오류) 같은 구문을 primary 로 한 번 다시 실행하고 WARNING <code>[DBRouter] replica 연결 오류 — primary 로 다시
+  읽는다 (&lt;예외 종류&gt;, driver_code=&lt;코드&gt;)</code> 를 남긴다(DSN·메시지는 싣지 않는다). 그 뒤 그 세션은 writer 에 고정된다. 쿼리 자체의
+  오류(문법·제약·없는 테이블)는 재시도하지 않는다. 쓰기와 섞일 수 있는 일반(라우팅) 세션도 재시도하지 않는다. primary 도 실패하면
+  그 오류가 그대로 올라간다. replica 가 없는 구성은 동작 변화가 없다. <code>/ready</code> 는 그대로 writer 만 본다.</li>
+<li><code>DB_REPLICATION_ENABLED=true</code> 는 <code>DB_ROUTER_ENABLED=true</code> 와 <code>MYSQL_REPLICA_HOSTS</code> 를 요구한다. replica 계정·DB 를
+  비우면 primary 값을 재사용한다. replica 없이 라우터만 켜면 읽기도 writer 로 간다.</li>
+<li>복제 지연을 허용할 수 없는 읽기는 <code>using_writer(session)</code> 으로 writer 에 고정한다.</li>
+<li>기동 시 <code>db_settings.describe_routing()</code> 이 비밀번호를 가린 DSN(<code>URL.render_as_string(hide_password=True)</code>)으로 구성을 한 줄 남긴다.</li>
+</ul>
+<p><strong><code>text()</code> 는 SQL 을 해석하지 않는다.</strong> 첫 단어 파싱은 <code>WITH doomed AS (SELECT ...) DELETE ...</code> 같은 CTE DML 을 읽기로
+오판해 replica 로 보낸다. 그래서 호출부가 의도를 붙이고(<code>read_intent</code>·<code>write_intent</code>, 조회는 <code>statement_intent</code>),
+<strong>의도가 없는 <code>TextClause</code> 는 쓰기로 본다</strong>(fail-closed). <code>RawRepositoryBase</code> 를 쓰면 메서드가 의도를 자동으로 붙인다.</p>
+<p><strong>read-only 차단의 범위</strong></p>
+<table>
+<thead>
+<tr>
+<th>경로</th>
+<th>차단</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ORM flush</td>
+<td><code>Session</code> 에 전역 등록된 <code>before_flush</code> 리스너가 거부 — 라우터 설정·sessionmaker 종류와 무관</td>
+</tr>
+<tr>
+<td>Core DML·임의 <code>session.execute()</code></td>
+<td><code>do_orm_execute</code> 리스너가 <strong>실행 전에</strong> 판정 — 잠금 없는 <code>Select</code> 와 <code>read_intent()</code> 가 붙은 <code>text()</code> 만 통과하고 나머지는 거부(default-deny). ORM <code>with_for_update()</code> 는 쓰기로 보고 거부하며, 라우터는 writer 로 보낸다</td>
+</tr>
+<tr>
+<td>Raw 쓰기(<code>execute</code>, <code>for_update=True</code>)</td>
+<td>위 리스너에 더해 <code>RawCRUDBase</code> 가 <code>is_read_only_session()</code> 으로 먼저 거부 — 어느 메서드가 원인인지 메시지에 남는다</td>
+</tr>
+</tbody>
+</table>
+<p>판정은 구문 타입과 의도 태그만 본다 — SQL 문자열을 해석하지 않으므로 완전한 sandbox 가 아니다. 위 세 경로의 차단은 라우터 on/off 두 구성에서 <code>tests/core/test_read_only_guard.py</code> 가 고정하고, 조회 경로가 쓰지 않는다는 규칙은 <code>tests/test_read_path_no_commit.py</code> 가 구조로 함께 고정한다.</p>
+<p>read-only 표시는 DB 권한을 대체하지 않는다. 운영에서는 replica 전용 읽기 계정을 함께 쓴다.</p>
+<h3 id="45">4.5 트랜잭션 경계</h3>
+<ul>
+<li><strong>커밋은 쓰기 핸들러 본문이 응답 생성 전에 한 번.</strong> Repository·Service·Dependency 는 스스로 커밋하지 않는다.</li>
+<li>순서는 <code>response = XResponse.model_validate(obj)</code> → <code>await service.commit()</code> → <code>return response</code> 하나다. 응답 DTO 검증이
+  실패하면 커밋 없이 500 으로 끝나고 세션 Dependency 가 rollback 한다(<code>tests/test_validate_before_commit.py</code>).</li>
+<li>예외로 빠져나가면 세션 Dependency 가 rollback 한다. 이미 커밋한 뒤의 실패는 되돌리지 않는다.</li>
+<li>여러 Service 를 한 원자 단위로 묶으려면 같은 writer 세션을 주입하고 마지막에 한 번 커밋한다.</li>
+<li><code>BaseService.commit()</code> 은 커밋 시점의 <code>SQLAlchemyError</code>(지연 제약, 연결 유실 등)도 <code>convert_db_error()</code> 로 바꾼다.</li>
+<li>요청 밖에서는 <code>background_session()</code> 을 열고 직접 커밋한다 — 성공 시 자동 커밋하지 않는다.</li>
+</ul>
+<blockquote>
+<p><strong>왜 Dependency 가 아니라 핸들러인가.</strong> 예전에는 Dependency 가 <code>yield</code> 뒤에서 커밋했다. 기본 request scope 의
+yield dependency 종료 코드는 <strong>응답 전송 후</strong> 실행되므로(FastAPI 0.141 에서 실측), 커밋이 실패해도 클라이언트는
+이미 201 을 받는다. function scope 는 종료 시점이 다르지만
+(<a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/#early-exit-and-scope">FastAPI 문서</a>),
+이 프로젝트는 커밋을 teardown 에 맡기지 않는다. 회귀 가드: <code>tests/test_read_path_no_commit.py</code>,
+기능별 <code>test_transaction_boundary.py</code>.</p>
+</blockquote>
+<p>DB 커밋과 HTTP 전송은 하나의 원자적 트랜잭션이 아니다. 커밋 후 연결이 끊길 수 있으므로 중요한 생성 업무는 멱등 키 정책을 요구사항으로 정한다.</p>
+<h3 id="46-repository">4.6 Repository 두 계열</h3>
+<p>데이터 접근은 <strong>ORM 과 Raw SQL 두 계열</strong>이고 갈라지는 곳은 Repository 하나뿐이다. 두 Base 는 <strong>상속 관계가 없다</strong>
+(하나의 Base 가 모델과 row 를 함께 돌려주면 호출부가 받은 것을 타입으로 알 수 없다). 어느 쪽을 고를지와 Raw 작성
+규칙은 <a href="../../development/index.html#orm-raw">개발 가이드 — ORM 과 Raw 선택</a>에 있다.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ORM</th>
+<th>Raw SQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>기능 Repository 가 상속</td>
+<td><code>BaseRepository</code> (<code>app/core/repositories/repository_base.py</code>)</td>
+<td><code>RawRepositoryBase</code> (<code>app/core/repositories/raw_repository_base.py</code>)</td>
+</tr>
+<tr>
+<td>하위 primitive (직접 상속하지 않음)</td>
+<td><code>CRUDBase</code> (<code>app/core/repositories/crud_base.py</code>)</td>
+<td><code>RawCRUDBase</code> (<code>app/core/repositories/raw_crud_base.py</code>)</td>
+</tr>
+<tr>
+<td>돌려주는 것</td>
+<td>모델 인스턴스</td>
+<td><code>RowMapping</code> / scalar / rowcount</td>
+</tr>
+<tr>
+<td>참조 예제</td>
+<td><code>app/features/catalog/repositories/product_repository.py</code></td>
+<td><code>app/features/reports/repositories/sales_report_repository.py</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>BaseRepository[Model]</code> 공개 메서드 — 정확히 8개</strong> (ADR-016). 도메인 쿼리(eager loading·집계·정렬 목록 등)는 기능 Repository 에 둔다.</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>create(data: dict)</code></td>
+<td><code>id</code> 가 없으면 UUID 를 채우고 add → flush → refresh. DB 오류는 <code>convert_db_error</code></td>
+</tr>
+<tr>
+<td><code>get_by_id(id)</code></td>
+<td>없으면 <code>None</code></td>
+</tr>
+<tr>
+<td><code>get_one(**filters)</code></td>
+<td><code>filter_by</code> 단건, 없으면 <code>None</code></td>
+</tr>
+<tr>
+<td><code>get_all(skip=0, limit=100)</code></td>
+<td>offset/limit 조회 — 기본 정렬 <code>created_at DESC, PK DESC</code>(<code>created_at</code> 이 없으면 PK 역순). 동률에도 페이지가 겹치지 않는다</td>
+</tr>
+<tr>
+<td><code>count(**filters)</code></td>
+<td>개수</td>
+</tr>
+<tr>
+<td><code>exists(id)</code></td>
+<td>PK 존재 여부</td>
+</tr>
+<tr>
+<td><code>update(id, data: dict)</code></td>
+<td>UPDATE → flush 후 <strong>다시 조회</strong>해 반환(없으면 <code>None</code>). MySQL 의 no-op UPDATE rowcount 0 을 부재로 읽지 않기 위해서다</td>
+</tr>
+<tr>
+<td><code>delete(id)</code></td>
+<td>삭제 여부 <code>bool</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>RawRepositoryBase</code> 공개 메서드 — 4개</strong>. 모든 호출에 <code>query_name</code>(코드 상수)이 필요하고, 로그에는 <code>query_name</code>·소요 시간·성공 여부만 남는다(SQL·파라미터 제외).</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>결과 없음</th>
+<th>반환</th>
+<th>라우팅 의도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fetch_one(stmt, params, *, query_name, for_update=False)</code></td>
+<td><code>None</code></td>
+<td>첫 행 <code>RowMapping</code></td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>fetch_all(...)</code></td>
+<td>빈 목록</td>
+<td><code>RowMapping</code> 목록</td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>fetch_scalar(...)</code></td>
+<td><code>None</code></td>
+<td>첫 행 첫 컬럼</td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>execute(stmt, params, *, query_name)</code></td>
+<td>—</td>
+<td>영향 행 수 <code>int</code>(존재 판단에 쓰지 않는다), 커밋하지 않음</td>
+<td>항상 쓰기</td>
+</tr>
+</tbody>
+</table>
+<h3 id="47-db">4.7 DB 오류 변환</h3>
+<p>SQLAlchemy 예외의 문자열에는 실행 SQL·바인딩 값·때로 DSN 이 들어 있다. <code>convert_db_error()</code> 는 경계에서 한 번 변환하며
+예외 클래스명·드라이버 코드·모델·연산만 로그에 남기고, 호출부는 <code>raise ... from None</code> 으로 원본을 끊는다.</p>
+<table>
+<thead>
+<tr>
+<th>원본</th>
+<th>결과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1062 / SQLite UNIQUE·PRIMARY KEY 위반</td>
+<td><code>DuplicateException</code> (409)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1048·1364 / SQLite NOT NULL 위반</td>
+<td><code>ValidationException</code> "필수 값이 비어 있습니다" (422)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1452 / SQLite FOREIGN KEY 위반</td>
+<td><code>ValidationException</code> "참조하는 데이터가 존재하지 않습니다" (422)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1451</td>
+<td><code>ConflictException</code> "다른 데이터가 참조하고 있어…" (409)</td>
+</tr>
+<tr>
+<td>그 밖의 <code>IntegrityError</code>(코드를 알 수 없는 경우 포함)</td>
+<td><code>DatabaseException</code> "제약 조건 불만족" (500)</td>
+</tr>
+<tr>
+<td>그 밖의 <code>SQLAlchemyError</code></td>
+<td><code>DatabaseException</code> (500)</td>
+</tr>
+</tbody>
+</table>
+<p>SQLite 는 숫자 코드를 주지 않으므로 파이썬 <code>sqlite3</code> 예외의 <code>sqlite_errorname</code> 으로 가른다 — 메시지는 파싱하지 않는다.
+변환을 거치지 않는 경로(잡히지 않은 예외의 traceback, 직접 <code>logger.exception</code>)도 엔진의 <code>hide_parameters=True</code>(§4.3) 덕분에 예외 문자열에 바인드 값이 없다.
+4xx 로 바뀌는 위반은 WARNING, 나머지는 ERROR 로 남는다(service-hardening ADR-007).</p>
+<h3 id="48">4.8 모델과 기능 카탈로그</h3>
+<p>모델은 <code>Base</code> 에 필요한 Mixin 을 조합한다. <code>sort_order</code> 로 컬럼 순서(id → 도메인 → created_at → updated_at)를 고정해
+<code>create_all</code> 과 migration 의 결과가 갈리지 않게 한다. 시각은 DB 가 아니라 앱이 <code>timezone_settings.utc_now()</code>(aware UTC)로 채운다.
+<code>Mapped[datetime]</code> 은 <code>app/core/models/types.py</code> 의 <code>UTCDateTime</code> 이다 — MySQL <code>DATETIME(6)</code>·UTC 로 저장하고, naive datetime 은 저장 경계에서
+<code>ValueError</code> 로 거부하며, 읽을 때 <code>tzinfo=UTC</code> 를 붙여 응답이 <code>Z</code> 오프셋을 갖는다. Raw SQL 은 <code>bindparam(..., type_=UTCDateTime())</code> 로 같은 변환을 태운다.
+지역 시각(<code>TIME_ZONE</code>)은 표시·집계 경계에서만 쓴다 — 리포트·접속 로그의 날짜 범위는 지역 일자를 UTC 순간으로 바꿔 조회한다(service-hardening ADR-010).
+<code>UpdatedAtMixin.onupdate</code> 는 ORM UPDATE 에만 적용된다.</p>
+<table>
+<thead>
+<tr>
+<th>앱</th>
+<th>모델 → 테이블</th>
+<th>기능</th>
+<th>Admin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>home</td>
+<td><code>UserAccessLog</code> → <code>user_access_logs</code></td>
+<td>접속 로그 조회·통계(읽기 전용), <code>ready()</code> 에서 sink 결선</td>
+<td>조회·삭제·내보내기</td>
+</tr>
+<tr>
+<td>blog</td>
+<td><code>Post</code> → <code>blog_posts</code></td>
+<td>게시글 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>reply</td>
+<td><code>Reply</code> → <code>replies</code></td>
+<td>댓글 CRUD (게시글과의 FK·중첩 route 없음)</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>sns</td>
+<td><code>SnsPost</code> → <code>sns_posts</code></td>
+<td>피드 게시물 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>user</td>
+<td><code>User</code> → <code>users</code></td>
+<td>사용자 CRUD, username 중복 검사</td>
+<td>생성 불가, 해시 비노출</td>
+</tr>
+<tr>
+<td>auth</td>
+<td>(없음 — <code>User</code> 사용)</td>
+<td>가입·로그인·재발급·현재 사용자</td>
+<td>없음</td>
+</tr>
+<tr>
+<td>catalog</td>
+<td><code>Product</code> → <code>catalog_products</code></td>
+<td><strong>ORM 예제</strong> — 상품 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>reports</td>
+<td><code>SalesOrder</code> → <code>sales_orders</code></td>
+<td><strong>Raw SQL 예제</strong> — 일별 매출 집계(조회 전용)</td>
+<td>읽기 전용·내보내기</td>
+</tr>
+</tbody>
+</table>
+<p>CRUD 앱의 공통 흐름: Create(스키마 검증 → create/flush → 응답 DTO 검증 → 핸들러 commit → 201), List(pagination → count + 목록, commit 없음),
+Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → 응답 DTO 검증 → commit), Delete(삭제 → commit → 204).
+조회는 <code>_readonly</code> Dependency, 쓰기는 writer Dependency 를 쓴다.</p>
+<hr><nav class="pager"><a href="configuration.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="logging.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

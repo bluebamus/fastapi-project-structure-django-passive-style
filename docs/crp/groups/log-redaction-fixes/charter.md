@@ -14,7 +14,7 @@
 | Redis | `app/core/redis.py`, `app/core/resources.py`, `app/core/security/{rate_limit,refresh_store}.py`(docstring) | 소스 | `REDIS_MIN_VERSION`·`ensure_redis_version`·`UnsupportedRedisVersion`, lifespan 호출 |
 | 커버리지 | `pyproject.toml`, `.github/workflows/ci.yml`(주석), `scripts/review_gate.py`(단계 설명) | 설정 | `fail_under = 0` |
 | 테스트 | `tests/utils/test_log_redaction.py`·`tests/core/test_exception_headers.py`·`tests/core/test_redis_version.py` (신규), `tests/core/test_bootstrap.py`(가짜 Redis 에 `info`), `tests/scripts/test_gates.py` | 테스트 | 단계별 단위·계약 |
-| 문서 | `README.md`, `.env.example`, `compose.test.yaml`(주석), `docs/guides/{ARCHITECTURE,DEVELOPMENT}.md`, `docs/guides/server-lifecycle-guide.html`, `docs/crp/groups/{log-redaction-fixes,orm-raw-repository,service-hardening}/` | 문서 | 가리기·헤더·Redis 7.0·커버리지 0 |
+| 문서 | `README.md`, `.env.example`, `compose.test.yaml`(주석), `docs/guides/{ARCHITECTURE,DEVELOPMENT}.md`, `docs/guides/workflows/server-lifecycle.html`, `docs/crp/groups/{log-redaction-fixes,orm-raw-repository,service-hardening}/` | 문서 | 가리기·헤더·Redis 7.0·커버리지 0 |
 
 - 착수 기준선 커밋: `b39478c` (main)
 - 마이그레이션: 변경 없음

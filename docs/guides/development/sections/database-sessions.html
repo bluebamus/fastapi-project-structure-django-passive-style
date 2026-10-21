@@ -1,0 +1,175 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4. 세션·트랜잭션·비동기 작성 규칙</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>4. 세션·트랜잭션·비동기 작성 규칙</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="4">4. 세션·트랜잭션·비동기 작성 규칙</h2>
+<h3 id="41">4.1 세션 선택</h3>
+<div class="mermaid">flowchart TD
+    U[유스케이스] --> Q{쓰기 / 조회 후 쓰기 / 잠금?}
+    Q -- 예 --> W[get_writer_db_session<br/>응답 전 한 번 commit]
+    Q -- 아니오 --> L{복제 지연을 허용하는 조회?}
+    L -- 예 --> R[get_read_only_db_session<br/>commit 없음]
+    L -- 아니오 --> C[writer 고정 조회<br/>get_writer_db_session 또는 using_writer]
+</div>
+<p>HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여러 Service 가 참여하면 같은 writer 세션을 주입하고 커밋 주체를 하나로 둔다.
+인가(<code>CurrentPrincipal</code>)는 DB 를 읽지 않는다. 사용자 엔티티가 필요한 인증(<code>get_current_user</code>)은 read-only 세션을 따로 쓰되 primary 에 고정해 읽으므로(복제 지연 중에도 가입 직후 토큰이 통하고 비활성화가 즉시 반영된다), 인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려면 쓰기 세션에서 다시 조회한다.</p>
+<h3 id="42">4.2 커밋과 응답</h3>
+<ul>
+<li>쓰기 view 는 성공 응답을 만들기 전에 <strong>정확히 한 번</strong> 커밋한다. 조회 Dependency 는 커밋하지 않는다.</li>
+<li>순서는 <strong>응답 DTO 검증 → commit → 반환</strong> 하나다(§2.8). 모든 기능의 생성·수정 핸들러가 이 순서를 따른다.
+  반대로 하면 DTO 검증 실패가 500 을 내는데 데이터는 이미 커밋돼 남는다. 회귀 가드: <code>tests/test_validate_before_commit.py</code>
+  (전 기능의 생성·수정 핸들러에서 DTO 검증을 실패시켜 500·커밋 0회·DB 불변을 확인). 커밋을 Dependency teardown 에 두지 않는다.</li>
+<li>DTO 가 접근할 관계·컬럼은 Repository 에서 명시적으로 로드한다. 커밋 이후나 DTO 검증 중 lazy load 가 암묵 I/O 를 일으키지 않게 한다
+  (<code>expire_on_commit=False</code> 가 모든 관계 로딩을 해결하지는 않는다).</li>
+<li>PATCH 스키마의 <code>None</code> 은 "미전달"과 다르다. <code>exclude_unset=True</code> 는 안 보낸 필드만 뺀다. 그래서 수정 스키마는
+  <code>app/core/schemas.py</code> 의 <code>PatchSchema</code> 를 상속한다 — 보낸 필드의 null 은 <code>nullable_fields</code>(모델 컬럼이 <code>nullable=True</code>
+  인 것만 적는다) 밖이면 422 다. 예: <code>ProductUpdate.nullable_fields = frozenset({"description"})</code> 라 <code>{"name": null}</code> 은 422,
+  <code>{"description": null}</code> 은 설명을 지운다.</li>
+<li>상태 전환·재고 차감처럼 동시성이 있는 변경은 "조회 후 UPDATE" 만으로 안전하지 않다. 조건부 UPDATE·잠금·DB 제약을 설계한다.</li>
+<li>커밋 성공 뒤 응답이 유실될 수 있다. 중요한 생성 업무는 멱등 키·중복 처리 정책을 정한다.</li>
+</ul>
+<h3 id="43-n1">4.3 N+1 과 목록</h3>
+<p>Eager loading·집계·정렬 목록은 Base 가 아니라 기능 Repository 에 둔다.</p>
+<pre><code class="language-python">class UserRepository(BaseRepository[User]):
+    model = User
+
+    async def get_all_with_posts(self, *, skip: int = 0, limit: int = 50) -&gt; Sequence[User]:
+        stmt = (
+            select(User)
+            .options(selectinload(User.posts))   # 1:N 은 selectinload 가 기본
+            .order_by(User.id)                   # 정렬 없는 pagination 은 페이지가 겹친다
+            .offset(skip)
+            .limit(limit)
+        )
+        return (await self.session.execute(stmt)).scalars().all()
+# joinedload: 1:1 / 작은 N:1, subqueryload: 복잡한 관계
+</code></pre>
+<p>(예시의 <code>User.posts</code> 관계는 현재 모델에 없다 — 패턴 설명용이다.)</p>
+<h3 id="44">4.4 비동기 원칙</h3>
+<ul>
+<li><code>async def</code> 는 await 하는 I/O 동안 다른 요청을 진행시킬 뿐, CPU 연산이나 동기 SDK 를 비동기로 바꾸지 않는다.
+  async endpoint 에서 <code>time.sleep</code>·동기 HTTP·큰 파일 처리·무거운 CPU 루프를 직접 돌리지 않는다. 짧은 CPU 작업(JWT·Pydantic·User-Agent 파싱)은 그대로 두고,
+  비밀번호 해시(Argon2)처럼 비싼 것은 <code>asyncio.to_thread</code> 로 뺀다. 무거운·내구성이 필요한 작업은 Celery 로 보낸다.</li>
+<li>같은 <code>AsyncSession</code> 으로 <code>asyncio.gather</code> 하지 않는다. 한 트랜잭션의 SQL 은 순차 await, 독립 병렬 작업은 작업별 세션을 연다.</li>
+<li>요청의 세션·Service·Request 를 백그라운드나 Celery 로 넘기지 않는다. 요청 밖에서는 직접 조립한다.</li>
+</ul>
+<pre><code class="language-python">async with background_session() as session:     # 요청 밖 — 커밋은 직접
+    await SomeService(session).do_write()
+    await session.commit()
+</code></pre>
+<ul>
+<li>Celery 태스크는 기능 루트 <code>tasks.py</code> 에 두고(<code>INSTALLED_APPS</code> 에 있으면 워커가 자동으로 include 한다) <code>run_async()</code> 로 코루틴을 돌린다.
+  세션은 <code>background_session()</code> 으로 열고, 서비스는 그 기능의 provider 함수(세션을 받는 일반 함수 — 예: home <code>build_user_access_log_service(session)</code>)로
+  조립한다 — HTTP 의존성도 같은 함수를 부른다. 인자는 JSON 직렬화 가능한 값만. 재시도·중복·커밋과 enqueue 사이 실패를 테스트한다.</li>
+<li>주기 실행이 필요하면 같은 <code>tasks.py</code> 에서 <code>celery_app.add_periodic_task(crontab(...), my_task.s(), name="&lt;앱&gt;.&lt;태스크&gt;")</code> 로 등록한다 —
+  중앙 Celery 앱에 목록을 만들지 않는다(예: home <code>tasks.PURGE_SCHEDULE</code>). 시각은 <code>TIME_ZONE</code> 기준이고, 실행에는 worker 와 별도로 beat 가 한 개 필요하다:
+  <code>uv run celery -A app.celery.app beat --loglevel=info</code>. 대량 삭제는 배치로 나눠 배치마다 커밋한다(home <code>purge_expired</code> 참고).</li>
+<li>접속 로그 runner(<code>access_log_tasks</code>)는 drop 가능한 비핵심 작업 전용이다. 업무 저장·결제·발송을 넣지 않는다.</li>
+<li>Redis 는 필수다. 새 기능은 <code>redis: Redis = Depends(get_redis)</code>(<code>app/core/redis.py</code>)로 lifespan 이 소유한 client 를 주입받는다 —
+  <code>Redis.from_url</code> 을 직접 만들지 않는다. client 가 없으면(lifespan 밖) 503. 테스트는 <code>app.state.redis</code> 에 fakeredis 를 넣거나 <code>dependency_overrides[get_redis]</code> 를 쓴다.
+  지원 최소 버전은 <code>redis.REDIS_MIN_VERSION</code>(7.0 — <code>EXPIRE NX</code>)이다. 더 새 명령·옵션을 쓰면 그 상수와 근거 표를 함께 올린다 —
+  <code>tests/core/test_redis_version.py</code> 가 소스의 명령과 상수를 대조한다.</li>
+</ul>
+<h3 id="45">4.5 인증·인가 붙이기</h3>
+<p>인가는 core 의 주입 경로(<code>app/core/security/dependencies.py</code>) 하나로 건다 — 기능이 인가를 위해 user·auth 기능을 import 하지 않는다.
+권한은 슈퍼유저/일반 2단계다. 정책 전체 표는 <a href="../../architecture/index.html#71-인가--주체소유권슈퍼유저">아키텍처 §7.1</a>.</p>
+<p><strong>모든 뷰는 접근 수준을 하나 선언한다</strong>(<code>app/core/security/access.py</code>). 선언이 없거나, 둘 이상이거나, 쓰기 메서드에 <code>Public</code>·
+조회 메서드에 <code>PublicWrite</code> 를 적은 라우트가 있으면 <code>create_app()</code> 이 위반 목록 전체를 담은 <code>ImproperlyConfigured</code> 로 기동을 멈춘다
+(<code>AccessPolicyGuard</code> — 기본 거부). 사용자 정보가 필요한 뷰는 인자로 받으면 그것이 선언이다 — 데코레이터에 같은 수준을 또 적지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>필요</th>
+<th>쓰는 것</th>
+<th>실패</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>공개 조회(GET)</td>
+<td><code>dependencies=[Public]</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>인증 없는 쓰기(가입·로그인 류)</td>
+<td><code>dependencies=[PublicWrite]</code> — 일부러 연다는 표시</td>
+<td>—</td>
+</tr>
+<tr>
+<td>로그인한 사용자</td>
+<td>핸들러 인자 <code>principal: CurrentPrincipal</code>, 결과가 필요 없으면 <code>dependencies=[LoginRequired]</code></td>
+<td>401</td>
+</tr>
+<tr>
+<td>슈퍼유저</td>
+<td>인자 <code>principal: SuperuserPrincipal</code>, 결과가 필요 없으면 <code>dependencies=[SuperuserRequired]</code></td>
+<td>401 · 403</td>
+</tr>
+<tr>
+<td>작성자만 수정</td>
+<td>서비스가 생성자로 <code>OwnershipPolicy</code> 를 받고 <code>ensure_can_modify(row.author_id, principal)</code></td>
+<td>403</td>
+</tr>
+<tr>
+<td>사용자 엔티티(활성 여부 포함)</td>
+<td>auth 의 <code>get_current_user</code> — DB 를 읽는다. 인가만 필요하면 쓰지 않는다</td>
+<td>401</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-python"># dependencies/&lt;name&gt;_dependencies.py — 정책 객체도 provider 로 주입한다
+async def get_item_service(
+    session: AsyncSession = Depends(get_writer_db_session),
+    ownership: OwnershipPolicy = Depends(get_ownership_policy),
+) -&gt; ItemService:
+    return ItemService(session, ownership)
+
+# services/&lt;name&gt;_service.py — 존재 확인(404) 뒤 소유권(403)
+async def update_item(self, item_id: str, data: ItemUpdate, principal: Principal) -&gt; Item:
+    existing = await self.get_item(item_id)
+    self.ownership.ensure_can_modify(existing.author_id, principal)
+    ...
+
+# api/routers/v1/&lt;name&gt;.py — 작성자는 서버가 주체로 채운다(요청 본문에서 받지 않는다)
+@router.post(&quot;/items&quot;, ...)
+async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service: ItemService = Depends(get_item_service)):
+    item = await service.create_item(payload, principal)   # author_id=principal.id
+
+@router.get(&quot;/items&quot;, dependencies=[Public], ...)              # 공개 조회도 선언한다
+@router.delete(&quot;/items/{item_id}&quot;, dependencies=[SuperuserRequired], ...)
+</code></pre>
+<p><strong>함수를 감싸는 데코레이터(Django 식 <code>@login_required</code>)를 쓰지 않는 이유.</strong> FastAPI 는 핸들러의 시그니처를 읽어 의존성 주입·요청
+검증·OpenAPI 를 만든다. 함수를 감싸면 그 시그니처가 래퍼 뒤로 숨어(<code>functools.wraps</code> 로 일부 되살려도 <code>Depends</code>·<code>Annotated</code> 해석과
+<code>security</code> 문서화가 어긋나기 쉽다) 주입이 깨지거나 문서에서 인증 표시가 사라진다. 경로 데코레이터의 <code>dependencies=[...]</code> 는 FastAPI 가
+원래 제공하는 "뷰 단위 선언" 이라 시그니처를 건드리지 않고, OpenAPI 의 Bearer 표시도 그대로 나온다. 다만 선언만으로는 "잊은 뷰" 가
+열린 채 배포되므로 기동 검사가 기본 거부를 맡는다.</p>
+<ul>
+<li>보호 라우트는 <code>responses</code> 에 <code>app/core/security/dependencies.py</code> 의 공용 401·403 응답 상수를 싣는다(OpenAPI 에 문서화된다).</li>
+<li>예시 기능의 오퍼레이션을 바꾸면 <code>tests/test_authorization_policy.py</code> 의 회귀 표(public·public_write·auth·owner·self·admin)도 고친다 —
+  표는 가드의 판정과 대조된다. 새 기능의 "선언 여부" 는 표가 아니라 기동 검사가 본다.</li>
+<li>엔드포인트 테스트는 <code>get_current_principal</code> 을 override 하지 않고 <code>tests/auth_headers.py</code> 의 헤더(<code>admin_headers()</code>·<code>user_headers()</code>)로
+  실제 토큰을 보낸다. 토큰 검증·<code>su</code> claim·<code>request.state.user_id</code> 기록까지 같이 시험된다.</li>
+<li><code>Principal</code> 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.</li>
+<li><strong>API 에 세션(쿠키) 인증을 섞지 않는다.</strong> <code>/admin</code> 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 세션 미들웨어를 붙이거나
+  API 의존성이 <code>admin_session</code> 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 <a href="../../workflows/admin-authentication.html">관리 화면 인증 가이드</a>.</li>
+<li>새 기능의 <code>admin.py</code> ModelView 는 따로 인증을 붙이지 않는다 — <code>/admin</code> 전체가 <code>AdminAuthBackend</code> 뒤에 있다. 로그인 화면은
+  <code>app/templates/admin/sqladmin/login.html</code> 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §16). 폼의 CSRF hidden 입력
+  (<code>csrf_token(request)</code>)을 지우면 모든 로그인이 403 이다. 로그인 이후 화면은 <code>app/templates/admin/sqladmin/base.html</code> 이 sqladmin 원본을 확장해
+  <code>&lt;meta name="csrf-token"&gt;</code> 과 토큰을 붙이는 스크립트를 싣는다 — 이 파일을 지우거나 블록을 바꾸면 생성·수정·삭제·로그아웃이 403 이다.
+  sqladmin 을 올리면 <code>tests/core/test_admin_csrf.py</code>(원본 대조)가 먼저 깨진다 — 원본 블록·로그아웃 링크·<code>main.js</code> 요청 방식을 보고 스크립트를 맞춘다.</li>
+<li>관리 화면에 상태를 바꾸는 사용자 정의 작업을 더하면 GET <code>@action</code> 으로 만들지 않는다 — CSRF 미들웨어는 POST·PUT·PATCH·DELETE 만 본다
+  (admin-session-hardening R-001). POST 로 노출하고 원본 대조 테스트에 항목을 더한다.</li>
+<li>관리 세션은 Redis 서버 세션이다(<code>app/core/security/admin_session.py</code>). 사용자의 권한을 빼앗는 새 경로(비활성화·강등·삭제·비밀번호 변경)를
+  만들면 조건을 따로 쓰지 말고 <code>revocation_for_change(변경 전 객체, 바꿀 값)</code>(삭제는 <code>revocation.REVOKE_ON_DELETE</code>)로 판정해 <code>UserSessionRevoker.revoke(user_id, revocation)</code>
+  (<code>app/core/security/revocation.py</code>)를 <strong>커밋 전</strong>에 부른다 — 비활성화·강등·비밀번호 변경·삭제는 관리 세션 + refresh 를 지운다(관리 화면 경로 = API 경로). Redis 오류는 삼키지 않는다 — 예외가 커밋을 막게 둔다. API 는 provider <code>get_user_session_revoker</code> 로 주입받고(<code>UserService</code> 생성자의
+  <code>revoker</code>), 관리 화면은 <code>UserAdmin</code> 의 <code>on_model_change</code>·<code>on_model_delete</code> 가 <code>revoker_from_scope(request.scope)</code> 로 부른다. <code>after_*</code> 훅(커밋 뒤)에서
+  폐기하지 않는다. 요청 밖 스크립트는 <code>scripts/create_superuser.py</code> 가 예시다.</li>
+<li>관리 화면 테스트 헬퍼는 <code>tests/admin_login.py</code> 에 있다 — <code>admin_login()</code>(로그인 화면의 hidden 토큰을 실어 POST), <code>admin_page_token()</code>
+  (로그인 이후 화면의 meta 토큰 — 생성·수정 폼에는 <code>csrf_token</code>, 삭제 같은 XHR 흉내에는 <code>X-CSRF-Token</code> 헤더로 싣는다), <code>admin_logout()</code>
+  (meta 토큰을 실어 POST <code>/admin/logout</code>). 로그아웃을 GET 으로 부르면 405 다. 세션이 Redis 에 있으므로 관리 화면 테스트는 <code>app.state.redis</code> 에
+  fakeredis(<code>fakeredis.aioredis.FakeRedis</code>)를 넣는다(<code>tests/core/test_admin_login_flow.py</code> 참고) — 없으면 관리 화면이 503 이다.</li>
+<li>ModelView 의 시각 컬럼(<code>UTCDateTime</code>) 필터는 <code>OperationColumnFilter</code> 가 아니라 <code>LocalDateFilter(Model.created_at, title="생성일")</code>
+  (<code>app/core/admin_filters.py</code>)로 단다 — 연산 필터는 문자열을 바인딩해 목록이 500 이 된다. 연산은 같은 날·이후·이전·기간(<code>YYYY-MM-DD~YYYY-MM-DD</code>,
+  양 끝 포함)이다.</li>
+</ul>
+<hr><nav class="pager"><a href="persistence-choice.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="migrations.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

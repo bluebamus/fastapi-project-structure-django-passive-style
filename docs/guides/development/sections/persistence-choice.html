@@ -1,0 +1,149 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3. ORM 과 Raw 선택</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>3. ORM 과 Raw 선택</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="3-orm-raw">3. ORM 과 Raw 선택</h2>
+<p>새 기능에서 <strong>가장 먼저 정할 것</strong>이다. 스키마·서비스·라우터·앱 등록의 작성 방식은 같고, 갈라지는 것은 Repository 구현 하나뿐이다.
+각 Base 의 공개 API 는 <a href="../../architecture/index.html#46-repository-두-계열">아키텍처 §4.6</a>에 있다.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ORM</th>
+<th>Raw SQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>상속할 Base</td>
+<td><code>BaseRepository</code></td>
+<td><code>RawRepositoryBase</code></td>
+</tr>
+<tr>
+<td>돌려주는 것</td>
+<td>모델 인스턴스</td>
+<td><code>RowMapping</code> / scalar / rowcount</td>
+</tr>
+<tr>
+<td>참조 예제</td>
+<td><code>app/features/catalog/repositories/product_repository.py</code></td>
+<td><code>app/features/reports/repositories/sales_report_repository.py</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="31-orm">3.1 기본값은 ORM</h3>
+<p>먼저 ORM 으로 쓰고, ORM 이 <strong>못 하는 일</strong>이 생겼을 때 Raw 를 꺼낸다. 취향 문제가 아니다 — ORM 경로는 모델이 스키마를
+소유해 migration 과 어긋나면 그 자리에서 깨지지만, Raw 경로는 SQL 문자열이 스키마를 몰라 <strong>실행 시점까지 아무도 모른다</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>상황</th>
+<th>선택</th>
+<th>이유</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>엔티티 단건·목록 CRUD</td>
+<td>ORM</td>
+<td><code>BaseRepository</code> 8개 메서드가 이미 있다</td>
+</tr>
+<tr>
+<td>관계를 타고 객체를 다룸</td>
+<td>ORM</td>
+<td>관계 로딩·변경 추적</td>
+</tr>
+<tr>
+<td>여러 테이블 집계·리포트(GROUP BY, 윈도 함수)</td>
+<td>Raw</td>
+<td>ORM 표현이 SQL 보다 길고 읽기 어려워진다</td>
+</tr>
+<tr>
+<td>대량 조회에서 필요한 컬럼만</td>
+<td>Raw</td>
+<td>엔티티를 만들 이유가 없다</td>
+</tr>
+<tr>
+<td>DB 고유 기능</td>
+<td>Raw</td>
+<td>ORM 이 추상화하지 않는다</td>
+</tr>
+<tr>
+<td>성능이 실제로 문제</td>
+<td>Raw</td>
+<td><strong>측정한 뒤에</strong> 정한다</td>
+</tr>
+</tbody>
+</table>
+<p>한 기능 안에서 섞어도 된다. <code>catalog</code>/<code>reports</code> 의 분리는 기능 단위가 아니라 작업 성격에 따른 것이다.</p>
+<h3 id="32">3.2 공통 규칙</h3>
+<ul>
+<li>Repository 는 커밋하지 않는다. 트랜잭션 경계는 view 가 소유한다.</li>
+<li>세션은 <strong>하는 일</strong>로 고른다 — 조회 <code>get_read_only_db_session()</code>, 쓰기 <code>get_writer_db_session()</code>.
+  데이터 접근 방식과는 무관하다(<code>reports</code> 는 Raw 지만 조회뿐이라 read-only 만 노출하고, <code>catalog</code> 는 ORM 이지만 쓰기에 writer 를 쓴다).</li>
+<li>결과는 Service 가 Pydantic 으로 검증해서 내보낸다. 결과가 없으면 Service 가 기능 예외(예: <code>ProductNotFoundException</code>)로 바꾼다.</li>
+<li>외부 요청의 컬럼명·정렬식·SQL 조각을 그대로 전달하지 않는다. 입력 dict 는 <code>model_dump(exclude_unset=True)</code> 등으로 통제한다.</li>
+<li>도메인 쿼리는 기능 Repository 에 명시적 메서드로 둔다. 문자열 컬럼명을 받는 범용 필터를 늘리지 말고 모델 속성을 쓴다.</li>
+</ul>
+<h3 id="33-raw">3.3 Raw 를 골랐을 때 추가 규칙</h3>
+<p>어기면 AST 검사와 테스트(<code>tests/core/test_raw_repository_base.py</code>, <code>tests/core/test_raw_routing.py</code>)가 실패한다.</p>
+<ol>
+<li><strong>SQL 은 <code>text()</code> 로 만든 <code>TextClause</code>, 모듈 상수로 둔다.</strong> 메서드 안에서 문자열을 조립하지 않는다.</li>
+<li><strong>외부 값은 전부 named bind parameter</strong>(<code>:start_at</code>). f-string·<code>%</code>·<code>.format()</code>·문자열 연결 금지.
+   테이블·컬럼·정렬 방향처럼 바인딩할 수 없는 식별자는 요청값을 넣지 않고 코드가 소유한 고정 SQL 이나 allowlist 로 고른다.</li>
+<li><strong><code>query_name</code> 은 코드 상수.</strong> <code>feature.use_case</code> 형식(소문자·숫자·밑줄, 점 하나, 64자 이하)이며 어기면 실행 전에
+   <code>InvalidQueryNameError</code>. 로그 라벨이라 요청값이 섞이면 cardinality 가 폭발하고 값이 샌다.</li>
+<li><strong>읽기/쓰기 의도는 Base 가 붙인다.</strong> <code>fetch_*</code> 는 읽기, <code>execute</code> 와 <code>for_update=True</code> 는 쓰기다. read-only 세션에서 쓰기는
+   <code>DB_ROUTER_ENABLED</code> 와 무관하게 <strong>실행 전에</strong> <code>ReadOnlyRoutingError</code>. 잠금 읽기(SELECT ... FOR UPDATE)는 <code>for_update=True</code> —
+   replica 에서 잡은 잠금은 아무것도 보호하지 않는다. ORM 의 <code>with_for_update()</code> 도 같은 규칙이다(writer 로 가고 read-only 에서 거부).</li>
+<li><strong>방언 함수를 SQL 에 넣지 않는다.</strong> 단위 테스트는 SQLite, 운영은 MySQL 이다. 날짜 상한은 MySQL 전용 날짜 함수 대신 Service 가 계산한 배타 상한을 바인딩한다.</li>
+</ol>
+<p>자주 틀리는 지점:</p>
+<ul>
+<li><strong><code>updated_at</code> 이 갱신되지 않는다</strong> — <code>UpdatedAtMixin.onupdate</code> 는 ORM UPDATE 에만 적용된다. Raw INSERT/UPDATE 는 PK·시각·기본값을 SQL 에 직접 쓴다.</li>
+<li><strong>반환 타입이 DB 마다 다르다</strong> — 같은 컬럼이 SQLite 에서 <code>str</code>·<code>float</code>, MySQL 에서 <code>date</code>·<code>Decimal</code>. <code>RowMapping</code> 을 그대로 흘리지 말고 DTO 로 검증한다. 값 정확성은 MySQL 통합 테스트가 승인한다.</li>
+<li><strong><code>execute()</code> 의 rowcount 로 존재를 판단하지 않는다</strong> — 드라이버 설정에 따라 의미가 달라진다. 존재는 조회로 판단한다.</li>
+<li><strong>도메인 SQL 을 Base 에 두지 않는다</strong> — Base 가 한 기능의 쿼리를 알기 시작하면 모든 기능이 Base 를 통해 결합된다.</li>
+<li>Raw 는 "항상 빠름"도, "Schema·Service 불필요"도 아니다. SQL 안전 검사는 DB 권한·실행 계획을 대신하지 않는다.</li>
+</ul>
+<h3 id="34-orm-catalog">3.4 ORM 예제 — catalog 상품 생성 한 요청</h3>
+<pre><code class="language-text">POST /api/v1/catalog/products
+ → get_catalog_service: get_writer_db_session → CatalogService(session) → ProductRepository(session)
+ → create_product(payload) → repository.create(payload.model_dump())
+     → CRUDBase._add: session.add → await flush(INSERT·기본값·제약 확인) → await refresh
+ → view: response = ProductResponse.model_validate(product)   # 검증이 실패하면 커밋하지 않는다
+ → view: await service.commit() → return response → 201
+</code></pre>
+<ul>
+<li><code>Product</code> 는 <code>catalog_products</code>, <code>sku</code> unique, 금액은 <code>Numeric(12, 2)</code> ↔ <code>Decimal</code>. API 는 price·stock 에 <code>ge=0</code> 을 두지만 DB 선언이 같은 규칙을 강제하지는 않는다 — 입력은 스키마, 동시성 상황의 최종 무결성은 DB 제약이 지킨다.</li>
+<li>도메인 조회 <code>ProductRepository.get_active()</code> 는 <code>order_by(Product.sku)</code> 로 정렬한다. <code>active_only=false</code> 목록은 <code>get_all()</code> 의 기본 정렬(<code>created_at DESC, id DESC</code>)을 쓰고(OpenAPI 설명도 그렇게 적는다), <code>total</code> 은 필터와 무관한 전체 <code>count()</code> 다 — 새 기능은 같은 필터로 total 을 세고 고정 정렬(동률은 PK)을 명시한다.</li>
+<li>수정은 대상 조회로 존재를 보장한 뒤 <code>model_dump(exclude_unset=True)</code> 로 보낸 필드만 반영한다. 보낸 필드가 없으면 기존 값을 그대로 돌려준다(<code>tests/test_update_noop.py</code>).</li>
+</ul>
+<h3 id="35-raw-reports">3.5 Raw 예제 — reports 일별 매출</h3>
+<pre><code class="language-text">GET /api/v1/reports/daily-sales?start_date=2026-08-01&amp;end_date=2026-08-07
+ → get_report_service_readonly: get_read_only_db_session → ReportService
+ → 기간 검증(1970-01-01 ≤ 시작 ≤ 종료 ≤ 9998-12-31, 최대 366일 — 넘으면 422)
+ → start_at = 시작일 0시(TIME_ZONE)의 UTC 순간, end_exclusive = (종료일 + 1일) 0시의 UTC 순간
+ → SalesReportRawRepository.daily_sales(...)  fetch_all  query_name=&quot;sales_report.daily_sales&quot;
+   SalesReportRawRepository.order_count(...)  fetch_scalar query_name=&quot;sales_report.order_count&quot;
+ → [DailySalesItem.model_validate(dict(row)) ...] → DailySalesReportResponse (커밋 없음)
+</code></pre>
+<pre><code class="language-python">_DAILY_SALES_MYSQL_SQL = text(&quot;&quot;&quot;
+    SELECT DATE(CONVERT_TZ(o.ordered_at, '+00:00', :tz_offset)) AS sales_date, COUNT(*) AS order_count,
+           COALESCE(SUM(o.total_amount), 0) AS gross_amount
+    FROM sales_orders AS o
+    WHERE o.ordered_at &gt;= :start_at AND o.ordered_at &lt; :end_exclusive AND o.status = :status
+    GROUP BY sales_date ORDER BY sales_date ASC
+&quot;&quot;&quot;).bindparams(bindparam(&quot;start_at&quot;, type_=UTCDateTime()), bindparam(&quot;end_exclusive&quot;, type_=UTCDateTime()))
+# SQLite 판은 버킷만 DATE(o.ordered_at, :tz_modifier) ('+540 minutes') 로 다르다.
+</code></pre>
+<ul>
+<li>ORM 조회 흐름과 다른 곳은 Repository 한 줄뿐이다.</li>
+<li>API 의 <code>end_date</code> 는 <strong>포함</strong>, SQL 은 <code>&lt; :end_exclusive</code> <strong>미포함</strong>. 경계 변환을 Python 에서 하므로 기간 조건은 SQLite 와 MySQL 에서 같다 — 경계 조건을 SQL 밖으로 빼면 방언에서 자유로워진다.</li>
+<li>날짜는 <code>TIME_ZONE</code> 의 <strong>영업일</strong>이다. DB 는 UTC 라 2026-01-01T15:30Z 주문은 Asia/Seoul 로 1월 2일 매출이다. 일자 버킷의 오프셋 이동만 방언 함수가 달라 일별 SQL 이 둘이고, 세션 방언으로 고른다. 오프셋은 조회 시작일의 값 하나로 고정한다(DST 없는 시간대 전제 — 코드의 <code>ponytail:</code> 주석).</li>
+<li>집계 대상 상태(<code>paid</code>)는 요청값이 아니라 코드 상수다.</li>
+<li><code>SalesOrder</code> 모델은 있지만 Repository 는 import 하지 않는다. 모델의 역할은 <strong>스키마 소유권</strong>(registry·Alembic 이 <code>sales_orders</code> 를 이 앱의 것으로 인식)이다. Raw 기능도 테이블을 소유하면 모델을 두고, 남의 테이블을 읽기만 하면 두지 않는다(그 경우 drift 제외 정책을 먼저 설계한다).</li>
+<li>read-only 세션에서의 Raw DML 거부는 <code>app/features/reports/tests/test_raw_dml_workflow.py</code> 가 고정한다.</li>
+<li>이 기능은 DB 의 SQL VIEW 객체를 만들지 않는다. 집계 결과는 영속 모델이 아니라 DTO 다.</li>
+</ul>
+<hr><nav class="pager"><a href="feature-workflow.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="database-sessions.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

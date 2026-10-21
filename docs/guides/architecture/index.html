@@ -1,0 +1,2399 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>아키텍처 전체 레퍼런스</title><link rel="stylesheet" href="../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../index.html">프로젝트 가이드</a></strong><a href="../index.html">전체 메뉴</a><a href="../architecture/index.html">아키텍처</a><a href="../development/index.html">개발</a><a href="../reference/api.html">API</a><a href="../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>아키텍처 전체 레퍼런스</h1><p>설계 의도, 런타임 계약, 적용 방법과 확장 규칙을 코드 경로와 함께 설명합니다.</p></header>
+<div class="layout"><aside class="sidebar"><strong>이 문서</strong><ul><li><a href="sections/design-principles.html">0. 목적과 설계 원칙</a></li><li><a href="sections/structure.html">1. 모듈 경계와 계층</a></li><li><a href="sections/app-wiring.html">2. App Registry — Django 식 수동 앱 설치</a></li><li><a href="sections/configuration.html">3. 서버 수명주기와 설정</a></li><li><a href="sections/request-processing.html">4. 요청·세션·트랜잭션</a></li><li><a href="sections/logging.html">5. 로깅</a></li><li><a href="sections/access-logging.html">6. 접속 로그</a></li><li><a href="sections/authentication.html">7. 인증 (JWT)</a></li><li><a href="sections/admin.html">8. 관리 화면 (SQLAdmin)</a></li><li><a href="sections/celery.html">9. Celery</a></li><li><a href="sections/migrations.html">10. Alembic 마이그레이션</a></li><li><a href="sections/operations-security.html">11. 운영·보안과 알려진 제한</a></li><li><a href="sections/changelog.html">12. 변경 이력</a></li></ul></aside><main class="content"><span hidden id="0-목적과-설계-원칙"></span><span hidden id="1-모듈-경계와-계층"></span><span hidden id="10-alembic-마이그레이션"></span><span hidden id="11-운영보안과-알려진-제한"></span><span hidden id="111-배포-체크리스트--사람이-확인할-것"></span><span hidden id="12-변경-이력"></span><span hidden id="2-app-registry--django-식-수동-앱-설치"></span><span hidden id="27-앱-비활성화제거-시-주의"></span><span hidden id="3-서버-수명주기와-설정"></span><span hidden id="32-설정-로딩"></span><span hidden id="34-lifespan-과-자원-관리"></span><span hidden id="4-요청세션트랜잭션"></span><span hidden id="46-repository-두-계열"></span><span hidden id="5-로깅"></span><span hidden id="6-접속-로그"></span><span hidden id="7-인증-jwt"></span><span hidden id="71-인가--주체소유권슈퍼유저"></span><span hidden id="8-관리-화면-sqladmin"></span><section><div class="callout"><strong>저술 원본:</strong> <a href="../ARCHITECTURE.md">ARCHITECTURE.md</a>. 아래 HTML은 원문의 전체 내용이며, 각 2단계 제목은 독립 페이지로도 제공됩니다.</div></section><section><h1 id="_1">아키텍처 레퍼런스</h1>
+<p>이 문서는 <strong>지금 코드가 어떻게 동작하는가</strong>를 한곳에 모은 정본이다. 설치·실행은
+<a href="../../../README.md">README</a>, 새 기능을 만드는 방법과 규칙은 <a href="../development/index.html">개발 가이드</a>가 맡는다.</p>
+<ul>
+<li>기준: 2026-10-02 작업 트리. 코드와 이 문서가 어긋나면 <strong>코드가 정답</strong>이고, 확인한 뒤 이 문서를 고친다.</li>
+<li>폴더 트리는 README 의 <a href="../../../README.md#프로젝트-구조">프로젝트 구조</a>에만 둔다. 여기서는 모듈의 책임을 설명한다.</li>
+<li>설정 → 기동 → 요청 → 종료를 코드 흐름대로 따라 읽는 요약은 <a href="../workflows/server-lifecycle.html">서버 수명주기 안내서</a>다.
+  표·수치(예산·기본값·순서)의 정본은 이 문서이고, 안내서는 이 문서와 어긋나지 않게 함께 고친다.</li>
+<li>문서 전체 색인은 README 의 <a href="../../../README.md#문서-안내">문서 안내</a> 한 곳에 있다.</li>
+<li>문서 정합성은 <code>tests/test_docs_consistency.py</code>·<code>tests/test_docs_references.py</code> 가 검사한다.</li>
+</ul>
+<h2 id="_2">목차</h2>
+<ol start="0">
+<li><a href="#0-목적과-설계-원칙">목적과 설계 원칙</a></li>
+<li><a href="#1-모듈-경계와-계층">모듈 경계와 계층</a></li>
+<li><a href="#2-app-registry--django-식-수동-앱-설치">App Registry — Django 식 수동 앱 설치</a></li>
+<li><a href="#3-서버-수명주기와-설정">서버 수명주기와 설정</a></li>
+<li><a href="#4-요청세션트랜잭션">요청·세션·트랜잭션</a></li>
+<li><a href="#5-로깅">로깅</a></li>
+<li><a href="#6-접속-로그">접속 로그</a></li>
+<li><a href="#7-인증-jwt">인증 (JWT)</a></li>
+<li><a href="#8-관리-화면-sqladmin">관리 화면 (SQLAdmin)</a></li>
+<li><a href="#9-celery">Celery</a></li>
+<li><a href="#10-alembic-마이그레이션">Alembic 마이그레이션</a></li>
+<li><a href="#11-운영보안과-알려진-제한">운영·보안과 알려진 제한</a></li>
+<li><a href="#12-변경-이력">변경 이력</a></li>
+</ol>
+<hr>
+<h2 id="0">0. 목적과 설계 원칙</h2>
+<p>이 저장소는 <strong>Django 식으로 앱을 수동 설치하고, URL 은 라우터 파일로 수동 관리하는
+FastAPI 프로젝트 골격</strong>이다. 한 문장으로 줄이면 다음과 같다.</p>
+<blockquote>
+<p>앱의 설치 여부와 순서는 사람이 한 곳(<code>config.INSTALLED_APPS</code>)에서 명시하고,
+설치된 앱 내부의 결선(Router·Models·Admin)은 컨벤션이 처리한다.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>결정</th>
+<th>주체</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>어떤 앱을, 어떤 순서로 설치할지</td>
+<td>사람 — <code>config.INSTALLED_APPS</code></td>
+</tr>
+<tr>
+<td>설치된 앱의 Router·Models·Admin 결선</td>
+<td>App Registry — <code>AppConfig</code> 컨벤션</td>
+</tr>
+</tbody>
+</table>
+<h3 id="01">0.1 원칙</h3>
+<ul>
+<li><strong>설치는 목록에만 있다.</strong> <code>app/features/</code> 에 디렉터리를 만드는 것으로는 아무 일도 일어나지 않는다.
+  목록에서 빼면 디렉터리가 남아 있어도 route·registry 소유 모델·Admin·<code>ready()</code> 가 모두 빠진다.
+  대가로 설치 범위를 한 곳에서 읽고, 로드 순서를 목록 순서로 통제하며, 실험 중인 앱을 비활성으로 둘 수 있다.</li>
+<li><strong>URL 은 라우터 파일 계층이 소유한다.</strong> 프레임워크가 경로를 추론하지 않는다.</li>
+</ul>
+<p><code>text
+  v1/&lt;view&gt;.py   엔드포인트 경로        /products
+  router.py      버전·기능 prefix, tag  /v1/catalog, tags=["Catalog"]
+  AppConfig      마운트 prefix          /api
+    → /api/v1/catalog/products</code></p>
+<ul>
+<li><strong>기능 중심 구조.</strong> 한 기능의 Router·Dependency·Service·Repository·Model·Schema·Admin·테스트는
+  <code>app/features/&lt;name&gt;/</code> 안에 둔다. 기능 단위로 복사·삭제할 수 있어야 "탈착 가능한 앱"이 성립한다.</li>
+<li><strong>예측 가능한 트랜잭션 경계.</strong> 커밋은 쓰기 핸들러 본문이 응답 전에 한 번 한다(§4.5).
+  별도 UnitOfWork 계층은 두지 않는다.</li>
+<li><strong>조용한 실패 금지.</strong> 선택 모듈 부재는 허용하지만, 모듈 안의 import 오류·공개 이름 누락·route 충돌은 기동 실패다.</li>
+</ul>
+<h3 id="02">0.2 의도적으로 택하지 않은 것</h3>
+<table>
+<thead>
+<tr>
+<th>택하지 않은 것</th>
+<th>이유</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>디렉터리 자동 스캔으로 앱 활성화</td>
+<td>설치 범위와 순서가 파일 시스템 상태에 암묵적으로 끌려간다</td>
+</tr>
+<tr>
+<td><code>main.py</code> 에 <code>include_router</code> 를 앱마다 나열</td>
+<td>앱이 늘수록 <code>main.py</code> 가 모든 기능 추가의 공유 편집 지점이 된다(한때 이 방식으로 되돌렸다가 registry 로 복귀했다 — §12)</td>
+</tr>
+<tr>
+<td>기능 간 직접 import·FK·relationship 중심의 예제</td>
+<td>앱 탈착성이 깨진다. 실제 제품에서 관계를 추가할 때는 앱 제거 가능성과 migration 순서를 함께 설계한다</td>
+</tr>
+<tr>
+<td>관리 화면에 API 와 같은 JWT 를 쓰기</td>
+<td>브라우저 화면은 서명 세션 쿠키가 표준이다. 대신 세션은 <code>/admin</code> 하위 앱에만 두고 API 인증과 섞지 않는다(§8)</td>
+</tr>
+<tr>
+<td>인메모리 레이트 리밋</td>
+<td>워커별로 카운터가 갈라져 실질 한도를 보장하지 못했다. 필요하면 프록시·게이트웨이에서 건다</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="1">1. 모듈 경계와 계층</h2>
+<h3 id="11">1.1 의존 방향</h3>
+<pre><code class="language-text">features → core → utils
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>영역</th>
+<th>역할</th>
+<th>규칙</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/features/&lt;name&gt;/</code></td>
+<td>기능 vertical slice</td>
+<td>비즈니스 코드는 전부 여기. 다른 기능을 import 하지 않는다 — 예외는 횡단 관심사인 <code>auth</code> 가 <code>user</code> 의 <code>User</code> 모델·Repository 를 쓰는 것 하나</td>
+</tr>
+<tr>
+<td><code>app/core/</code></td>
+<td>프레임워크 인프라</td>
+<td>기능 구현을 직접 import 하지 않는다. 기능이 core 에 붙어야 하면 등록 훅을 쓴다(예: home 이 <code>set_access_log_sink()</code> 로 sink 등록). <code>Apps</code>·wiring adapter 만 설치 목록에 따라 기능 모듈을 동적으로 import 한다</td>
+</tr>
+<tr>
+<td><code>app/utils/</code></td>
+<td>순수 유틸(로그·인증·페이지네이션·검증)</td>
+<td>상위 계층에 의존하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<p>의존 방향은 <code>tests/test_layering_and_openapi.py</code> 가 AST 로 검사한다.</p>
+<h3 id="12">1.2 계층 책임</h3>
+<pre><code class="language-text">Router(view) → Depends(get_&lt;name&gt;_service) → Service(session) → Repository → AsyncSession → DB
+     ↑ 쓰기면 await service.commit() 을 여기서
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>계층</th>
+<th>하는 일</th>
+<th>하지 않는 일</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router(view)</td>
+<td>HTTP 입력 검증·Service 호출·<strong>커밋 시점 결정</strong>·응답 DTO 변환·OpenAPI 메타데이터</td>
+<td>SQL, 도메인 규칙</td>
+</tr>
+<tr>
+<td>Dependency</td>
+<td>세션 종류 선택, <code>Service(session)</code> 조립 후 <strong>return</strong></td>
+<td>비즈니스 실행, 커밋</td>
+</tr>
+<tr>
+<td>Service</td>
+<td>유스케이스·도메인 규칙, Repository 조합, 부재 → 기능 예외 변환</td>
+<td>FastAPI Request/Response 의존, SQL 문자열, 커밋 시점 결정</td>
+</tr>
+<tr>
+<td>Repository</td>
+<td>데이터 접근(ORM 또는 Raw), 필요 시 flush</td>
+<td>커밋, HTTP 상태 결정</td>
+</tr>
+<tr>
+<td>Model / Schema</td>
+<td>테이블 매핑 / 외부 입출력 계약</td>
+<td>앱 조립</td>
+</tr>
+</tbody>
+</table>
+<h3 id="13-core">1.3 core 모듈 책임</h3>
+<table>
+<thead>
+<tr>
+<th>모듈</th>
+<th>책임</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/core/bootstrap.py</code></td>
+<td><code>create_app()</code> factory, <code>lifespan</code>, 전역 예외 핸들러 5종, <code>/health</code>·<code>/ready</code>·Scalar <code>/docs</code></td>
+</tr>
+<tr>
+<td><code>app/core/resources.py</code></td>
+<td><code>manage_application_resources()</code> — Redis 검증, 개발용 테이블 생성, 종료 순서</td>
+</tr>
+<tr>
+<td><code>app/core/apps/</code></td>
+<td><code>AppConfig</code>·<code>Apps</code>·예외(Django lifecycle) + <code>wiring.py</code>(FastAPI·SQLAdmin adapter)</td>
+</tr>
+<tr>
+<td><code>app/core/db/session.py</code></td>
+<td>엔진·세션 팩토리(엔진 옵션 정본 <code>session.ENGINE_SAFETY_OPTIONS</code>), 세션 Dependency, <code>background_session()</code>, <code>owned_tables()</code>, <code>create_db_tables()</code>, <code>ping_writer_db()</code>, <code>dispose_engine()</code></td>
+</tr>
+<tr>
+<td><code>app/core/admin_filters.py</code></td>
+<td>관리 목록 날짜 필터 <code>LocalDateFilter</code> — 지역 날짜를 UTC 범위로 바꿔 <code>UTCDateTime</code> 컬럼을 거른다(sqladmin 미의존, §8)</td>
+</tr>
+<tr>
+<td><code>app/core/db/router.py</code></td>
+<td><code>DatabaseRouter</code>·<code>RoutingSession</code>, <code>using_writer</code>·<code>mark_read_only</code>·<code>is_read_only_session</code>, <code>read_intent</code>·<code>write_intent</code></td>
+</tr>
+<tr>
+<td><code>app/core/db/errors.py</code></td>
+<td><code>convert_db_error()</code> — DB 예외를 SQL·바인딩 값 없이 애플리케이션 예외로 변환</td>
+</tr>
+<tr>
+<td><code>app/core/exception.py</code></td>
+<td><code>AppException</code> 계층(<code>headers</code> 를 핸들러가 응답에 싣는다 — 429 <code>Retry-After</code>)과 <code>ErrorResponse</code></td>
+</tr>
+<tr>
+<td><code>app/core/redis.py</code></td>
+<td><code>get_redis()</code> 주입 provider, <code>ping_redis()</code>, 최소 버전 <code>redis.REDIS_MIN_VERSION</code>(7.0)·<code>ensure_redis_version()</code></td>
+</tr>
+<tr>
+<td><code>app/core/security/</code></td>
+<td>인증·인가 부품 <code>PasswordHasher</code>·<code>TokenService</code>·<code>RefreshTokenStore</code>·<code>RateLimiter</code>·<code>Principal</code>·<code>OwnershipPolicy</code>, 관리 세션 <code>admin_session.py</code>(<code>AdminSessionStore</code>·<code>RedisSessionMiddleware</code>, §8)와 주입 경로 <code>dependencies.py</code>(<code>get_current_principal</code>·<code>require_superuser</code>, §7·§7.1)</td>
+</tr>
+<tr>
+<td><code>app/core/models/models_base.py</code></td>
+<td><code>Base</code> + <code>UUIDPrimaryKeyMixin</code>·<code>CreatedAtMixin</code>·<code>UpdatedAtMixin</code>·<code>TimestampMixin</code></td>
+</tr>
+<tr>
+<td><code>app/core/repositories/</code></td>
+<td>ORM: <code>CRUDBase</code>·<code>BaseRepository</code> / Raw: <code>RawCRUDBase</code>·<code>RawRepositoryBase</code> (두 계열은 상속 관계가 없다)</td>
+</tr>
+<tr>
+<td><code>app/core/services/services_base.py</code></td>
+<td><code>BaseService</code> — 세션 보관, <code>commit()</code>·<code>rollback()</code> 헬퍼</td>
+</tr>
+<tr>
+<td><code>app/core/middlewares/</code></td>
+<td>CORS, <code>UserInfoMiddleware</code>, <code>AccessLogSink</code> Protocol, <code>BackgroundTaskRunner</code></td>
+</tr>
+<tr>
+<td><code>app/core/tags_metadata.py</code></td>
+<td>OpenAPI 태그 선언(라우터 태그와 집합이 같아야 한다)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2-app-registry-django">2. App Registry — Django 식 수동 앱 설치</h2>
+<h3 id="21-configinstalled_apps">2.1 <code>config.INSTALLED_APPS</code></h3>
+<pre><code class="language-python">INSTALLED_APPS: list[str] = [
+    &quot;app.features.home.apps.HomeConfig&quot;,
+    &quot;app.features.blog.apps.BlogConfig&quot;,
+    &quot;app.features.reply.apps.ReplyConfig&quot;,
+    &quot;app.features.sns.apps.SnsConfig&quot;,
+    &quot;app.features.user.apps.UserConfig&quot;,
+    &quot;app.features.auth.apps.AuthConfig&quot;,
+    &quot;app.features.catalog.apps.CatalogConfig&quot;,   # ORM 예제
+    &quot;app.features.reports.apps.ReportsConfig&quot;,   # Raw SQL 예제
+]
+</code></pre>
+<ul>
+<li>항목 형식은 Django 와 같다. <strong>config class 경로</strong>(권장)와 <strong>package 경로</strong>(<code>"app.features.blog"</code> →
+  <code>blog.apps</code> 에서 기본 config 선택) 둘 다 받는다. 짧은 이름(<code>"blog"</code>)은 받지 않는다.</li>
+<li><strong>순서가 계약이다.</strong> population·<code>ready()</code>·Router 등록·Admin view 등록이 모두 이 순서를 따른다. 새 앱은 뒤에 붙인다.</li>
+<li>환경변수로 덮어쓰지 않는다. 설치 구성은 코드 리뷰 대상이다.</li>
+<li>새 <strong>프로세스</strong>에서 목록에서 뺀 앱은 결선 대상에서 빠진다. 다만 같은 프로세스에서 이미 import 한 매핑 클래스는
+  전역 <code>Base.metadata</code> 에 남는다. registry 를 새로 만들어도 SQLAlchemy metadata 가 청소되지는 않는다.</li>
+</ul>
+<h3 id="22">2.2 앱 패키지와 결선 컨벤션</h3>
+<pre><code class="language-python"># app/features/&lt;name&gt;/apps.py
+from app.core.apps import AppConfig
+
+
+class &lt;Name&gt;Config(AppConfig):
+    name = &quot;app.features.&lt;name&gt;&quot;
+</code></pre>
+<p>기능 root <code>__init__.py</code> 는 <strong>가벼운 package marker</strong> 다. Router 도 Model 도 import 하지 않는다 —
+1단계(root package import)에서 하위 모듈이 딸려오면 3단계 순서가 무너진다.</p>
+<table>
+<thead>
+<tr>
+<th><code>AppConfig</code> 속성</th>
+<th>기본값</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>(필수)</td>
+<td>앱 package 전체 경로</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td><code>name</code> 의 마지막 조각</td>
+<td>유일해야 하고 유효한 Python identifier 여야 한다</td>
+</tr>
+<tr>
+<td><code>verbose_name</code></td>
+<td>label 의 title 표현</td>
+<td>예: <code>SnsConfig</code> 는 <code>"SNS"</code> 로 재정의</td>
+</tr>
+<tr>
+<td><code>default</code></td>
+<td><code>None</code></td>
+<td><code>&lt;package&gt;.apps</code> 에 config 가 여럿일 때 선택 표시</td>
+</tr>
+<tr>
+<td><code>router_module</code> / <code>router_attribute</code></td>
+<td><code>api.routers.router</code> / <code>&lt;label&gt;_router</code></td>
+<td>Router 결선</td>
+</tr>
+<tr>
+<td><code>models_module</code></td>
+<td><code>models</code></td>
+<td>이 module 에 <strong>노출된</strong> 매핑 클래스 중 <code>__module__</code> 이 앱 하위인 것을 수집 — <code>models/__init__.py</code> 에서 재노출해야 한다</td>
+</tr>
+<tr>
+<td><code>admin_module</code></td>
+<td><code>admin</code></td>
+<td>공개 이름 <code>admin_views</code></td>
+</tr>
+<tr>
+<td><code>tasks_module</code></td>
+<td><code>tasks</code></td>
+<td>Celery 태스크 module(선택). 워커 <code>include</code> 에 들어간다(§9)</td>
+</tr>
+<tr>
+<td><code>router_prefix</code></td>
+<td><code>/api</code></td>
+<td>마운트 prefix, 앱별 재정의 가능</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>구성요소</th>
+<th>module 이 없으면</th>
+<th>module 은 있는데 공개 이름이 없거나 내부 import 가 깨지면</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router</td>
+<td>route 없는 앱(정상)</td>
+<td>기동 실패 (<code>ImproperlyConfigured</code> / 원래 <code>ModuleNotFoundError</code>)</td>
+</tr>
+<tr>
+<td>Models</td>
+<td>테이블 없는 앱(정상, 예: <code>auth</code>)</td>
+<td>기동 실패</td>
+</tr>
+<tr>
+<td>Admin</td>
+<td>관리 화면 없는 앱(정상)</td>
+<td>기동 실패</td>
+</tr>
+<tr>
+<td>Tasks</td>
+<td>태스크 없는 앱(정상)</td>
+<td>워커가 include 를 import 할 때 실패 — 발견은 <code>find_spec</code> 으로 존재만 본다(§9)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-3-population">2.3 3단계 population</h3>
+<pre><code class="language-text">Apps.populate(INSTALLED_APPS)
+  1) config/root package import   →  apps_ready = True
+  2) models import                →  models_ready = True
+  3) AppConfig.ready()            →  ready = True
+</code></pre>
+<ul>
+<li>단계는 <strong>앱별이 아니라 phase 단위</strong>다. 모든 앱의 1단계가 끝난 뒤 2단계로 간다 — 어떤 <code>ready()</code> 든 모든 앱의 모델을 볼 수 있다.</li>
+<li>중복 항목, 중복 <code>name</code>, 중복 <code>label</code>, 잘못된 label, 해석할 수 없는 항목, <code>AppConfig</code> 가 아닌 class,
+  기본 config 를 고를 수 없는 경우(복수 후보에 <code>default=True</code> 가 하나가 아님)는 <code>ImproperlyConfigured</code>.</li>
+<li><code>populate()</code> 는 thread-safe(RLock)하고 멱등이다. 같은 목록으로 완료 후 재호출은 no-op, <strong>다른 목록</strong>이면
+  <code>ImproperlyConfigured</code>(다른 구성은 새 <code>Apps()</code> 로 만든다), 진행 중 재진입은 <code>RuntimeError</code>
+  (<code>ready()</code> 안에서 <code>populate()</code> 를 부르지 않는다). 실패하면 registry 상태를 되돌린 뒤 원래 예외를 전파한다 —
+  단, 이미 import 된 Python 모듈과 전역 metadata 까지 되돌리지는 않는다.</li>
+<li><code>populate(..., run_ready=False)</code> 는 1·2단계만 수행한다. Alembic·Celery 워커(<code>app/celery/app.py</code>)와 startup DDL 준비가 쓴다. 이후 같은 registry 에
+  <code>run_ready=True</code> 로 다시 부르면 3단계만 실행된다.</li>
+<li>조회 API: <code>get_app_configs()</code>, <code>get_app_config(label)</code>, <code>is_installed(name)</code>, <code>get_models()</code>,
+  <code>get_model(app_label, model_name)</code>(대소문자 무시). 준비 전 조회는 <code>AppRegistryNotReady</code>, 없는 대상은 <code>AppLookupError</code>.</li>
+<li>전역 기본 registry 는 <code>app.core.apps.apps</code>. 테스트와 factory 는 <code>Apps()</code> 를 새로 만들어 주입할 수 있다.</li>
+</ul>
+<h3 id="24-wiring-adapter-appcoreappswiringpy">2.4 wiring adapter (<code>app/core/apps/wiring.py</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>함수</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>install_routers(app, registry)</code></td>
+<td>설치 순서대로 <code>&lt;label&gt;_router</code> 를 <code>router_prefix</code> 로 마운트. 두 앱이 같은 method + 최종 path 를 등록하면 <code>ImproperlyConfigured</code> 로 기동 실패(먼저 등록된 쪽이 조용히 이기지 않는다)</td>
+</tr>
+<tr>
+<td><code>install_admin(admin, registry)</code></td>
+<td>설치 앱의 <code>admin_views</code> 를 선언 순서대로 <code>add_view</code></td>
+</tr>
+<tr>
+<td><code>create_admin(app, engine, registry, title=...)</code></td>
+<td><strong>함수 안에서</strong> <code>sqladmin</code> 을 import 하고, 슈퍼유저 로그인 백엔드(<code>AdminAuthBackend</code>)를 조립해 <code>Admin(authentication_backend=..., templates_dir=...)</code> 로 <code>/admin</code> 을 마운트(§8). <code>ADMIN_DISABLED=true</code> 프로세스는 이 함수를 부르지 않아 sqladmin 과 앱별 <code>admin.py</code> 를 로드조차 하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<p><code>app/core/apps/config.py</code>·<code>registry.py</code> 는 FastAPI·SQLAdmin·SQLAlchemy 를 import 하지 않는다. Alembic·CLI 가
+registry 를 써도 웹 스택이 딸려오지 않는다(<code>tests/core/apps/test_core_independence.py</code>,
+<code>tests/core/test_admin_lazy_loading.py</code>).</p>
+<h3 id="25-ready">2.5 <code>ready()</code> 의 제약</h3>
+<p><code>ready()</code> 는 <strong>process-local wiring 전용</strong>이다.</p>
+<ul>
+<li>허용: 모듈 전역 결선(예: <code>HomeConfig.ready()</code> 의 access-log sink 등록 — 현재 유일한 사용처), 다른 앱 모델 조회(<code>apps.get_model(...)</code>)</li>
+<li>금지: DB 쿼리·커밋, network 호출, subprocess 실행, secret 출력</li>
+</ul>
+<p>migration 과 CLI 도 이 hook 을 실행할 수 있기 때문이다(<code>alembic upgrade</code> 가 외부 연결을 만들면 배포가 예측 불가능해진다).
+Alembic 은 <code>run_ready=False</code> 로 hook 자체를 건너뛴다. 회귀 가드는
+<code>tests/core/apps/test_installed_apps.py</code> 의 <code>test_ready_hooks_perform_no_io</code>(구현을 AST 로 읽는다).</p>
+<h3 id="26-django">2.6 Django 호환 범위</h3>
+<p>기준: <a href="https://docs.djangoproject.com/en/6.0/ref/applications/">Django 6.0 — Applications</a>. "Django 식"이
+어디까지 실제 호환이고 어디부터 이 프로젝트 확장인지 구분한다.</p>
+<p><strong>동일</strong> — app loading lifecycle 의 공개 의미를 보존한다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>Django</th>
+<th>이 프로젝트</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>설치 목록</td>
+<td><code>settings.INSTALLED_APPS</code></td>
+<td><code>config.INSTALLED_APPS</code></td>
+</tr>
+<tr>
+<td>항목 형식</td>
+<td>package 경로 또는 <code>AppConfig</code> class 경로</td>
+<td>동일</td>
+</tr>
+<tr>
+<td>기본 config 선택</td>
+<td><code>&lt;package&gt;.apps</code> 후보 0개 → 기본 <code>AppConfig</code>, 1개 → 그것, 복수 → 유일한 <code>default=True</code></td>
+<td>동일</td>
+</tr>
+<tr>
+<td>정규화 결과</td>
+<td><code>name</code>·<code>label</code>·<code>verbose_name</code>·<code>path</code>·<code>module</code></td>
+<td>동일</td>
+</tr>
+<tr>
+<td>초기화</td>
+<td>config/root package → models → <code>ready()</code>, phase 단위, 목록 순서</td>
+<td>동일</td>
+</tr>
+<tr>
+<td>준비 상태</td>
+<td><code>apps_ready</code>·<code>models_ready</code>·<code>ready</code></td>
+<td>동일</td>
+</tr>
+<tr>
+<td>고유성</td>
+<td><code>name</code>·<code>label</code> 각각 유일</td>
+<td>동일</td>
+</tr>
+<tr>
+<td>조회 API</td>
+<td><code>get_app_configs</code>·<code>get_app_config</code>·<code>is_installed</code>·<code>get_models</code>·<code>get_model</code></td>
+<td>동일(<code>get_model</code> 대소문자 무시)</td>
+</tr>
+<tr>
+<td>재진입 / 중복 populate</td>
+<td>금지 / no-op</td>
+<td><code>RuntimeError</code> / 같은 목록 no-op, 다른 목록 <code>ImproperlyConfigured</code></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Django 예외</th>
+<th>이 프로젝트 (<code>app.core.apps.exceptions</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>django.core.exceptions.ImproperlyConfigured</code></td>
+<td><code>ImproperlyConfigured</code></td>
+</tr>
+<tr>
+<td><code>django.core.exceptions.AppRegistryNotReady</code></td>
+<td><code>AppRegistryNotReady</code></td>
+</tr>
+<tr>
+<td><code>LookupError</code></td>
+<td><code>AppLookupError</code> (<code>LookupError</code> 서브클래스)</td>
+</tr>
+</tbody>
+</table>
+<p>모든 registry 예외의 공통 base 는 <code>AppRegistryError</code> 다.</p>
+<p><strong>확장</strong> — Django 에는 없다. Django 기능이라고 부르지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router 결선</td>
+<td><code>router_module</code> 의 <code>&lt;label&gt;_router</code> 를 <code>router_prefix</code> 로 마운트, route 충돌 시 기동 실패</td>
+</tr>
+<tr>
+<td>Admin 결선</td>
+<td><code>admin_module</code> 의 <code>admin_views</code> 를 SQLAdmin 에 등록(지연 import)</td>
+</tr>
+<tr>
+<td>Model 수집</td>
+<td>SQLAlchemy 매핑 클래스 중 <code>__module__</code> 이 앱 package 하위인 것</td>
+</tr>
+<tr>
+<td>Alembic 통합</td>
+<td><code>migrations/env.py</code> 가 같은 구현을 <code>run_ready=False</code> 로 사용</td>
+</tr>
+<tr>
+<td><code>create_app()</code></td>
+<td>설치 목록·registry·Admin 여부를 주입받는 factory</td>
+</tr>
+<tr>
+<td>선택 module 구분</td>
+<td>부재는 허용, 내부 import 실패는 기동 실패</td>
+</tr>
+</tbody>
+</table>
+<p><strong>비지원</strong> — Django 코드를 옮겨도 동작하지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>Django 기능</th>
+<th>대체</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Django ORM·QuerySet·manager</td>
+<td>SQLAlchemy 2.0 async</td>
+</tr>
+<tr>
+<td>Django migration engine</td>
+<td>Alembic</td>
+</tr>
+<tr>
+<td>URLConf (<code>urls.py</code>, <code>path()</code>, <code>reverse()</code>)</td>
+<td>FastAPI <code>APIRouter</code></td>
+</tr>
+<tr>
+<td>signals</td>
+<td>명시적 Service 호출</td>
+</tr>
+<tr>
+<td>template / static 자동 탐색</td>
+<td>없음(API 전용)</td>
+</tr>
+<tr>
+<td>management command 프레임워크</td>
+<td><code>scripts/</code> 의 개별 스크립트</td>
+</tr>
+<tr>
+<td><code>AppConfig.default_auto_field</code></td>
+<td>모델이 직접 선언(<code>UUIDPrimaryKeyMixin</code>)</td>
+</tr>
+<tr>
+<td><code>apps.get_containing_app_config()</code></td>
+<td>없음</td>
+</tr>
+<tr>
+<td>settings 분기에 따른 조건부 설치</td>
+<td>없음 — 목록은 코드 리뷰 대상</td>
+</tr>
+<tr>
+<td>앱 제거 시 데이터 migration 자동 생성</td>
+<td>없음(§2.7)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="27">2.7 앱 비활성화·제거 시 주의</h3>
+<p><strong>목록에서 빼도 테이블은 지워지지 않는다.</strong> 앱을 목록에서 빼면 route·Admin view·<code>ready()</code>·Celery 태스크(워커 <code>include</code>)는 즉시 사라지고,
+깨끗한 migration 프로세스에서 그 앱의 모델이 수집 대상에서 빠진다 → <code>alembic revision --autogenerate</code> 가
+DROP TABLE 을 <strong>제안할 수 있다</strong>. 데이터를 보존해야 하면 생성된 migration 을 그대로 적용하지 않는다.</p>
+<pre><code class="language-text">1. 앱을 목록에서 뺀다 → 테스트 → route/Admin 이 사라졌는지 확인
+2. alembic revision --autogenerate 로 제안된 diff 를 읽는다
+3. 데이터가 필요 없으면 그대로, 필요하면 편집하거나 별도 보존 절차를 만든다
+4. alembic upgrade head
+</code></pre>
+<h3 id="28-id">2.8 코드 주석의 요구 ID 색인</h3>
+<p>코드·테스트 주석의 <code>FR-*</code>·<code>CR-*</code>·<code>NFR-*</code>·<code>SEC-*</code>·<code>AC-*</code> 와 <code>§6.x</code> 는 registry 이식(2026-08-12) 때의 통합 계획서
+번호다. 계획서는 구축 완료 후 커밋 <code>7dc527b</code> 에서 삭제했고(원문은 그 부모 커밋에 있다), 의미는 아래가 유지한다. <code>RAW-REP-*</code>·<code>NFR-0xx</code>·<code>DOC-*</code>·<code>development-plan §N</code>·<code>Phase N</code> 은
+<code>docs/specs/orm-raw-repository/</code> 를, <code>ADR-*</code>·<code>C-*</code>·<code>F-*</code>·<code>L-*</code> 는 <code>docs/crp/groups/</code> 를 가리킨다.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-01</td>
+<td>설치 SSOT 는 <code>config.INSTALLED_APPS</code>. 디렉터리 존재만으로 활성화하지 않는다</td>
+</tr>
+<tr>
+<td>FR-02 / FR-03</td>
+<td>package 경로·config class 경로를 받아 <code>AppConfig</code>(name·label·verbose_name·path·module)로 정규화</td>
+</tr>
+<tr>
+<td>FR-04</td>
+<td>설치 앱의 Router·Models·Admin 을 설정대로 결선, 구성요소 없는 앱 허용</td>
+</tr>
+<tr>
+<td>FR-05</td>
+<td>조회 API 5종 제공</td>
+</tr>
+<tr>
+<td>FR-06</td>
+<td>모델 import 와 Alembic metadata 가 같은 목록·같은 registry 구현을 쓴다</td>
+</tr>
+<tr>
+<td>FR-07</td>
+<td><code>create_app()</code> 이 population → middleware → 예외 → Router → 조건부 Admin 순으로 조립 (§6.5)</td>
+</tr>
+<tr>
+<td>FR-08</td>
+<td><code>AppConfig.ready()</code> hook</td>
+</tr>
+<tr>
+<td>FR-09 / FR-10</td>
+<td>생성기가 <code>apps.py</code>·Router 골격을 만들고, 설정 파일은 고치지 않은 채 붙여 넣을 한 줄을 출력</td>
+</tr>
+<tr>
+<td>CR-01 / CR-02</td>
+<td>기본 config 선택 규칙 / explicit class 검증</td>
+</tr>
+<tr>
+<td>CR-03 / CR-05 / CR-07</td>
+<td>3단계 순서, 준비 flag 는 phase 완료 후, <code>ready()</code> 는 앱별 1회</td>
+</tr>
+<tr>
+<td>CR-04 / CR-06</td>
+<td>name·label 유일성과 identifier 검증 / 준비 전·조회 실패를 명시적 예외로</td>
+</tr>
+<tr>
+<td>CR-08</td>
+<td>Router·SQLAdmin 결선은 adapter 이며 Django 기능이라 부르지 않는다</td>
+</tr>
+<tr>
+<td>NFR-01</td>
+<td>등록 순서가 결정적(파일 시스템 열거 순서에 의존하지 않음)</td>
+</tr>
+<tr>
+<td>NFR-02 / NFR-04</td>
+<td>populate 는 thread-safe·멱등·재진입 거부 / 실패 시 부분 상태를 남기지 않음</td>
+</tr>
+<tr>
+<td>NFR-03 / NFR-07</td>
+<td>모듈 부재와 내부 import 실패 구분(traceback 보존) / 오류 메시지에 고칠 위치 포함</td>
+</tr>
+<tr>
+<td>NFR-05 / NFR-06</td>
+<td>격리 <code>Apps()</code> 주입 가능 / registry core 는 FastAPI·SQLAdmin 에 의존하지 않음</td>
+</tr>
+<tr>
+<td>NFR-08</td>
+<td>registry·adapter 커버리지 기준(프로젝트 전체 하한은 <code>pyproject.toml</code> <code>fail_under</code> 하나가 정본이고 CI·로컬 게이트가 함께 읽는다 — 기본 0 = 측정만, 필요해지면 그 값만 올린다)</td>
+</tr>
+<tr>
+<td>SEC-01</td>
+<td><code>ADMIN_DISABLED=true</code> 면 sqladmin·앱 <code>admin.py</code> 를 로드하지 않음</td>
+</tr>
+<tr>
+<td>SEC-02</td>
+<td>allowlist(<code>INSTALLED_APPS</code>)만 import, 디렉터리 스캔 금지</td>
+</tr>
+<tr>
+<td>SEC-03 / SEC-04</td>
+<td>생성기 경로 이탈 차단 / 부분 생성·덮어쓰기 금지</td>
+</tr>
+<tr>
+<td>SEC-05</td>
+<td><code>ready()</code> 에서 DB·network·subprocess·secret 출력 금지</td>
+</tr>
+<tr>
+<td>SEC-07</td>
+<td>내부 import 실패를 선택 기능 부재로 위장하지 않음</td>
+</tr>
+<tr>
+<td>§6.7</td>
+<td>Alembic 은 <code>run_ready=False</code> 로 registry 를 채운다</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>인수 조건</th>
+<th>검증 테스트</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AC-01 config 선택·정규화</td>
+<td><code>tests/core/apps/test_config.py</code></td>
+</tr>
+<tr>
+<td>AC-02 population 순서</td>
+<td><code>tests/core/apps/test_population_order.py</code></td>
+</tr>
+<tr>
+<td>AC-03 오류 종류·메시지</td>
+<td><code>tests/core/apps/test_registry_errors.py</code></td>
+</tr>
+<tr>
+<td>AC-04 동시·재진입·멱등</td>
+<td><code>tests/core/apps/test_registry_lifecycle.py</code></td>
+</tr>
+<tr>
+<td>AC-05 선택 module</td>
+<td><code>tests/core/apps/test_optional_modules.py</code></td>
+</tr>
+<tr>
+<td>AC-06 미등록 앱 비노출</td>
+<td><code>tests/core/apps/test_manual_registration.py</code></td>
+</tr>
+<tr>
+<td>AC-07 Admin 지연 로드</td>
+<td><code>tests/core/test_admin_lazy_loading.py</code></td>
+</tr>
+<tr>
+<td>AC-08 Admin 결선</td>
+<td><code>tests/core/test_admin_wiring.py</code></td>
+</tr>
+<tr>
+<td>AC-09 runtime·Alembic 모델 동일</td>
+<td><code>tests/core/test_alembic_metadata.py</code>, <code>tests/core/test_migration_chain.py</code></td>
+</tr>
+<tr>
+<td>AC-10 / AC-11 생성기 동작·경계</td>
+<td><code>tests/scripts/test_new_app.py</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3">3. 서버 수명주기와 설정</h2>
+<div class="mermaid">flowchart TD
+    A["main:app import"] --> B["config.py — 설정 생성·검증"]
+    B --> C["로깅·엔진 객체 준비 (아직 접속 아님)"]
+    C --> D["create_app — registry population·미들웨어·예외·Router·/health·/ready·Admin"]
+    D --> E["lifespan 진입 → manage_application_resources"]
+    E --> F["Redis ping + 버전 >= 7.0 (실패 시 기동 중단)"]
+    F --> G{"소유 테이블 > 0 이고 DEBUG?"}
+    G -- 예 --> H["create_db_tables (개발용 DDL)"]
+    G -- 아니오 --> I["DDL 생략"]
+    H --> J["yield — 요청 처리"]
+    I --> J
+    J --> K["종료: background drain → Redis close → DB dispose"]
+</div>
+<h3 id="31">3.1 진입점과 프로세스 경계</h3>
+<ul>
+<li><code>main.py</code> 는 <code>app = create_app()</code> 과 직접 실행용 <code>uvicorn.run()</code> 만 둔다. 직접 실행(<code>uv run python main.py</code>)은
+  <code>SERVER_HOST</code>·<code>SERVER_PORT</code>·<code>reload=DEBUG</code>·<code>setup_uvicorn_logging()</code> 을 넘긴다. <code>uvicorn main:app</code> CLI 는
+  CLI 옵션을 따르며 <code>DEBUG=true</code> 만으로 reload 가 켜지지 않는다.</li>
+<li>두 경로 모두 정상 ASGI lifespan 을 탄다. <code>--lifespan off</code> 는 Redis 검증·자원 정리를 건너뛰므로 정상 경로가 아니다.</li>
+<li>reload·다중 worker 는 프로세스마다 import·lifespan 을 다시 수행한다. API worker 마다 Redis client 와 DB pool 이 따로 있고,
+  Celery worker 는 별도 프로세스다.</li>
+<li>factory 로 만든 이유는 테스트가 <strong>격리된 앱</strong>(auth 를 뺀 앱, 관리 화면을 끈 앱, 독립 registry 앱)을 만들어
+  "등록 안 한 앱은 안 붙는다"를 실행으로 증명하기 위해서다.</li>
+</ul>
+<h3 id="32">3.2 설정 로딩</h3>
+<p><code>config.py</code> 의 각 <code>BaseSettings</code> 는 <code>env_file=".env"</code>, <code>extra="ignore"</code> 로 <strong>자기 필드만</strong> 해석한다.</p>
+<ul>
+<li>우선순위: 프로세스 환경변수 → <strong>작업 디렉터리의</strong> <code>.env</code> → 필드 기본값. <code>.env.example</code> 은 복사용 목록이며 자동 fallback 이 아니다.</li>
+<li>리스트 값은 JSON 배열로 준다(예: <code>CORS_ALLOW_ORIGINS=["http://localhost:3000"]</code>). <code>DEBUG=false</code> 는 bool 로 파싱된다.</li>
+<li><code>get_*_settings()</code> 는 <code>lru_cache</code> 싱글턴이고, 모듈 끝의 <code>app_settings</code> 등 전역 참조가 import 시 만들어진다.
+  실행 중 <code>.env</code> 를 바꿔도 반영되지 않는다. 테스트에서 캐시를 비워도 이미 가져간 전역 참조는 바뀌지 않는다.</li>
+<li>타입 오류·validator 위반은 <code>config</code> import 자체를 실패시킨다(lifespan 이전).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>설정 클래스 (전역 인스턴스)</th>
+<th>소비처</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TimezoneSettings</code> (<code>timezone_settings</code>)</td>
+<td>모델 시각 기본값, 로그 시각, Celery timezone</td>
+</tr>
+<tr>
+<td><code>AppSettings</code> (<code>app_settings</code>)</td>
+<td>앱 메타데이터, <code>DEBUG</code>·<code>ENV</code>·<code>ADMIN_DISABLED</code>, 직접 실행 host/port</td>
+</tr>
+<tr>
+<td><code>DatabaseSettings</code> (<code>db_settings</code>)</td>
+<td>DSN·라우팅·풀, <code>session.py</code>, Alembic URL</td>
+</tr>
+<tr>
+<td><code>CORSSettings</code> (<code>cors_settings</code>)</td>
+<td><code>CustomCORSMiddleware</code></td>
+</tr>
+<tr>
+<td><code>LogSettings</code> (<code>log_settings</code>)</td>
+<td><code>build_dictconfig()</code> — 앱·<code>python main.py</code>·<code>uvicorn main:app</code> CLI·Celery 워커가 함께 쓴다</td>
+</tr>
+<tr>
+<td><code>MiddlewareSettings</code> (<code>middleware_settings</code>)</td>
+<td><code>UserInfoMiddleware</code> 활성·제외 규칙·민감 query 키, <code>ClientIPResolver</code> 신뢰 홉 수</td>
+</tr>
+<tr>
+<td><code>RedisSettings</code> (<code>redis_settings</code>)</td>
+<td>startup Redis ping, Celery broker/backend</td>
+</tr>
+<tr>
+<td><code>JWTSettings</code> (<code>jwt_settings</code>)</td>
+<td>토큰 서명·검증·수명</td>
+</tr>
+<tr>
+<td><code>SessionSettings</code> (<code>session_settings</code>)</td>
+<td><code>SESSION_COOKIE_NAME</code> 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 <code>session_id</code> 로 기록, 인증에는 쓰지 않는다). <code>SESSION_SECRET_KEY</code> 는 <code>/admin</code> 관리 세션 ID 를 Redis 키(<code>admin:sess:{HMAC}</code>)로 바꾸는 HMAC 키다(§8). 관리 세션 만료는 <code>ADMIN_SESSION_*</code> 가 정한다(미사용이 절대보다 크면 기동 실패, 값은 <a href="../../../README.md#세션토큰-만료">README 세션·토큰 만료</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>API 버전 prefix(<code>/v1</code>)는 설정이 아니라 각 기능 <code>router.py</code> 가 정한다 — 버전 설정 클래스는 config-cleanup-2 에서 지웠다(<code>.env</code> 에 남은 줄은 무시된다, §12).</p>
+<p><strong>설정 검증(fail-fast)</strong></p>
+<table>
+<thead>
+<tr>
+<th>검증</th>
+<th>거부 조건</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DatabaseSettings._validate_routing</code></td>
+<td>복제 on + 라우터 off, 복제 on + replica 목록 비어 있음, 잘못된 replica 표기(IPv6 는 대괄호 필수), <code>DB_MAX_SERVER_CONNECTIONS</code> 가 0이 아닐 때 최대 연결 수 초과</td>
+</tr>
+<tr>
+<td><code>CORSSettings._reject_wildcard_with_credentials</code></td>
+<td>Origin <code>*</code> 와 <code>CORS_ALLOW_CREDENTIALS=true</code> 조합</td>
+</tr>
+<tr>
+<td><code>_validate_cross_settings()</code></td>
+<td>production/staging 에서 <code>LOG_SQL_ECHO_ENABLED=true</code></td>
+</tr>
+<tr>
+<td><code>validate_removed_settings()</code></td>
+<td>예전 <code>ADMIN</code> 설정이 환경 변수나 <code>.env</code> 에 남아 있다(대소문자 무시) — 뜻이 뒤집혀 <code>ADMIN_DISABLED</code> 로 바뀌었으므로 조용히 무시하지 않는다. test 는 검사하지 않는다</td>
+</tr>
+<tr>
+<td><code>validate_env_source()</code></td>
+<td><code>.env</code> 가 없으면 필수 값(<code>ENV</code>·비밀 키 3종·<code>MYSQL_HOST/USER/PASSWORD/DATABASE</code>)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다</td>
+</tr>
+<tr>
+<td><code>validate_deployment_safety()</code></td>
+<td>test 외 모든 ENV(개발 포함)에서 <code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>·<code>MYSQL_PASSWORD</code> 중 placeholder(빈 값·<code>your-</code> 시작·<code>change-this</code> 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. <code>REDIS_PASSWORD</code> 는 <strong>값이 있을 때만</strong> 같은 판정을 받는다(인증 없는 Redis 는 정당한 구성이라 빈 값을 막지 않는다). <strong>또는</strong> production/staging 에서 <code>DEBUG=true</code> 이거나 <code>LOG_LEVEL</code> 이 <code>DEBUG</code>(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 <code>ValueError</code> 로 알리고 메시지에는 설정 <strong>이름만</strong> 담는다(값은 싣지 않는다). test 는 검사하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<p><code>_validate_cross_settings()</code>·<code>validate_env_source()</code>·<code>validate_removed_settings()</code>·<code>validate_deployment_safety()</code> 는 모듈 함수라 <code>config</code> import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
+배포 환경에서 관리 화면을 켜는 것은 더 이상 거부하지 않는다 — <code>/admin</code> 은 슈퍼유저 로그인이 필요하다(§8). 쓰지 않는 배포는 <code>ADMIN_DISABLED=true</code>.</p>
+<p><strong>주요 환경변수</strong> (전체 목록과 설명은 <code>.env.example</code>)</p>
+<table>
+<thead>
+<tr>
+<th>변수</th>
+<th>기본값</th>
+<th>효과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEBUG</code></td>
+<td><code>true</code></td>
+<td>true: 개발용 테이블 자동 생성, <code>/docs</code>·<code>/openapi.json</code> 노출, 미지정 로그 레벨 DEBUG, 직접 실행 시 reload. false: 모두 반대(로그 INFO, 스키마는 Alembic)</td>
+</tr>
+<tr>
+<td><code>ADMIN_DISABLED</code></td>
+<td><code>false</code></td>
+<td>false: <code>/admin</code> 마운트(슈퍼유저 로그인 필요, §8). true: 관리 화면 자체가 없다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 생기지 않고 응답 어디에도 경로가 나오지 않는다. <code>DEBUG</code> 와 독립</td>
+</tr>
+<tr>
+<td><code>ENV</code></td>
+<td><code>development</code></td>
+<td>development / staging / production / test. 로그 핸들러·타임존과 위 검증에 쓰인다</td>
+</tr>
+<tr>
+<td><code>SERVER_HOST</code> / <code>SERVER_PORT</code></td>
+<td><code>0.0.0.0</code> / <code>8000</code></td>
+<td>직접 실행 시 바인딩</td>
+</tr>
+<tr>
+<td><code>MYSQL_HOST</code> / <code>MYSQL_PORT</code> / <code>MYSQL_USER</code> / <code>MYSQL_PASSWORD</code> / <code>MYSQL_DATABASE</code></td>
+<td><code>localhost</code> / <code>3306</code> / <code>root</code> / 빈 값 / <code>fastapi_db</code></td>
+<td>primary(writer) DSN</td>
+</tr>
+<tr>
+<td><code>DB_ROUTER_ENABLED</code> / <code>DB_REPLICATION_ENABLED</code></td>
+<td><code>false</code> / <code>false</code></td>
+<td>읽기/쓰기 라우팅(§4.4)</td>
+</tr>
+<tr>
+<td><code>REDIS_HOST</code> / <code>REDIS_PORT</code> / <code>REDIS_DB</code> / <code>REDIS_PASSWORD</code></td>
+<td><code>localhost</code> / <code>6379</code> / <code>0</code> / 없음</td>
+<td>startup ping 대상이자 Celery broker/backend</td>
+</tr>
+<tr>
+<td><code>ACCESS_TOKEN_SECRET_KEY</code> / <code>REFRESH_TOKEN_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td>JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부</td>
+</tr>
+<tr>
+<td><code>SESSION_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td><code>/admin</code> 관리 세션 ID → Redis 키 HMAC 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부</td>
+</tr>
+</tbody>
+</table>
+<p>세션·토큰 만료(<code>ADMIN_SESSION_*</code>·<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)는 <a href="../../../README.md#세션토큰-만료">README 세션·토큰 만료</a> 표 한 곳에 모았다.</p>
+<h3 id="33-create_app">3.3 <code>create_app()</code> 조립 순서</h3>
+<pre><code class="language-python">def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -&gt; FastAPI: ...
+</code></pre>
+<ol>
+<li>설치 목록 결정(<code>config.INSTALLED_APPS</code> 또는 주입값), registry 결정(전역 <code>apps</code> 또는 주입값)</li>
+<li><code>registry.populate(apps_list)</code> — config → models → <code>ready()</code></li>
+<li><code>FastAPI(...)</code> 생성 — <code>docs_url=None</code>, <code>redoc_url=None</code>, <code>openapi_url</code> 은 <code>DEBUG</code> 일 때만 <code>/openapi.json</code>, <code>lifespan</code> 연결</li>
+<li>CORS → <code>UserInfoMiddleware</code> 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 5종</li>
+<li><code>install_routers(app, registry)</code></li>
+<li><code>/health</code>, <code>/ready</code>, <code>DEBUG</code> 일 때만 Scalar <code>/docs</code></li>
+<li><code>app.state.app_registry</code> 저장, <code>admin_disabled</code>(기본 <code>ADMIN_DISABLED</code>)가 false 면 <code>create_admin(...)</code> — 끈 경우 로그에도 경로를 싣지 않는다</li>
+</ol>
+<p>2번이 3번보다 먼저인 이유는 모델·hook 등록을 앱 조립 전에 끝내기 위해서다.</p>
+<h3 id="34-lifespan">3.4 lifespan 과 자원 관리</h3>
+<p><code>lifespan</code> 은 <code>manage_application_resources(app)</code> 를 열고 yield 할 뿐이다. 자원별 코드는 <code>app/core/resources.py</code> 한 곳에 있다.</p>
+<pre><code class="language-python">async with AsyncExitStack() as cleanup:
+    cleanup.push_async_callback(_dispose_db_engines)       # 종료 시 3번째
+    await cleanup.enter_async_context(_redis(app))         # 종료 시 2번째
+    cleanup.push_async_callback(_drain_background_tasks)   # 종료 시 1번째
+    await _prepare_database(resources)
+    yield resources
+</code></pre>
+<p><strong>Redis 검증</strong> — <code>Redis.from_url(redis_settings.REDIS_URL, socket_connect_timeout=5, socket_timeout=5)</code> 후 <code>ping()</code>.
+실패하면 오류 타입만 ERROR 로 남기고 다시 raise 한다 → yield 에 도달하지 않아 서버가 시작되지 않는다.
+이어서 <code>ensure_redis_version()</code>(<code>app/core/redis.py</code>)이 <code>INFO server</code> 의 <code>redis_version</code> 을 <code>redis.REDIS_MIN_VERSION</code>(<strong>7.0</strong>)과 비교해
+낮으면 <code>UnsupportedRedisVersion</code> 으로 기동을 멈춘다. 7.0 은 근거가 있는 값이다 — 레이트 리밋이 <code>EXPIRE … NX</code>(7.0)를, refresh 회전이
+GETDEL(6.2)을 쓰고 최소 버전은 그 최댓값이다(6.x 서버는 <code>EXPIRE NX</code> 를 문법 오류로 거부해 로그인·가입이 첫 요청부터 500).
+INFO 를 막아 둔 관리형 Redis·버전을 알려 주지 않는 서버(테스트의 fakeredis 포함)는 WARNING 만 남기고 계속한다.
+<code>tests/core/test_redis_version.py</code> 가 소스의 명령과 상수를 대조한다.
+<code>DEBUG</code> 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 <code>app.state.redis</code> 에 보관되고,
+요청 코드는 주입 provider <code>get_redis(request) -&gt; Redis</code>(<code>app/core/redis.py</code>) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
+<code>ServiceUnavailableException</code>(503). 기능이 <code>Redis.from_url</code> 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 <code>/ready</code> 가 다시 본다(§3.5).
+기동 뒤 Redis 가 사라지면 Redis 를 필수로 쓰는 요청은 503(SERVICE_UNAVAILABLE) 이다(§3.5 예외 표, fail-closed). Redis 를 쓰지 않는
+조회(예: 글 목록)는 영향이 없고, 재기동하면 다시 연결된다(연결 풀이 재접속한다 — e2e L5 가 확인).</p>
+<p><strong>개발용 테이블 생성</strong> — <code>_prepare_database()</code> 는 <code>create_app()</code> 이 조립에 쓴 registry(<code>app.state.app_registry</code>)를
+받아 <code>owned_tables(registry)</code> 로 <strong>그 registry 가 소유한 테이블만</strong> 센다. 전역 <code>apps</code> 를 따로 읽거나 다시 채우지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>조건</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>소유 테이블 0개</td>
+<td>DB 에 접속하지 않는다</td>
+</tr>
+<tr>
+<td><code>DEBUG=false</code></td>
+<td>생성하지 않는다(Alembic 사용)</td>
+</tr>
+<tr>
+<td><code>DEBUG=true</code></td>
+<td><code>create_db_tables(registry=registry, populate=False)</code> — writer <code>engine.begin()</code> 안에서 <code>Base.metadata.create_all(tables=소유 테이블)</code>, 30초 timeout</td>
+</tr>
+</tbody>
+</table>
+<p><code>create_all</code> 은 없는 테이블만 만든다. 컬럼 변경·삭제·데이터 이동은 하지 않으며 DB 자체와 계정 권한은 미리 있어야 한다.
+여러 worker 가 <code>DEBUG=true</code> 로 동시에 DDL 을 시도할 수 있으므로 운영은 <code>DEBUG=false</code> + 별도 migration 주체가 원칙이다.</p>
+<blockquote>
+<p><strong>custom factory</strong> — <code>create_app(installed_apps, registry)</code> 로 조립하면 route 집합과 startup DDL 집합이 같은 registry 에서
+나온다(<code>tests/core/test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables</code>, service-hardening F-012).</p>
+</blockquote>
+<p><strong>종료</strong> — background task drain → Redis <code>aclose()</code> → DB engine dispose.</p>
+<table>
+<thead>
+<tr>
+<th>단계</th>
+<th>예산</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>background drain</td>
+<td>5초</td>
+<td>그중 4초는 완료 대기, 남은 시간에 미완료 태스크를 cancel 후 gather 로 회수</td>
+</tr>
+<tr>
+<td>Redis close</td>
+<td>5초</td>
+<td>client pool 정리일 뿐 서버·키에 영향 없음</td>
+</tr>
+<tr>
+<td>DB dispose</td>
+<td>10초</td>
+<td>writer · replica · background 를 <code>asyncio.gather(..., return_exceptions=True)</code> 로 <strong>병렬</strong> 회수. 한 엔진이 실패해도 나머지는 끝까지 dispose 되고, 실패는 예외 <strong>타입만</strong> 로그로 남기고 올리지 않는다(원래의 종료 원인을 덮지 않도록)</td>
+</tr>
+</tbody>
+</table>
+<p>각 단계는 <code>_run_cleanup()</code> 이 감싸 실패·timeout 을 로그로 남기고 다음 단계로 넘어간다(전체 deadline 은 없다).
+startup ping 실패도 client 종료와 이미 등록된 DB 정리 경로를 탄다(background drain 은 아직 등록 전). 끝나면
+<code>app.state.resources</code> 를 <code>None</code> 으로 되돌린다. SIGKILL·강제 종료에서는 회수를 보장하지 않는다.
+logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue listener 가 없다.</p>
+<h3 id="35-health-ready">3.5 health · ready · 오류 응답</h3>
+<table>
+<thead>
+<tr>
+<th>경로 / 오류</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /health</code></td>
+<td>liveness. <code>{"status": "healthy", "version": VERSION}</code>. DB·Redis 를 보지 않는다 — liveness 가 DB 에 의존하면 DB 가 흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽인다</td>
+</tr>
+<tr>
+<td><code>GET /ready</code></td>
+<td>readiness. <code>ping_writer_db()</code>(writer 에 <code>SELECT 1</code>)와 <code>ping_redis()</code>(<code>get_redis</code> 로 주입한 client 에 <code>ping()</code>)를 <code>asyncio.gather</code> 로 동시에, 각각 2초 안에 실행. 하나라도 실패·timeout 이면 원인을 숨긴 503(대상과 원인 타입만 서버 WARNING — 예: <code>[Readiness] Redis 준비 확인 실패: TimeoutError</code>). 준비 안 된 인스턴스는 재시작이 아니라 LB 에서 뺀다</td>
+</tr>
+<tr>
+<td><code>/docs</code>, <code>/openapi.json</code></td>
+<td><code>DEBUG=true</code> 일 때만. Swagger UI·ReDoc 은 끔</td>
+</tr>
+<tr>
+<td>설정·registry 오류</td>
+<td>lifespan 이전 조립 실패</td>
+</tr>
+<tr>
+<td>Redis ping·Redis 7.0 미만·개발 DDL 오류</td>
+<td>startup 실패</td>
+</tr>
+<tr>
+<td>요청 중 오류</td>
+<td>전역 예외 핸들러</td>
+</tr>
+<tr>
+<td>background 저장 오류</td>
+<td>이미 나간 응답과 무관(로그만)</td>
+</tr>
+</tbody>
+</table>
+<p>전역 핸들러 5종은 모두 <code>ErrorResponse{error_code, message, detail}</code> 로 응답한다.</p>
+<table>
+<thead>
+<tr>
+<th>예외</th>
+<th>처리</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AppException</code> 계열</td>
+<td>예외의 status·error code 유지 (<code>NotFoundException</code> 404, <code>DuplicateException</code> 409, <code>DatabaseException</code> 500 등 — <code>app/core/exception.py</code>). 로그는 status &lt; 500 이면 WARNING(detail 제외), 500 이상이면 ERROR</td>
+</tr>
+<tr>
+<td><code>RequestValidationError</code></td>
+<td>422 VALIDATION_ERROR, detail 에 field·message·type 목록. OpenAPI 도 모든 operation 의 422 를 같은 <code>ErrorResponse</code> 로 광고한다 — FastAPI 기본 <code>HTTPValidationError</code> 는 <code>create_app()</code> 의 OpenAPI 후처리 한 곳에서 걷어낸다(<code>_document_real_validation_error</code>, e2e-policy-2 결정 1)</td>
+</tr>
+<tr>
+<td>Redis 연결 오류(<code>redis.exceptions.ConnectionError</code>·<code>TimeoutError</code>)</td>
+<td>503 SERVICE_UNAVAILABLE, detail 없음. <strong>예외 클래스 전용</strong> 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 <strong>한 번</strong>, keep-alive 연결도 유지된다(<code>Exception</code> 핸들러로 가면 Starlette <code>ServerErrorMiddleware</code> 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). <code>ResponseError</code> 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009)</td>
+</tr>
+<tr>
+<td>Starlette <code>HTTPException</code></td>
+<td><code>HTTP_&lt;status&gt;</code> error code. 예외의 <code>headers</code> 는 응답에 그대로 싣는다(405 <code>Allow</code> 등). <code>AppException</code> 도 <code>headers</code> 를 싣는다(429 <code>Retry-After</code>). <strong>401 은 두 핸들러가 모두 <code>WWW-Authenticate: Bearer</code> 를 붙인다</strong>(<code>_challenge</code> 한 곳 — 보호 라우트·로그인·refresh·logout·비활성 사용자 <code>/me</code> 모두, e2e-policy-2 결정 3)</td>
+</tr>
+<tr>
+<td>그 밖의 예외</td>
+<td>500 INTERNAL_SERVER_ERROR, <strong>DEBUG 에서도 detail 은 비운다</strong>. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="4">4. 요청·세션·트랜잭션</h2>
+<h3 id="41">4.1 요청 흐름</h3>
+<div class="mermaid">sequenceDiagram
+    participant C as Client
+    participant M as Middleware
+    participant R as Router
+    participant D as Dependency
+    participant S as Service
+    participant P as Repository
+    participant DB as Database
+    C->>M: HTTP request
+    M->>M: UserInfo 수집 · CORS
+    M->>R: 설치된 route
+    R->>D: get_<name>_service(_readonly)
+    D-->>R: Service(session)
+    R->>S: 유스케이스
+    S->>P: 데이터 접근
+    P->>DB: SQL / flush
+    opt 쓰기
+        R->>S: await service.commit()
+    end
+    R-->>C: 응답 DTO
+    M-->>M: 접속 로그 태스크 spawn (별도 풀)
+</div>
+<ol>
+<li><code>UserInfoMiddleware</code> 가 활성·제외 규칙을 보고 요청 정보를 수집한다. CORS 가 preflight·헤더를 처리한다.</li>
+<li>registry 가 설치한 route 가 선택되고 FastAPI 가 path/query/body/form/header 와 Dependency 를 검증·해석한다.</li>
+<li>Dependency 그래프: 세션 generator → <code>get_&lt;name&gt;_service</code> → <code>Service(session)</code> → Repository.</li>
+<li>쓰기 핸들러는 업무 후 <code>await service.commit()</code> 을 부르고 응답을 만든다. 조회는 커밋하지 않는다.</li>
+<li>예외로 빠져나가면 세션 컨텍스트(<code>async with</code>)의 <code>close()</code> 가 활성 트랜잭션을 롤백하고 예외는 그대로 재전파되며, 전역 핸들러가 오류 응답을 만든다.</li>
+<li>미들웨어가 응답 상태·소요 시간을 붙여 접속 로그 저장 태스크를 제출한다(§6).</li>
+</ol>
+<p>FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(<code>use_cache=True</code>)한다. writer getter 와 read-only getter 는
+서로 다른 callable 이라 같은 세션이 아니다. Service 를 전역 싱글턴으로 두면 세션이 요청을 넘나들므로 금지한다.</p>
+<h3 id="42-api">4.2 세션 API</h3>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>용도</th>
+<th>특성</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get_read_only_db_session()</code></td>
+<td>조회 endpoint (기능 앱 표준)</td>
+<td>세션을 read-only 로 표시 → 쓰기 차단(라우터 설정과 무관). 라우터 활성 시 replica 고정. 예외 시 rollback</td>
+</tr>
+<tr>
+<td><code>get_writer_db_session()</code></td>
+<td>쓰기 endpoint (기능 앱 표준)</td>
+<td>첫 구문부터 writer 고정. 예외 시 rollback</td>
+</tr>
+<tr>
+<td><code>get_routed_db_session()</code></td>
+<td>의도를 미리 정할 수 없는 예외 경로</td>
+<td>구문 성격으로 자동 라우팅. 기능 앱은 쓰지 않는다</td>
+</tr>
+<tr>
+<td><code>background_session()</code></td>
+<td>요청 밖(sink·Celery) async context</td>
+<td>background 풀, 예외 시 rollback, <strong>커밋은 호출자</strong></td>
+</tr>
+<tr>
+<td><code>get_background_session()</code></td>
+<td>요청 밖 generator 방식</td>
+<td>background 풀, 예외 시 rollback</td>
+</tr>
+</tbody>
+</table>
+<p>세션 팩토리는 <code>expire_on_commit=False</code>, <code>autoflush=False</code> 다. <code>session.add</code> 는 메모리 등록이라 동기, <code>flush</code>·<code>refresh</code>·<code>execute</code>·<code>commit</code> 은 await 한다.</p>
+<h3 id="43">4.3 엔진과 연결 예산</h3>
+<table>
+<thead>
+<tr>
+<th>엔진</th>
+<th>풀 (기본값)</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code> (= <code>writer_engine</code>)</td>
+<td><code>DB_POOL_SIZE</code> 20 + <code>DB_MAX_OVERFLOW</code> 20, timeout 30초</td>
+<td>요청 처리·DDL·readiness·SQLAdmin</td>
+</tr>
+<tr>
+<td><code>read_engines</code></td>
+<td>replica 마다 writer 와 같은 크기</td>
+<td>복제 활성 시 SELECT</td>
+</tr>
+<tr>
+<td><code>background_engine</code></td>
+<td><code>DB_BACKGROUND_POOL_SIZE</code> 10 + <code>DB_BACKGROUND_MAX_OVERFLOW</code> 10, timeout 60초</td>
+<td>접속 로그·요청 밖 작업, 라우팅 없이 primary</td>
+</tr>
+</tbody>
+</table>
+<p>모든 엔진은 <code>pool_pre_ping</code>, <code>pool_recycle=DB_POOL_RECYCLE</code>(280초 — DB/프록시 <code>wait_timeout</code> 보다 짧게),
+반환 시 rollback, <code>connect_timeout</code> 10초, utf8mb4 를 쓴다. 엔진 생성은 import 시점이지만 <strong>실제 연결은 첫 사용 때</strong>다.</p>
+<p>모든 엔진(writer·reader·background, Alembic 의 <code>engine_from_config</code> 포함)은 <code>session.ENGINE_SAFETY_OPTIONS</code> 를 펼쳐 받는다 — 지금은
+<code>hide_parameters=True</code> 하나다. DB 오류(<code>IntegrityError</code> 등)의 메시지와 SQLAlchemy 로그에서 <strong>바인드 값</strong>(이메일·비밀번호 해시·토큰)이
+빠지고 SQL 문과 <code>[SQL parameters hidden due to hide_parameters=True]</code> 만 남는다. 새 엔진을 만들면 같은 옵션을 넣는다 —
+<code>tests/core/test_engine_hide_parameters.py</code> 가 모든 생성 지점을 AST 로 확인한다(security-ops-hardening ADR-001).</p>
+<p>최대 연결 수(<code>db_settings.max_total_connections</code>)는 프로세스마다 다음과 같고 <code>DB_WORKER_PROCESSES</code>(uvicorn + celery worker 수)를 곱한다.</p>
+<pre><code class="language-text">(DB_POOL_SIZE + DB_MAX_OVERFLOW) × (1 + 복제 활성 시 replica 수) + (DB_BACKGROUND_POOL_SIZE + DB_BACKGROUND_MAX_OVERFLOW)
+</code></pre>
+<p><code>DB_MAX_SERVER_CONNECTIONS</code> 를 주면 이 값이 넘칠 때 기동이 실패한다(0 이면 검증하지 않음).</p>
+<h3 id="44">4.4 읽기/쓰기 라우팅</h3>
+<p><code>DB_ROUTER_ENABLED=false</code>(기본)면 세션이 writer 엔진에 직접 바인딩되고 바인딩 선택은 쓰이지 않는다.
+켜면 <code>RoutingSession.get_bind()</code> 가 구문마다 엔진을 고른다. read-only 세션의 쓰기 차단은 이 설정과 무관하다(아래 "read-only 차단의 범위").</p>
+<div class="mermaid">flowchart TD
+    A[구문] --> B{ORM flush 또는 Core DML?}
+    B -- 예 --> W[writer + 이후 sticky]
+    B -- 아니오 --> T{TextClause?}
+    T -- 예 --> I{read 의도가 붙었나?}
+    I -- 아니오 --> W
+    I -- 예 --> P
+    T -- 아니오 --> P{writer 고정 세션?}
+    P -- 예 --> W2[writer]
+    P -- 아니오 --> R[세션에 고정된 replica<br/>없으면 writer]
+</div>
+<ul>
+<li>쓰기 판정 시 세션이 read-only 로 표시돼 있으면 <code>ReadOnlyRoutingError</code>.</li>
+<li><code>DB_READ_STICKY_AFTER_WRITE=true</code>(기본)면 쓰기 이후 같은 세션의 SELECT 는 writer 로 간다(read-after-write).
+  새 요청의 read-only 세션까지 복제 지연을 없애 주지는 않는다.</li>
+<li>한 세션은 라운드로빈으로 고른 replica 하나에 고정된다(트랜잭션이 여러 서버로 흩어지지 않도록).</li>
+<li><strong>replica 장애 → primary 로 한 번 재시도</strong>(integration-e2e ADR-010): <strong>읽기 전용 세션</strong>의 읽기가 replica 에 <strong>연결하지 못하면</strong>
+  (MySQL 2002·2003 접속 불가, 2006·2013·2055 연결 끊김, 1053 종료 중, 3032 <code>offline_mode</code>, 4031 유휴 끊김, 또는 SQLAlchemy 가
+  연결 무효화로 표시한 오류) 같은 구문을 primary 로 한 번 다시 실행하고 WARNING <code>[DBRouter] replica 연결 오류 — primary 로 다시
+  읽는다 (&lt;예외 종류&gt;, driver_code=&lt;코드&gt;)</code> 를 남긴다(DSN·메시지는 싣지 않는다). 그 뒤 그 세션은 writer 에 고정된다. 쿼리 자체의
+  오류(문법·제약·없는 테이블)는 재시도하지 않는다. 쓰기와 섞일 수 있는 일반(라우팅) 세션도 재시도하지 않는다. primary 도 실패하면
+  그 오류가 그대로 올라간다. replica 가 없는 구성은 동작 변화가 없다. <code>/ready</code> 는 그대로 writer 만 본다.</li>
+<li><code>DB_REPLICATION_ENABLED=true</code> 는 <code>DB_ROUTER_ENABLED=true</code> 와 <code>MYSQL_REPLICA_HOSTS</code> 를 요구한다. replica 계정·DB 를
+  비우면 primary 값을 재사용한다. replica 없이 라우터만 켜면 읽기도 writer 로 간다.</li>
+<li>복제 지연을 허용할 수 없는 읽기는 <code>using_writer(session)</code> 으로 writer 에 고정한다.</li>
+<li>기동 시 <code>db_settings.describe_routing()</code> 이 비밀번호를 가린 DSN(<code>URL.render_as_string(hide_password=True)</code>)으로 구성을 한 줄 남긴다.</li>
+</ul>
+<p><strong><code>text()</code> 는 SQL 을 해석하지 않는다.</strong> 첫 단어 파싱은 <code>WITH doomed AS (SELECT ...) DELETE ...</code> 같은 CTE DML 을 읽기로
+오판해 replica 로 보낸다. 그래서 호출부가 의도를 붙이고(<code>read_intent</code>·<code>write_intent</code>, 조회는 <code>statement_intent</code>),
+<strong>의도가 없는 <code>TextClause</code> 는 쓰기로 본다</strong>(fail-closed). <code>RawRepositoryBase</code> 를 쓰면 메서드가 의도를 자동으로 붙인다.</p>
+<p><strong>read-only 차단의 범위</strong></p>
+<table>
+<thead>
+<tr>
+<th>경로</th>
+<th>차단</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ORM flush</td>
+<td><code>Session</code> 에 전역 등록된 <code>before_flush</code> 리스너가 거부 — 라우터 설정·sessionmaker 종류와 무관</td>
+</tr>
+<tr>
+<td>Core DML·임의 <code>session.execute()</code></td>
+<td><code>do_orm_execute</code> 리스너가 <strong>실행 전에</strong> 판정 — 잠금 없는 <code>Select</code> 와 <code>read_intent()</code> 가 붙은 <code>text()</code> 만 통과하고 나머지는 거부(default-deny). ORM <code>with_for_update()</code> 는 쓰기로 보고 거부하며, 라우터는 writer 로 보낸다</td>
+</tr>
+<tr>
+<td>Raw 쓰기(<code>execute</code>, <code>for_update=True</code>)</td>
+<td>위 리스너에 더해 <code>RawCRUDBase</code> 가 <code>is_read_only_session()</code> 으로 먼저 거부 — 어느 메서드가 원인인지 메시지에 남는다</td>
+</tr>
+</tbody>
+</table>
+<p>판정은 구문 타입과 의도 태그만 본다 — SQL 문자열을 해석하지 않으므로 완전한 sandbox 가 아니다. 위 세 경로의 차단은 라우터 on/off 두 구성에서 <code>tests/core/test_read_only_guard.py</code> 가 고정하고, 조회 경로가 쓰지 않는다는 규칙은 <code>tests/test_read_path_no_commit.py</code> 가 구조로 함께 고정한다.</p>
+<p>read-only 표시는 DB 권한을 대체하지 않는다. 운영에서는 replica 전용 읽기 계정을 함께 쓴다.</p>
+<h3 id="45">4.5 트랜잭션 경계</h3>
+<ul>
+<li><strong>커밋은 쓰기 핸들러 본문이 응답 생성 전에 한 번.</strong> Repository·Service·Dependency 는 스스로 커밋하지 않는다.</li>
+<li>순서는 <code>response = XResponse.model_validate(obj)</code> → <code>await service.commit()</code> → <code>return response</code> 하나다. 응답 DTO 검증이
+  실패하면 커밋 없이 500 으로 끝나고 세션 Dependency 가 rollback 한다(<code>tests/test_validate_before_commit.py</code>).</li>
+<li>예외로 빠져나가면 세션 Dependency 가 rollback 한다. 이미 커밋한 뒤의 실패는 되돌리지 않는다.</li>
+<li>여러 Service 를 한 원자 단위로 묶으려면 같은 writer 세션을 주입하고 마지막에 한 번 커밋한다.</li>
+<li><code>BaseService.commit()</code> 은 커밋 시점의 <code>SQLAlchemyError</code>(지연 제약, 연결 유실 등)도 <code>convert_db_error()</code> 로 바꾼다.</li>
+<li>요청 밖에서는 <code>background_session()</code> 을 열고 직접 커밋한다 — 성공 시 자동 커밋하지 않는다.</li>
+</ul>
+<blockquote>
+<p><strong>왜 Dependency 가 아니라 핸들러인가.</strong> 예전에는 Dependency 가 <code>yield</code> 뒤에서 커밋했다. 기본 request scope 의
+yield dependency 종료 코드는 <strong>응답 전송 후</strong> 실행되므로(FastAPI 0.141 에서 실측), 커밋이 실패해도 클라이언트는
+이미 201 을 받는다. function scope 는 종료 시점이 다르지만
+(<a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/#early-exit-and-scope">FastAPI 문서</a>),
+이 프로젝트는 커밋을 teardown 에 맡기지 않는다. 회귀 가드: <code>tests/test_read_path_no_commit.py</code>,
+기능별 <code>test_transaction_boundary.py</code>.</p>
+</blockquote>
+<p>DB 커밋과 HTTP 전송은 하나의 원자적 트랜잭션이 아니다. 커밋 후 연결이 끊길 수 있으므로 중요한 생성 업무는 멱등 키 정책을 요구사항으로 정한다.</p>
+<h3 id="46-repository">4.6 Repository 두 계열</h3>
+<p>데이터 접근은 <strong>ORM 과 Raw SQL 두 계열</strong>이고 갈라지는 곳은 Repository 하나뿐이다. 두 Base 는 <strong>상속 관계가 없다</strong>
+(하나의 Base 가 모델과 row 를 함께 돌려주면 호출부가 받은 것을 타입으로 알 수 없다). 어느 쪽을 고를지와 Raw 작성
+규칙은 <a href="../development/index.html#orm-raw">개발 가이드 — ORM 과 Raw 선택</a>에 있다.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ORM</th>
+<th>Raw SQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>기능 Repository 가 상속</td>
+<td><code>BaseRepository</code> (<code>app/core/repositories/repository_base.py</code>)</td>
+<td><code>RawRepositoryBase</code> (<code>app/core/repositories/raw_repository_base.py</code>)</td>
+</tr>
+<tr>
+<td>하위 primitive (직접 상속하지 않음)</td>
+<td><code>CRUDBase</code> (<code>app/core/repositories/crud_base.py</code>)</td>
+<td><code>RawCRUDBase</code> (<code>app/core/repositories/raw_crud_base.py</code>)</td>
+</tr>
+<tr>
+<td>돌려주는 것</td>
+<td>모델 인스턴스</td>
+<td><code>RowMapping</code> / scalar / rowcount</td>
+</tr>
+<tr>
+<td>참조 예제</td>
+<td><code>app/features/catalog/repositories/product_repository.py</code></td>
+<td><code>app/features/reports/repositories/sales_report_repository.py</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>BaseRepository[Model]</code> 공개 메서드 — 정확히 8개</strong> (ADR-016). 도메인 쿼리(eager loading·집계·정렬 목록 등)는 기능 Repository 에 둔다.</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>create(data: dict)</code></td>
+<td><code>id</code> 가 없으면 UUID 를 채우고 add → flush → refresh. DB 오류는 <code>convert_db_error</code></td>
+</tr>
+<tr>
+<td><code>get_by_id(id)</code></td>
+<td>없으면 <code>None</code></td>
+</tr>
+<tr>
+<td><code>get_one(**filters)</code></td>
+<td><code>filter_by</code> 단건, 없으면 <code>None</code></td>
+</tr>
+<tr>
+<td><code>get_all(skip=0, limit=100)</code></td>
+<td>offset/limit 조회 — 기본 정렬 <code>created_at DESC, PK DESC</code>(<code>created_at</code> 이 없으면 PK 역순). 동률에도 페이지가 겹치지 않는다</td>
+</tr>
+<tr>
+<td><code>count(**filters)</code></td>
+<td>개수</td>
+</tr>
+<tr>
+<td><code>exists(id)</code></td>
+<td>PK 존재 여부</td>
+</tr>
+<tr>
+<td><code>update(id, data: dict)</code></td>
+<td>UPDATE → flush 후 <strong>다시 조회</strong>해 반환(없으면 <code>None</code>). MySQL 의 no-op UPDATE rowcount 0 을 부재로 읽지 않기 위해서다</td>
+</tr>
+<tr>
+<td><code>delete(id)</code></td>
+<td>삭제 여부 <code>bool</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>RawRepositoryBase</code> 공개 메서드 — 4개</strong>. 모든 호출에 <code>query_name</code>(코드 상수)이 필요하고, 로그에는 <code>query_name</code>·소요 시간·성공 여부만 남는다(SQL·파라미터 제외).</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>결과 없음</th>
+<th>반환</th>
+<th>라우팅 의도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fetch_one(stmt, params, *, query_name, for_update=False)</code></td>
+<td><code>None</code></td>
+<td>첫 행 <code>RowMapping</code></td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>fetch_all(...)</code></td>
+<td>빈 목록</td>
+<td><code>RowMapping</code> 목록</td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>fetch_scalar(...)</code></td>
+<td><code>None</code></td>
+<td>첫 행 첫 컬럼</td>
+<td>읽기 (<code>for_update=True</code> 면 쓰기)</td>
+</tr>
+<tr>
+<td><code>execute(stmt, params, *, query_name)</code></td>
+<td>—</td>
+<td>영향 행 수 <code>int</code>(존재 판단에 쓰지 않는다), 커밋하지 않음</td>
+<td>항상 쓰기</td>
+</tr>
+</tbody>
+</table>
+<h3 id="47-db">4.7 DB 오류 변환</h3>
+<p>SQLAlchemy 예외의 문자열에는 실행 SQL·바인딩 값·때로 DSN 이 들어 있다. <code>convert_db_error()</code> 는 경계에서 한 번 변환하며
+예외 클래스명·드라이버 코드·모델·연산만 로그에 남기고, 호출부는 <code>raise ... from None</code> 으로 원본을 끊는다.</p>
+<table>
+<thead>
+<tr>
+<th>원본</th>
+<th>결과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1062 / SQLite UNIQUE·PRIMARY KEY 위반</td>
+<td><code>DuplicateException</code> (409)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1048·1364 / SQLite NOT NULL 위반</td>
+<td><code>ValidationException</code> "필수 값이 비어 있습니다" (422)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1452 / SQLite FOREIGN KEY 위반</td>
+<td><code>ValidationException</code> "참조하는 데이터가 존재하지 않습니다" (422)</td>
+</tr>
+<tr>
+<td><code>IntegrityError</code> + MySQL 1451</td>
+<td><code>ConflictException</code> "다른 데이터가 참조하고 있어…" (409)</td>
+</tr>
+<tr>
+<td>그 밖의 <code>IntegrityError</code>(코드를 알 수 없는 경우 포함)</td>
+<td><code>DatabaseException</code> "제약 조건 불만족" (500)</td>
+</tr>
+<tr>
+<td>그 밖의 <code>SQLAlchemyError</code></td>
+<td><code>DatabaseException</code> (500)</td>
+</tr>
+</tbody>
+</table>
+<p>SQLite 는 숫자 코드를 주지 않으므로 파이썬 <code>sqlite3</code> 예외의 <code>sqlite_errorname</code> 으로 가른다 — 메시지는 파싱하지 않는다.
+변환을 거치지 않는 경로(잡히지 않은 예외의 traceback, 직접 <code>logger.exception</code>)도 엔진의 <code>hide_parameters=True</code>(§4.3) 덕분에 예외 문자열에 바인드 값이 없다.
+4xx 로 바뀌는 위반은 WARNING, 나머지는 ERROR 로 남는다(service-hardening ADR-007).</p>
+<h3 id="48">4.8 모델과 기능 카탈로그</h3>
+<p>모델은 <code>Base</code> 에 필요한 Mixin 을 조합한다. <code>sort_order</code> 로 컬럼 순서(id → 도메인 → created_at → updated_at)를 고정해
+<code>create_all</code> 과 migration 의 결과가 갈리지 않게 한다. 시각은 DB 가 아니라 앱이 <code>timezone_settings.utc_now()</code>(aware UTC)로 채운다.
+<code>Mapped[datetime]</code> 은 <code>app/core/models/types.py</code> 의 <code>UTCDateTime</code> 이다 — MySQL <code>DATETIME(6)</code>·UTC 로 저장하고, naive datetime 은 저장 경계에서
+<code>ValueError</code> 로 거부하며, 읽을 때 <code>tzinfo=UTC</code> 를 붙여 응답이 <code>Z</code> 오프셋을 갖는다. Raw SQL 은 <code>bindparam(..., type_=UTCDateTime())</code> 로 같은 변환을 태운다.
+지역 시각(<code>TIME_ZONE</code>)은 표시·집계 경계에서만 쓴다 — 리포트·접속 로그의 날짜 범위는 지역 일자를 UTC 순간으로 바꿔 조회한다(service-hardening ADR-010).
+<code>UpdatedAtMixin.onupdate</code> 는 ORM UPDATE 에만 적용된다.</p>
+<table>
+<thead>
+<tr>
+<th>앱</th>
+<th>모델 → 테이블</th>
+<th>기능</th>
+<th>Admin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>home</td>
+<td><code>UserAccessLog</code> → <code>user_access_logs</code></td>
+<td>접속 로그 조회·통계(읽기 전용), <code>ready()</code> 에서 sink 결선</td>
+<td>조회·삭제·내보내기</td>
+</tr>
+<tr>
+<td>blog</td>
+<td><code>Post</code> → <code>blog_posts</code></td>
+<td>게시글 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>reply</td>
+<td><code>Reply</code> → <code>replies</code></td>
+<td>댓글 CRUD (게시글과의 FK·중첩 route 없음)</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>sns</td>
+<td><code>SnsPost</code> → <code>sns_posts</code></td>
+<td>피드 게시물 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>user</td>
+<td><code>User</code> → <code>users</code></td>
+<td>사용자 CRUD, username 중복 검사</td>
+<td>생성 불가, 해시 비노출</td>
+</tr>
+<tr>
+<td>auth</td>
+<td>(없음 — <code>User</code> 사용)</td>
+<td>가입·로그인·재발급·현재 사용자</td>
+<td>없음</td>
+</tr>
+<tr>
+<td>catalog</td>
+<td><code>Product</code> → <code>catalog_products</code></td>
+<td><strong>ORM 예제</strong> — 상품 CRUD</td>
+<td>CRUD·내보내기</td>
+</tr>
+<tr>
+<td>reports</td>
+<td><code>SalesOrder</code> → <code>sales_orders</code></td>
+<td><strong>Raw SQL 예제</strong> — 일별 매출 집계(조회 전용)</td>
+<td>읽기 전용·내보내기</td>
+</tr>
+</tbody>
+</table>
+<p>CRUD 앱의 공통 흐름: Create(스키마 검증 → create/flush → 응답 DTO 검증 → 핸들러 commit → 201), List(pagination → count + 목록, commit 없음),
+Retrieve(없으면 기능별 Not Found), Update(변경 필드만 → flush → 응답 DTO 검증 → commit), Delete(삭제 → commit → 204).
+조회는 <code>_readonly</code> Dependency, 쓰기는 writer Dependency 를 쓴다.</p>
+<hr>
+<h2 id="5">5. 로깅</h2>
+<p>설정 단일 지점은 <code>app/utils/logs/config.py</code> 의 <code>build_dictconfig()</code> 이고, 첫 <code>get_logger()</code> 호출이 <code>configure_logging()</code> 으로 한 번 적용한다(ADR-019).</p>
+<table>
+<thead>
+<tr>
+<th><code>ENV</code></th>
+<th>핸들러</th>
+<th>시각</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>development</td>
+<td>console (밀리초)</td>
+<td>로컬 타임존</td>
+</tr>
+<tr>
+<td>test</td>
+<td>console</td>
+<td>로컬 타임존</td>
+</tr>
+<tr>
+<td>staging / production</td>
+<td>console + 날짜·크기 회전 파일 2개(<code>LOG_FILE_ENABLED=true</code> 일 때)</td>
+<td>UTC</td>
+</tr>
+</tbody>
+</table>
+<p><strong>모든 실행 경로가 이 구성 하나를 쓴다</strong>(logging-overhaul ADR-001) — 앱 로거, <code>python main.py</code>(<code>setup_uvicorn_logging()</code> 은
+<code>build_dictconfig()</code> 를 그대로 돌려준다), <code>uvicorn main:app</code>·<code>fastapi dev</code> CLI(uvicorn 이 자기 구성을 건 뒤 앱 import 의
+<code>configure_logging()</code> 이 다시 건다), Celery 워커·beat(<code>setup_logging</code> 시그널 수신자 <code>app/celery/app.py</code> 의 <code>use_app_logging</code>).
+<code>uvicorn</code>·<code>uvicorn.error</code>·<code>uvicorn.access</code> 로거는 자기 핸들러 없이 root 로 전파되므로 서버 줄·접속 줄이 앱 콘솔·파일에 같은 형식으로
+나온다. 접속 줄의 요청 라인(<code>client - "GET /p HTTP/1.1" 200</code>)은 uvicorn 이 넘기는 메시지 그대로다. <code>--no-access-log</code> 은 유지된다.
+예외: <code>--reload</code>(<code>fastapi dev</code>) 의 <strong>감시 프로세스</strong>는 앱을 import 하지 않아 <code>Will watch for changes</code>·<code>Started reloader process</code> 같은
+몇 줄이 uvicorn 기본 형식으로 남는다(요청을 받는 자식 프로세스는 프로젝트 형식).</p>
+<p>console 은 <code>LOG_CONSOLE_ENABLED=true</code>(기본)일 때만 붙는다(<code>app/utils/logs/config.py</code> 의 <code>console_enabled()</code>).
+콘솔도 파일도 없으면 root 에 <code>NullHandler</code> 를 달아 <code>logging.lastResort</code> 가 stderr 로 새지 않게 하고, <code>configure_logging()</code> 이 stderr 에 경고 한 줄을 남긴다.
+Celery <code>--loglevel</code> 은 워커 root 레벨로 따르고, <code>--logfile</code> 을 주면 그 파일에도 같은 형식(<code>LOG_FILE_FORMAT</code>)으로 쓴다.</p>
+<ul>
+<li><strong>파일</strong>(staging/production 에서만, <code>LOG_DIR</code> 아래 고정 이름) — 프로세스 종류는 <code>app/utils/logs/setup.py</code> 의 <code>entry_process()</code> 한 곳이 정한다
+  (진입 명령이 <code>celery</code> 면 워커 또는 beat, 아니면 웹. Celery 수신자는 <code>entry_process(default="celery")</code>).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>프로세스</th>
+<th>일반(<code>LOG_FILE_LEVEL</code> 이상)</th>
+<th>에러(ERROR 이상)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>웹(앱·uvicorn)</td>
+<td><code>app.log</code></td>
+<td><code>error.log</code></td>
+</tr>
+<tr>
+<td>Celery 워커</td>
+<td><code>celery.log</code></td>
+<td><code>celery-error.log</code></td>
+</tr>
+<tr>
+<td>Celery beat</td>
+<td><code>celery-beat.log</code></td>
+<td><code>celery-beat-error.log</code></td>
+</tr>
+</tbody>
+</table>
+<p>웹과 워커가 한 <code>error.log</code> 를 함께 쓰면 두 프로세스가 같은 파일을 회전시켜 깨진다 — 그래서 에러 파일도 프로세스별이다(ADR-003).
+  <strong>기동 초기 줄도 파일에 남는다</strong>: 설정 로드 직후 첫 <code>get_logger()</code> 가 진입 명령으로 프로세스 종류를 정하고 파일 핸들러까지 붙인다 —
+  import 중에 나는 줄(예: <code>[database] 라우팅 구성</code>)이 콘솔에만 있고 파일에서 빠지지 않는다. 웹·<code>python main.py</code>·<code>uvicorn main:app</code>·
+  워커·beat 모두 같고, 핸들러는 한 번만 붙는다(<code>tests/utils/test_log_early_lines.py</code>, e2e L6 이 실제 프로세스로 대조한다 —
+  integration-e2e ADR-011).
+- <strong>회전·보관</strong> — <code>app/utils/logs/handlers.py</code> 의 <code>DailySizeRotatingFileHandler</code>(표준 <code>TimedRotatingFileHandler</code> 상속). 매일 자정(UTC —
+  파일은 UTC 를 쓰는 staging/production 에만 있다)에 <code>app.log</code> → <code>app.log.2026-10-19</code>, 하루 안에서 <code>LOG_MAX_SIZE_MB</code> 를 넘으면
+  <code>app.log.2026-10-19.1</code>·<code>.2</code>…. 회전할 때마다 <code>LOG_RETENTION_DAYS</code>(기본 30, <code>0</code> = 지우지 않음)보다 오래된 날짜·분할 파일을 지운다
+  (정확히 N일 전 파일은 남는다). 파일 I/O 는 호출 흐름에서 동기 수행된다.
+- <strong>여러 프로세스 주의</strong> — 한 파일은 한 프로세스만 회전시킬 수 있다. <code>uvicorn --workers 2</code> 이상·Celery prefork(<code>--concurrency</code> &gt; 1 의
+  자식 프로세스)는 같은 파일을 여러 프로세스가 회전시켜 안전하지 않다. 그 배포는 <strong>콘솔(stdout) + 수집기/<code>logrotate</code>, 파일 로그 끔</strong>
+  (<code>LOG_FILE_ENABLED=false</code>)으로 운영한다. 기동 시 감지하지는 않는다(워커 수를 앱이 믿을 만하게 알 방법이 없다 — 문서로만 안내).
+- <strong>헤더(<code>app=</code>)</strong> — <code>filters._app_from_path()</code> 한 함수가 정한다. 우리 코드는 소스 경로(<code>&lt;기능명&gt;</code>·<code>core</code>·<code>celery</code>·<code>utils</code>·<code>migrations</code>·<code>app</code>),
+  저장소 밖 코드는 로거 이름 표(<code>celery.*</code>·<code>kombu.*</code> → <code>celery</code>, <code>uvicorn.*</code> → <code>uvicorn</code>, <code>sqlalchemy.*</code> → <code>sqlalchemy</code>, <code>alembic.*</code> → <code>alembic</code>,
+  그 밖 → <code>ext</code>). 새 기능은 아무것도 하지 않아도 자기 이름의 헤더가 붙는다.
+- <strong>앱별 레벨</strong> — <code>LOG_APP_LEVELS="blog=DEBUG,sqlalchemy=WARNING"</code>. 키는 헤더 이름, 지정 없는 헤더는 <code>LOG_LEVEL</code>. 구현은 필터 하나
+  (<code>AppLevelFilter</code>, 모든 핸들러에서 <code>ContextFilter</code> 바로 뒤)이고 root 레벨은 전체 최솟값으로 내려 레코드가 필터까지 오게 한다.
+  형식·레벨이 틀리면 설정 로드가 실패하고, 모르는 헤더는 WARNING 한 줄만 남긴다. 핸들러는 여전히 root 에만 붙는다(앱별 로거 등록 없음, ADR-019).
+- 포맷: console 은 <code>LOG_CONSOLE_FORMAT</code>, 파일은 <code>LOG_FILE_FORMAT</code>, 시각은 <code>LOG_DATE_FORMAT</code>(development 는 뒤에 <code>.밀리초</code>). 기본값은
+  <code>[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}</code> / <code>%Y-%m-%d %H:%M:%S</code>
+  (<code>config.DEFAULT_LOG_FORMAT</code> = <code>app.utils.logs.LOG_FORMAT</code>). 설정 로드 때 샘플 레코드로 한 번 렌더해 모르는 필드·괄호 불일치면 기동을 멈추고,
+  필수 필드 <code>{asctime}</code>·<code>{levelname}</code>·<code>{appname}</code>·<code>{module}</code>·<code>{classname}</code>·<code>{funcName}</code>·<code>{message}</code> 가 하나라도 없어도 멈춘다(<code>config.REQUIRED_LOG_FIELDS</code>).
+- <code>SqlNoiseFilter</code> 가 모든 핸들러에서 SQLAlchemy·드라이버 로거의 SQL 본문·바인딩 값을 막는다. <code>LOG_SQL_ECHO_ENABLED=true</code> 로만 열 수 있고, production/staging 에서는 설정 로드가 거부한다.
+- <strong>비밀값 가리기</strong> — <code>app/utils/logs/redaction.py</code> 의 <code>SecretRedactor</code> 가 규칙의 정본이다(DSN·URL 의 <strong>계정명과 비밀번호</strong>
+  <code>scheme://***:***@host</code> — 계정명 없는 <code>scheme://:***@host</code>·계정명만 있는 <code>scheme://***@host</code>, 비밀번호는 마지막 <code>@</code> 까지, <code>password</code>·<code>secret</code>·<code>token</code>·<code>api_key</code>·<code>authorization</code> 으로 끝나는 키의 값, Bearer 토큰, JWT → <code>***</code>).
+  여기에 <code>config.LOG_REDACTED_SETTINGS</code>(DB writer·replica 계정명·비밀번호, Redis 비밀번호, JWT access/refresh 키, <code>SESSION_SECRET_KEY</code>)의
+  <strong>현재 값 원문</strong>을 <code>configure_logging()</code> 이 넘겨, 로그 어디에 나와도 <code>***</code> 로 바꾼다. 4글자 미만 값(주로 짧은 계정명)은 일반 단어와 겹치므로
+  <code>user=</code>·<code>username=</code> 뒤와 DSN 에서만 가린다. 새 비밀 설정은 이 목록에 넣어야 한다(<code>test_every_secret_setting_is_redacted_from_logs</code> 가 이름 규칙으로 강제).
+  가리기는 <strong>LogRecord factory</strong> 에 걸려 렌더된 메시지·traceback 본문(<code>exc_text</code> 로 미리 포맷해 고정)·<code>stack_info</code> 를 레코드가 만들어질 때 가린다 —
+  우리가 포매터를 소유하지 않는 경로도 같은 규칙을 탄다. 예외 타입·체인·파일·줄은 남는다. 접속 로그(DB 저장)는 대상이 아니다(§6).
+- 세션 롤백 로그(<code>app/core/db/session.py</code>)는 ERROR 에 예외 <strong>타입과 소요시간만</strong> 남긴다 — DB 예외의 <code>str()</code> 에 실행된 SQL 과 바인딩 값이 들어 있고, 앱 로거 이름은 <code>SqlNoiseFilter</code> 를 통과하기 때문이다.
+  추적이 필요하면 DEBUG 레벨에서 같은 지점의 <code>exc_info=True</code> 상세 레코드가 트레이스백 전문을 남긴다. 그래서 production/staging 은 debug 모드 자체를 거부한다(§3.2).
+- Service 는 <code>LoggerMixin</code> 을 상속해 <code>self.log</code> 를 쓴다. 키 표·Django LOGGING 설정 대응표는 README "로깅" 절이 정본이다.</p>
+<p><strong>레벨 결정</strong> — root 레벨은 <code>LOG_LEVEL</code>, 없으면 <code>DEBUG</code> 에 따라 DEBUG/INFO. console 레벨은 <code>LOG_CONSOLE_LEVEL</code>, 없으면 같은 규칙.
+<code>LOG_APP_LEVELS</code> 가 있으면 root 는 그중 가장 낮은 레벨까지 내려가고, 헤더별 컷은 <code>AppLevelFilter</code> 가 한다(지정 없는 헤더 = <code>LOG_LEVEL</code>).
+명시값이 <code>DEBUG</code> 기본 계산보다 우선한다.</p>
+<table>
+<thead>
+<tr>
+<th><code>DEBUG</code></th>
+<th><code>LOG_LEVEL</code> / <code>LOG_CONSOLE_LEVEL</code></th>
+<th>console 에 나오는 것</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>false</td>
+<td>미설정 / 미설정</td>
+<td>INFO 이상</td>
+</tr>
+<tr>
+<td>true</td>
+<td>미설정 / 미설정</td>
+<td>DEBUG 이상</td>
+</tr>
+<tr>
+<td>false</td>
+<td>DEBUG / DEBUG</td>
+<td>DEBUG 이상 (앱 DEBUG 모드는 여전히 꺼짐)</td>
+</tr>
+<tr>
+<td>무관</td>
+<td>INFO / DEBUG</td>
+<td>INFO 이상 — root 가 먼저 거른다</td>
+</tr>
+<tr>
+<td>무관</td>
+<td>DEBUG / INFO</td>
+<td>INFO 이상</td>
+</tr>
+</tbody>
+</table>
+<p>startup 로그의 <code>(DEBUG=%s)</code> 는 표시 값일 뿐 출력 조건이 아니다. INFO 가 안 보이면 위 두 설정과 핸들러부터 본다.</p>
+<hr>
+<h2 id="6">6. 접속 로그</h2>
+<p><code>UserInfoMiddleware</code> 가 요청마다 정보를 모으고, 응답 후 저장을 백그라운드 태스크로 넘긴다. core 는 저장 구현을 모른다.</p>
+<pre><code class="language-text">UserInfoMiddleware (app/core/middlewares/user_info_middleware.py)
+  └ access_log_tasks.spawn(...)          BackgroundTaskRunner — 동시 256개 상한, 초과분 drop·집계
+      └ get_access_log_sink().save(data) AccessLogSink Protocol (core)
+          └ HomeAccessLogSink            home 이 ready() 에서 set_access_log_sink() 로 등록
+              └ background_session() → UserAccessLogService.create_access_log → commit
+</code></pre>
+<ul>
+<li>sink 가 등록되지 않았으면(home 미설치) 저장을 건너뛴다. home 을 목록에서 빼면 Router·Model 과 함께 접속 로그 영속화 결선도 빠진다.</li>
+<li>저장 실패는 로그만 남기고 응답에 영향을 주지 않는다. 태스크 제출은 <code>call_next</code> 가 응답을 돌려준 뒤이며, 클라이언트가 모든 바이트를 받았다는 보증은 아니다. <code>call_next</code> 가 처리되지 않은 예외로 끝나면 <code>response_status=500</code> 으로 기록한 뒤 예외를 그대로 다시 던진다.</li>
+<li>best-effort 다. 감사 목적의 필수 데이터라면 durable queue 로 바꿔야 한다. 중요한 업무 저장을 이 runner 에 넣지 않는다.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>설정</th>
+<th>기본값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACCESS_LOG_ENABLED</code></td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_EXCLUDE_PATHS</code></td>
+<td><code>["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]</code> (정확 일치)</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_EXCLUDE_EXTENSIONS</code></td>
+<td><code>[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]</code> (접미사 일치)</td>
+</tr>
+<tr>
+<td><code>TRUSTED_PROXY_HOPS</code></td>
+<td><code>0</code> — 앞단 신뢰 프록시 수. 0 이면 프록시 헤더를 보지 않는다</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_SENSITIVE_QUERY_KEYS</code></td>
+<td><code>["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]</code> (대소문자 무시)</td>
+</tr>
+<tr>
+<td><code>SESSION_COOKIE_NAME</code></td>
+<td><code>session</code> — 이 이름의 쿠키 값을 <code>session_id</code> 로 기록</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_RETENTION_DAYS</code></td>
+<td><code>365</code> — 보존 일수. <code>0</code> = 지우지 않음, 음수는 설정 검증 오류</td>
+</tr>
+</tbody>
+</table>
+<p><strong>보존 기간 삭제</strong> (security-ops-hardening ADR-002·ADR-003): home 의 Celery 태스크 <code>home.purge_expired_access_logs</code> 가
+<code>UserAccessLogService.purge_expired()</code> 를 부른다. 기준은 <code>now(UTC) - ACCESS_LOG_RETENTION_DAYS 일</code> 이고 그보다 <strong>오래된</strong> 행만 지운다
+(정확히 그 순간의 행은 남는다). <code>UserAccessLogRepository.delete_created_before()</code> 가 오래된 순으로 id 를 최대 5,000개(<code>user_access_log_service.PURGE_BATCH_SIZE</code>) 고른 뒤
+그 id 로 지우고, 서비스가 배치마다 커밋한다 — 긴 잠금·거대 트랜잭션을 피한다. 두 구문으로 나눈 이유는 MySQL 이 같은 테이블의
+<code>IN (SELECT … LIMIT)</code> 을 거부하고 SQLite 는 <code>DELETE … LIMIT</code> 을 받지 않기 때문이다(두 DB 에서 같은 쿼리). 보존 0 이면 DB 에 가지 않는다.
+일정은 매일 03:30(<code>TIME_ZONE</code>)이고 home 의 <code>tasks.py</code> 가 <code>celery_app.add_periodic_task</code> 로 등록한다(§9).</p>
+<p><strong>클라이언트 IP</strong> (<code>app/core/middlewares/client_ip.py</code> 의 <code>ClientIPResolver</code>, <code>setup_user_info_middleware()</code> 가
+설정으로 한 번 만들어 미들웨어에 주입): <code>TRUSTED_PROXY_HOPS=0</code> 이면 소켓 주소(<code>request.client.host</code>)만 쓴다.
+N 이면 <code>X-Forwarded-For</code> 목록 끝에 소켓 주소를 붙이고, 소켓 주소를 0번째로 센 <strong>오른쪽 N번째</strong>(= XFF 의 오른쪽
+N번째, 가장 바깥 신뢰 프록시가 본 주소)를 쓴다. 그보다 왼쪽은 클라이언트가 쓴 값이라 믿지 않는다. 체인이 N보다
+짧거나 값이 IP 가 아니면(<code>ipaddress.ip_address</code> 실패) 소켓 주소로 돌아간다. <code>X-Real-IP</code> 는 N&gt;0 이고 XFF 가
+없을 때만 본다. <strong>기본값 0 은 이전 동작(XFF 첫 값을 무조건 신뢰)을 바꾼 것이다</strong> — 프록시 뒤에 배포하면 홉 수를
+설정해야 실제 클라이언트 IP 가 기록된다(service-hardening ADR-005).</p>
+<p><strong>저장 전 정리</strong>: query string 의 민감 키 값은 <code>***</code> 로 바뀐다. 문자열은 home 기능의
+<code>UserAccessLogService.create_access_log</code> 가 모델 컬럼 길이(<code>UserAccessLog.__table__</code> 의 <code>String(n)</code>)로 자른다 —
+긴 헤더·쿠키 하나로 MySQL strict 모드의 1406 이 나서 기록이 빠지던 경로를 막는다(service-hardening ADR-006).</p>
+<p><strong>수집 필드</strong> (<code>user_access_logs</code>): <code>ip_address</code>(위 <code>ClientIPResolver</code>), <code>forwarded_for</code>, <code>real_ip</code>(헤더 원문 — 위조 가능),
+<code>user_agent</code> 와 파싱 결과(<code>os_name</code>·<code>os_version</code>·<code>browser_name</code>·<code>browser_version</code>·<code>device_type</code>·<code>device_brand</code>·<code>device_model</code>·<code>is_bot</code>),
+<code>request_path</code>, <code>request_method</code>, <code>query_string</code>(민감 키 값 <code>***</code>), <code>referer</code>, <code>accept_language</code>, <code>session_id</code>(<code>SESSION_COOKIE_NAME</code> 쿠키 원문), <code>user_id</code>(<code>request.state</code>),
+<code>response_status</code>, <code>response_time_ms</code>. 인덱스: created_at·ip_address·os_name·browser_name·device_type·country·session_id·user_id.</p>
+<p>조회 API(<code>/api/v1/home/access-logs</code> 외 4개)는 모두 read-only 세션을 쓰며 <strong>슈퍼유저 전용</strong>이다(라우터 의존성 <code>require_superuser</code>, §7.1).
+인증된 요청의 <code>user_id</code> 는 <code>get_current_principal</code> 이 핸들러 실행 중에 <code>request.state.user_id</code> 로 채우고, 미들웨어가 <strong>응답 뒤에</strong> 읽어 기록한다.</p>
+<hr>
+<h2 id="7-jwt">7. 인증 (JWT)</h2>
+<p>OAuth2 <strong>password flow</strong> + JWT access/refresh(회전). 자격증명은 <code>user</code> 기능의 <code>User.hashed_password</code> 에 있고,
+<code>auth</code> 는 인증 로직만 담당한다(<code>auth → user</code> 의존은 의도된 예외). 목적마다 클래스 하나인 보안 부품은
+<code>app/core/security/</code> 에 있다 — user 기능(해시)과 다른 기능의 인증 의존성(토큰 검증)도 써야 하므로 core 에 둔다.</p>
+<table>
+<thead>
+<tr>
+<th>부품</th>
+<th>위치</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PasswordHasher</code></td>
+<td><code>app/core/security/passwords.py</code></td>
+<td>pwdlib Argon2 해시. 기존 bcrypt(<code>$2…</code>)는 이전 규칙(72바이트 절단)으로 검증하고 성공하면 Argon2 새 해시를 돌려준다. 타이밍 균등화 더미 해시도 Argon2</td>
+</tr>
+<tr>
+<td><code>TokenService</code></td>
+<td><code>app/core/security/tokens.py</code></td>
+<td>PyJWT 발급·검증. claims <code>sub·type·iat·nbf·exp·jti·iss·aud</code> + access <code>username</code>·<code>su</code>(슈퍼유저 여부, bool 필수) / refresh <code>fam</code>. 실패는 원인과 무관하게 <code>InvalidTokenException</code>(401, 오류 코드 AUTH_INVALID_TOKEN)</td>
+</tr>
+<tr>
+<td><code>RefreshTokenStore</code></td>
+<td><code>app/core/security/refresh_store.py</code></td>
+<td>Redis 에 미사용 refresh(<code>auth:rt:{jti}</code>)·사용자 family 집합·family 폐기 표시를 둔다. 소비는 Redis GETDEL 하나</td>
+</tr>
+<tr>
+<td><code>RateLimiter</code></td>
+<td><code>app/core/security/rate_limit.py</code></td>
+<td>Redis 고정 창(MULTI 안에서 INCR + EXPIRE NX + TTL). 초과는 <code>TooManyRequestsException</code>(429, <code>Retry-After</code>)</td>
+</tr>
+<tr>
+<td><code>Principal</code> · <code>OwnershipPolicy</code></td>
+<td><code>app/core/security/principal.py</code></td>
+<td>요청 주체(id·username·is_superuser, 불변)와 소유권 판정 <code>ensure_can_modify(owner_id, principal)</code> — 소유자 또는 슈퍼유저, 아니면 403</td>
+</tr>
+</tbody>
+</table>
+<p>조립은 provider 함수가 한다(생성자 주입, service-hardening ADR-022). 여러 기능이 함께 쓰는 provider —
+<code>get_password_hasher</code>·<code>get_token_service</code>·<code>get_ownership_policy</code>(프로세스당 하나, <code>lru_cache</code>)와 <code>get_refresh_token_store</code>(<code>Depends(get_redis)</code>, §3.4) —
+는 <code>app/core/security/dependencies.py</code> 에 있고, 인증 기능(<code>app/features/auth/dependencies/auth_dependencies.py</code>)은 그것을 그대로 쓰면서
+<code>get_client_ip_resolver</code>·<code>get_rate_limiter</code>·<code>get_auth_service(session, hasher, tokens, store)</code> 를 더한다.</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>경로</th>
+<th>인증</th>
+<th>요청</th>
+<th>성공</th>
+<th>실패</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/register</code></td>
+<td>—</td>
+<td>JSON (비밀번호 8~128자)</td>
+<td>201</td>
+<td>409 사용자명 중복 · 422 · 429</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/login</code></td>
+<td>—</td>
+<td><strong>form</strong> (<code>username</code>·<code>password</code>)</td>
+<td>200</td>
+<td>401 · 422 · 429</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/refresh</code></td>
+<td>—</td>
+<td>JSON <code>{"refresh_token": ...}</code></td>
+<td>200</td>
+<td>401 무효·만료·재사용·폐기·비활성 · 422</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/logout</code></td>
+<td>—</td>
+<td>JSON <code>{"refresh_token": ...}</code></td>
+<td>204</td>
+<td>401 무효·만료 · 422</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/auth/me</code></td>
+<td>Bearer</td>
+<td>—</td>
+<td>200</td>
+<td>401</td>
+</tr>
+</tbody>
+</table>
+<p>토큰 응답은 <code>{"access_token", "refresh_token", "token_type": "bearer", "expires_in": &lt;access 수명 초&gt;}</code> 다.</p>
+<p><strong>흐름</strong></p>
+<ol>
+<li><strong>login</strong> — <code>login_rate_limit</code> 의존성이 ip(<code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code>)와 ip+소문자 username(<code>AUTH_LOGIN_MAX_ATTEMPTS</code>)을
+   <code>AUTH_LOGIN_WINDOW_SECONDS</code> 창으로 센다. ip 는 접속 로그와 같은 <code>ClientIPResolver</code>(<code>TRUSTED_PROXY_HOPS</code>, §6)로 정한다.
+   <code>AuthService.authenticate</code>(<code>/admin</code> 로그인과 같은 <code>verify_credentials</code>)가 해시기를 <code>asyncio.to_thread</code> 로 부르고, bcrypt → Argon2 재해시가 있으면 <code>UserRepository.update</code> 로
+   flush 해 둔다. 새 family 로 토큰 쌍을 발급하고 refresh 의 jti 를 기록한 뒤 핸들러가 <strong>커밋</strong>하고 ip+username 카운터를 지운다.</li>
+<li><strong>refresh</strong> — refresh 토큰을 검증하고 GETDEL <code>auth:rt:{jti}</code> 로 소비한다. 값이 없으면 이미 쓴 토큰의 <strong>재사용</strong>(탈취 신호)이라
+   그 family 를 폐기하고 401 — 정상 사용자가 가진 같은 family 의 최신 토큰도 함께 죽는다. family 가 폐기됐거나 사용자가 없거나
+   비활성이면 401(비활성·부재는 family 도 폐기). 통과하면 <strong>같은 family</strong> 로 새 쌍을 발급한다.</li>
+<li><strong>logout</strong> — refresh 토큰의 family 를 폐기하고 jti 를 소비한다(멱등, 204). access 토큰은 만료(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>)까지
+   유효하다 — 즉시 폐기 목록은 두지 않고 짧은 수명으로 대신한다.</li>
+<li><strong>/me</strong> — <code>get_current_principal</code>(아래 §7.1) → read-only 세션을 <strong>primary 에 고정</strong>(<code>using_writer</code>)한 <code>UserRepository.get_by_id</code> → 없거나 비활성이면 401. replica 에서 읽으면 복제 지연 중 가입 직후의 유효한 토큰이 401 이 되고 비활성화·삭제가 늦게 반영된다(e2e-policy-2 결정 5, integration-e2e F-008). 다른 읽기 라우팅은 그대로다.
+   Redis 도 쓰기 세션도 쓰지 않는다.</li>
+<li><strong>register</strong> — <code>register_rate_limit</code>(ip, <code>AUTH_REGISTER_MAX_ATTEMPTS</code>/<code>AUTH_REGISTER_WINDOW_SECONDS</code>) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.</li>
+</ol>
+<p>access·refresh 수명(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)은 <a href="../../../README.md#세션토큰-만료">README 세션·토큰 만료</a> 표에 있다.</p>
+<table>
+<thead>
+<tr>
+<th>설정</th>
+<th>기본값</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>JWT_ALGORITHM</code></td>
+<td><code>HS256</code></td>
+<td>HS256·HS384·HS512 만 허용. 검증은 이 값 하나만 받는다</td>
+</tr>
+<tr>
+<td><code>JWT_ISSUER</code> / <code>JWT_AUDIENCE</code></td>
+<td><code>fastapi-project</code> / <code>fastapi-project-api</code></td>
+<td>검증 시 일치해야 한다</td>
+</tr>
+<tr>
+<td><code>JWT_LEEWAY_SECONDS</code></td>
+<td><code>5</code></td>
+<td>exp·nbf·iat 시계 오차 허용</td>
+</tr>
+<tr>
+<td><code>AUTH_LOGIN_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_WINDOW_SECONDS</code></td>
+<td><code>5</code> / <code>20</code> / <code>60</code></td>
+<td>로그인 레이트 리밋</td>
+</tr>
+<tr>
+<td><code>AUTH_REGISTER_MAX_ATTEMPTS</code> / <code>AUTH_REGISTER_WINDOW_SECONDS</code></td>
+<td><code>5</code> / <code>3600</code></td>
+<td>회원가입 레이트 리밋</td>
+</tr>
+<tr>
+<td><code>ACCESS_TOKEN_SECRET_KEY</code> / <code>REFRESH_TOKEN_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td>서로 다른 값으로 <strong>배포 전 반드시 교체</strong> — 기본값이면 누구나 토큰을 위조한다. staging/production 은 placeholder 이거나 두 키가 같으면 기동이 실패한다(<code>validate_deployment_safety()</code>, §3.2)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>access 와 refresh 는 서명 키가 다르고, <code>type</code> claim 도 검사한다(키가 같게 설정돼도 종류 혼동을 막는 두 번째 벽).</li>
+<li><strong>상수 시간 인증</strong>: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
+  bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).</li>
+<li><strong>논블로킹 해싱</strong>: Argon2·bcrypt 는 <code>asyncio.to_thread</code> 로 이벤트 루프 밖에서 돈다.</li>
+<li><strong>API 인증은 세션을 쓰지 않는다</strong>: 메인 앱에는 세션 미들웨어가 없고, <code>admin_session</code> 쿠키를 보내도 API 는 401 이다. 세션 로그인은 <code>/admin</code> 전용이다(§8).</li>
+</ul>
+<h3 id="71">7.1 인가 — 주체·소유권·슈퍼유저</h3>
+<p>권한은 <strong>슈퍼유저/일반 2단계</strong>다(<code>users.is_superuser</code>). 인가는 core 의 주입 경로 하나(<code>app/core/security/dependencies.py</code>)로 한다 —
+기능이 인가를 위해 user 기능을 import 하지 않는다(service-hardening C-11).</p>
+<table>
+<thead>
+<tr>
+<th>주입</th>
+<th>하는 일</th>
+<th>실패</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oauth2_scheme</code></td>
+<td><code>OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)</code> — OpenAPI 에 Bearer 스킴을 싣는다</td>
+<td>헤더가 없으면 아래가 401</td>
+</tr>
+<tr>
+<td><code>get_current_principal</code></td>
+<td>access 토큰 검증 → <code>Principal(id, username, is_superuser)</code>. <strong>DB 조회 없음</strong>. <code>request.state.user_id</code> 를 채운다</td>
+<td>401 UNAUTHORIZED(토큰 없음) · 401 AUTH_INVALID_TOKEN(만료·위조·<code>su</code> 누락·refresh 토큰). 401 의 <code>WWW-Authenticate: Bearer</code> 는 전역 핸들러가 붙인다</td>
+</tr>
+<tr>
+<td><code>require_superuser</code></td>
+<td>주체가 슈퍼유저인지 본다</td>
+<td>403 FORBIDDEN</td>
+</tr>
+<tr>
+<td><code>CurrentPrincipal</code> / <code>SuperuserPrincipal</code></td>
+<td>위 두 의존성의 <code>Annotated</code> 별칭 — 핸들러 인자 타입으로 쓴다</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>OwnershipPolicy</code></td>
+<td>서비스가 생성자로 받아 수정·삭제 전에 <code>ensure_can_modify(owner_id, principal)</code> 를 부른다. <code>owner_id</code> 가 <code>None</code> 이면 슈퍼유저만</td>
+<td>403 FORBIDDEN</td>
+</tr>
+</tbody>
+</table>
+<p><strong>접근 수준 선언과 기본 거부</strong>(<code>app/core/security/access.py</code>, access-policy). 뷰는 경로 데코레이터의 <code>dependencies=[...]</code> 에 수준을 하나 적는다.</p>
+<table>
+<thead>
+<tr>
+<th>선언</th>
+<th>실체</th>
+<th>쓰는 곳</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Public</code></td>
+<td>아무것도 하지 않는 표식 의존성</td>
+<td>안전한 메서드(GET·HEAD·OPTIONS) 공개</td>
+</tr>
+<tr>
+<td><code>PublicWrite</code></td>
+<td>아무것도 하지 않는 표식 의존성(다른 함수)</td>
+<td>인증 없는 쓰기를 명시적으로 연다 — auth register·login·refresh·logout</td>
+</tr>
+<tr>
+<td><code>LoginRequired</code></td>
+<td><code>Depends(get_current_principal)</code> — 인자 <code>CurrentPrincipal</code> 도 같은 선언으로 본다</td>
+<td>401</td>
+</tr>
+<tr>
+<td><code>SuperuserRequired</code></td>
+<td><code>Depends(require_superuser)</code> — 인자 <code>SuperuserPrincipal</code> 도 같은 선언으로 본다</td>
+<td>401 · 403</td>
+</tr>
+</tbody>
+</table>
+<p><code>create_app()</code> 의 마지막 단계(라우터·health·docs·admin 설치 뒤)에서 <code>AccessPolicyGuard().verify(app)</code> 가 서빙되는 모든 <code>APIRoute</code>
+(FastAPI 0.141 의 <code>_IncludedRouter</code> 중첩을 <code>effective_route_contexts()</code> 로 펼친 것, <code>include_in_schema=False</code> 포함)의 의존성 트리를
+재귀로 훑는다. 선언 없음 · 서로 다른 수준 동시 선언 · 쓰기 메서드에 <code>Public</code> · 안전한 메서드에 <code>PublicWrite</code> 가 하나라도 있으면
+위반 목록 전체를 담은 <code>ImproperlyConfigured</code> 로 기동을 멈춘다. <code>require_superuser</code> 는 안에서 <code>get_current_principal</code> 을 쓰므로
+슈퍼유저가 있으면 슈퍼유저 하나로 본다. 라우터 단위 <code>dependencies</code> 도 트리에 들어가므로 인정되지만 예시는 뷰 단위로 통일했다.
+FastAPI 가 붙이는 문서 경로(Starlette <code>Route</code>)와 <code>Mount</code>(<code>/admin</code> — 자체 세션 인증)는 대상이 아니다. 앱이 직접 등록한
+Scalar <code>/docs</code> 는 <code>APIRoute</code> 라 <code>Public</code> 을 선언한다.</p>
+<table>
+<thead>
+<tr>
+<th>기능</th>
+<th>공개</th>
+<th>인증</th>
+<th>소유자 또는 슈퍼유저</th>
+<th>슈퍼유저</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>blog · sns · reply</td>
+<td>목록·단건 조회</td>
+<td>생성(작성자 <code>author_id</code>·<code>author</code> 는 서버가 주체로 채운다 — 본문 값은 무시)</td>
+<td>수정·삭제(존재 확인 404 가 먼저)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>catalog</td>
+<td>목록·단건 조회</td>
+<td>—</td>
+<td>—</td>
+<td>생성·수정·삭제</td>
+</tr>
+<tr>
+<td>reports</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>일별 매출</td>
+</tr>
+<tr>
+<td>home</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>접속 로그 조회 5종(뷰마다 <code>SuperuserRequired</code>)</td>
+</tr>
+<tr>
+<td>user</td>
+<td>—</td>
+<td>—</td>
+<td>단건 조회·수정(본인 — <strong>권한 판정이 존재 확인보다 먼저</strong>라 남의 ID 는 있든 없든 403)</td>
+<td>목록·생성(비밀번호 필수, <code>is_superuser</code> 지정 가능)·삭제, <code>is_active</code>·<code>is_superuser</code> 변경</td>
+</tr>
+<tr>
+<td>auth</td>
+<td>register·login·refresh·logout</td>
+<td><code>/me</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>비활성화(<code>is_active</code> True→False)·강등(<code>is_superuser</code> True→False)·비밀번호 변경·삭제는 그 사용자의 refresh family 와 <code>/admin</code> 관리 세션을 모두 폐기한다(커밋 전).
+  무엇을 지울지는 <code>revocation_for_change</code>(<code>app/core/security/revocation.py</code>, §8)가 변경 전 값과 비교해 정한다. 강등 시 refresh 폐기는 service-hardening 부터의
+  동작(<code>test_demotion_revokes_refresh_families</code>)이고, 관리 화면도 같은 규칙을 쓴다(admin-session-hardening ADR-010 — 관리 화면 경로 = API 경로). refresh 회전은
+  DB 를 다시 읽지만(비활성 거부·새 권한으로 발급) 기존 동작을 유지한다.
+  이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).</li>
+<li><code>author_id</code> 가 없는 행(인가 리비전 <code>a3c9e8f1b274</code> 이전 데이터)은 슈퍼유저만 수정·삭제한다.</li>
+<li>정본은 뷰 선언이다. "모든 오퍼레이션이 분류됐는가" 는 기동 검사가 막고, <code>tests/test_authorization_policy.py</code> 의 표는 예시 정책이
+  의도한 수준인지 가드의 판정과 대조하는 회귀용이다(OpenAPI <code>security</code> 와도 교차 확인한다).</li>
+<li>첫 관리자는 <code>uv run python -m scripts.create_superuser --username &lt;이름&gt; --email &lt;메일&gt;</code> 로 만든다(이미 있으면 승격, 비밀번호는 <code>--set-password</code> 일 때만 바꾼다).
+  사용법은 README 「첫 관리자 만들기」.</li>
+</ul>
+<hr>
+<h2 id="8-sqladmin">8. 관리 화면 (SQLAdmin)</h2>
+<p>설계·흐름도·쿠키 구조·위협 모델·문제 해결은 <a href="../workflows/admin-authentication.html">관리 화면 인증 가이드</a>에 있다. 여기는 요약이다.</p>
+<ul>
+<li><code>ADMIN_DISABLED=false</code>(기본)일 때만 <code>create_admin()</code> 이 <code>/admin</code> 을 마운트하고 설치 앱의 <code>admin_views</code> 를 등록한다. <code>DEBUG</code> 와 독립이다.
+  <code>ADMIN_DISABLED=true</code> 면 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두 없고, 앱의 어떤 응답에도 <code>/admin</code> 이 나오지 않는다
+  (<code>tests/core/test_admin_disabled.py</code>). 예전 <code>ADMIN</code> 설정이 남아 있으면 기동이 멈춘다(§3.2).</li>
+<li>ModelView 는 모델과 같은 기능 폴더의 <code>admin.py</code> 가 소유한다(중앙 취합 파일 없음). 모델이 있는 앱은 <code>admin.py</code> 를 가져야 한다(<code>tests/core/test_admin_wiring.py</code>).
+  <code>User</code> 의 <code>hashed_password</code> 는 목록·상세·폼·내보내기 어디에도 나오지 않고 <code>User</code> 생성은 막혀 있다(<code>tests/core/test_admin_views.py</code>).</li>
+<li><strong>활성 슈퍼유저 로그인이 필요하다.</strong> <code>AdminAuthBackend</code>(<code>app/core/security/admin_auth.py</code>)가 SQLAdmin <code>AuthenticationBackend</code> 를 구현한다.</li>
+<li>로그인: 폼 username/password/csrf_token → <strong>CSRF 토큰 확인</strong>(<code>AdminCsrfMiddleware</code> — 아래, 없거나 다르면 403 으로 로그인 화면을 다시 그리고
+    레이트 리밋·자격 확인을 하지 않는다) → 레이트 리밋(<code>AUTH_LOGIN_*</code> 한도 재사용, 키 접두사 <code>admin-login:</code> 으로 API 와 분리, ip·ip+username) →
+    자격 확인 → 활성·슈퍼유저면 <code>request.session.clear()</code> 후 사용자 id 저장 + 새 CSRF 토큰 + <code>RedisSessionMiddleware.rotate()</code>(응답 직전 새 세션 ID 발급,
+    이전 Redis 키 삭제 — 세션 고정 방지). 실패는 사유 없이 400, 한도 초과는 로그인 화면을 429 + <code>Retry-After</code> 로 다시 그린다.</li>
+<li>매 요청: 세션의 id 로 <strong>DB 를 다시 확인</strong>해 활성·슈퍼유저가 아니면 세션을 비우고 로그인 화면으로 보낸다(아래 즉시 폐기와 이중 방어).</li>
+<li>로그아웃: <strong>POST 전용</strong>(<code>require_post_logout</code> 이 sqladmin 의 GET <code>/admin/logout</code> 라우트를 POST 라우트로 바꾼다 — GET 은 405) + CSRF 토큰.
+    세션을 비우면 미들웨어가 Redis 키를 지우고 쿠키를 지운다 — 복사해 둔 쿠키도 그 순간 무효다.</li>
+<li>자격 확인은 core 가 사용자 모델을 모르므로 <code>AuthConfig.ready()</code> 가 <code>app/core/security/admin_credentials.py</code> 의 훅에 등록한
+    <code>UserAdminCredentials</code>(<code>app/features/auth/admin_credentials.py</code>, <code>background_session</code> + <code>PasswordHasher</code>, API 로그인과 같은 <code>verify_credentials</code>)가 한다.
+    등록한 앱이 없으면 관리 화면을 열지 않고 기동을 멈춘다.</li>
+<li><strong>세션은 Redis 서버 세션이다</strong>(<code>app/core/security/admin_session.py</code>, admin-session-hardening ADR-001). 쿠키 <code>admin_session</code> 에는 <code>secrets.token_urlsafe(32)</code>
+  세션 ID 만 있고(path <code>/admin</code>, SameSite=Strict, HttpOnly, staging/production 에서 Secure, Max-Age = 절대 만료), 내용은 Redis 에 있다.</li>
+<li><code>AdminSessionStore</code> 가 저장·조회·삭제·사용자별 폐기를, ASGI <code>RedisSessionMiddleware</code> 가 <code>scope["session"]</code> 에 dict 를 채우고 응답 직전에 저장·회전·삭제한다
+    (<code>request.session</code> 인터페이스 그대로).</li>
+<li>Redis 키 <code>admin:sess:{HMAC-SHA256(SESSION_SECRET_KEY, 세션 ID)}</code> → JSON <code>{"data", "user_id", "created_at"}</code>. TTL = min(미사용 만료, 절대 만료까지 남은 초),
+    요청마다 다시 건다(내용이 바뀌면 SET, 아니면 EXPIRE). 사용자별 인덱스 <code>admin:user_sessions:{user_id}</code>(SET, TTL = 절대 만료).</li>
+<li>만료: 절대 <code>ADMIN_SESSION_MAX_AGE_SECONDS</code>(기본 8시간, 연장 불가 — 읽을 때 <code>created_at</code> 으로도 검사), 미사용 <code>ADMIN_SESSION_IDLE_SECONDS</code>(기본 30분).
+    쿠키의 ID 가 Redis 에 없으면(만료·폐기·위조) 빈 세션이고 쿠키를 지운다(<code>Max-Age=0</code>).</li>
+<li><code>SESSION_SECRET_KEY</code> 는 세션 ID → Redis 키 HMAC 키다 — Redis 키가 새도 쿠키를 만들 수 없고, 키를 바꾸면 모든 관리 세션이 무효다.</li>
+<li><strong>Redis 장애는 fail-closed</strong>: 세션을 읽지 못하면(lifespan 밖이라 클라이언트가 없는 경우 포함) 관리 화면은 503 이고 앱에 닿지 않는다. 응답 직전 저장 실패(쿠키 없는 첫 요청의 세션 생성 등)도 앱이 만든 응답 대신 같은 503 이다 — 응답 시작 전이라 바꿀 수 있다(e2e-policy-2 결정 6).</li>
+<li>미들웨어 순서는 <code>RedisSessionMiddleware</code>(바깥) → <code>AdminCsrfMiddleware</code>(안쪽)이고 <strong>SQLAdmin 하위 앱에만</strong> 있다 — 메인 앱에는 세션 미들웨어가 없고
+    API 인증(JWT Bearer)은 세션을 보지 않는다(<code>tests/core/test_admin_login_flow.py</code>).</li>
+<li><strong>즉시 폐기</strong>(ADR-005·ADR-008·ADR-010): 판정 한 곳 — <code>revocation_for_change(before, changes)</code>(<code>app/core/security/revocation.py</code>)가 변경 <strong>전</strong> 값과 비교해
+  <code>Revocation(admin_sessions, refresh)</code> 를 돌려주고, 삭제는 <code>revocation.REVOKE_ON_DELETE</code>, 비밀번호 변경 스크립트는 <code>revocation.REVOKE_ON_PASSWORD_CHANGE</code>(둘 다 두 집합 모두)다.
+  <code>UserSessionRevoker.revoke(user_id, revocation)</code> 는 판정대로 refresh family(<code>RefreshTokenStore.revoke_user</code>)·관리 세션(<code>AdminSessionStore.revoke_user</code>)을 지운다.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>변경(변경 전 값과 비교)</th>
+<th>관리 세션</th>
+<th>refresh family</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>비활성화(<code>is_active</code> True→False)</td>
+<td>지운다</td>
+<td>지운다</td>
+</tr>
+<tr>
+<td>슈퍼유저 해제(<code>is_superuser</code> True→False)</td>
+<td>지운다</td>
+<td>지운다</td>
+</tr>
+<tr>
+<td>비밀번호 해시 변경</td>
+<td>지운다</td>
+<td>지운다</td>
+</tr>
+<tr>
+<td>삭제</td>
+<td>지운다</td>
+<td>지운다</td>
+</tr>
+<tr>
+<td>그 밖(이름·이메일 등), 이미 꺼진 값을 다시 끔</td>
+<td>유지</td>
+<td>유지</td>
+</tr>
+</tbody>
+</table>
+<p>지금은 두 집합이 같지만 판정은 두 집합을 따로 돌려준다 — 한쪽만 바꿀 일이 생겨도 조건은 이 함수 한 곳에만 있다. 원칙은 관리 화면 경로 = API 경로(<code>UserService</code>)다.</p>
+<ul>
+<li>API: <code>UserService</code>(<code>app/features/user/services/user_service.py</code>)가 수정·삭제 때 판정해 부른다. 생성자는 <code>revoker</code> 하나를 받고, provider 는
+    <code>get_user_session_revoker</code>(<code>app/core/security/dependencies.py</code>)다. 관리 화면이 꺼져 있으면 관리 세션 저장소가 <code>None</code> 이라 refresh 쪽만 지운다.</li>
+<li>관리 화면: <code>UserAdmin</code>(<code>app/features/user/admin.py</code>)의 커밋 <strong>전</strong> 훅이 같은 판정으로 <code>revoker_from_scope(request.scope)</code> 를 부른다 — <code>on_model_change</code>
+    (생성 제외)·<code>on_model_delete</code>(<code>revocation.REVOKE_ON_DELETE</code>). 자기 자신을 강등·비활성화하면 현재 세션도 지워져 다음 요청에서 로그인 화면이 나온다(의도).</li>
+<li><strong>폐기는 커밋 전이다(fail-closed)</strong>: sqladmin 0.32 의 <code>_queries._update_async</code>·<code>_delete_async</code> 가 <code>on_*</code> 훅을 세션 안에서 커밋 전에 부르고, API 는 핸들러가
+    나중에 커밋한다. Redis 폐기가 실패하면 예외가 커밋을 막는다 — 관리 화면 수정은 400 오류 화면 + DB 변경 없음, 삭제는 목록 <code>error=</code> + 행 유지.
+    반대로 폐기 뒤 커밋이 다른 이유로 실패하면 세션만 지워진다(다시 로그인하면 된다). 폐기와 커밋 사이에 다시 로그인한 세션은 매 요청 DB 확인이 막는다(R-005).</li>
+<li>스크립트: <code>scripts/create_superuser.py --set-password</code> 는 별도 프로세스라 커밋 뒤 <code>revoke_sessions_in_redis</code> 로 관리 세션과 refresh 를 지운다
+    (<code>revocation.REVOKE_ON_PASSWORD_CHANGE</code>). Redis 실패면 종료 코드 1(<code>비밀번호는 바뀌었지만 세션을 지우지 못했습니다</code>)이다.</li>
+<li><strong>CSRF</strong>(ADR-002): <code>AdminCsrfMiddleware</code>(<code>app/core/security/admin_auth.py</code>)가 <code>/admin</code> 아래 POST·PUT·PATCH·DELETE 전부(로그인 포함 — 검사는 여기 하나)에서
+  헤더 <code>X-CSRF-Token</code>, 없으면 폼 필드 <code>csrf_token</code> 을 세션 토큰(<code>AdminCsrf</code>)과 <code>hmac.compare_digest</code> 로 비교한다. 폼은 본문을 한 번 버퍼링해 파싱하고
+  같은 본문을 다운스트림에 다시 흘려 준다. 버퍼링 상한은 10 MiB(<code>admin_auth.py</code> 의 상수 — 설정이 아니다) — <code>Content-Length</code> 로 먼저, 없거나 거짓이면 읽는 도중
+  누적 크기로 판정해 413, 필드 하나가 1 MiB 를 넘으면 400 이다(500·연결 끊김 없음, e2e-policy-2 결정 7). 실패는 403 이다 — 로그인은 로그인 화면, 로그인한 세션은 관리 화면 <code>error.html</code>, 로그인 전 요청은 문구만.
+  로그는 WARNING <code>[AdminCsrf] 토큰 불일치 METHOD PATH</code>. 레이트 리밋·자격 확인보다 먼저라 위조 요청이 카운터를 올리지 못한다.</li>
+<li>로그인 화면은 <code>app/templates/admin/sqladmin/login.html</code>(Bootstrap 5.3.8 CSS, SRI)이 sqladmin 기본 템플릿을 덮어쓴다 — <code>templates_dir</code> 의 로더가 패키지 템플릿보다 먼저다.
+  폼은 <code>csrf_token(request)</code>(백엔드가 템플릿에 건 전역 함수 — 세션에 토큰이 없으면 <code>secrets.token_urlsafe(32)</code> 로 만든다)를 hidden 입력으로 싣는다.
+  로그인 이후 화면은 <code>app/templates/admin/sqladmin/base.html</code> 이 sqladmin 원본(<code>sqladmin_original/base.html</code>)을 <strong>확장</strong>해 <code>&lt;meta name="csrf-token"&gt;</code> 을 싣고,
+  인라인 스크립트가 같은 출처 POST 폼(생성·수정)에 hidden <code>csrf_token</code> 을, 같은 출처 XHR·<code>fetch</code>(삭제·일괄 삭제·가져오기)에 <code>X-CSRF-Token</code> 을 붙이며,
+  로그아웃 링크 클릭을 토큰 실은 POST 폼 제출로 바꾼다. JS 가 꺼져 있으면 로그아웃은 405 다. 원본 대조 테스트(<code>tests/core/test_admin_csrf.py</code>)가
+  sqladmin 업그레이드로 원본 블록·로그아웃 링크·<code>main.js</code> 요청 방식·로그아웃 라우트가 바뀌면 실패한다. 사용자 정의 <code>@action</code>(GET)은 보호 밖이다(이 저장소는 안 쓴다).</li>
+<li>목록의 시각 컬럼 필터는 <code>LocalDateFilter</code>(<code>app/core/admin_filters.py</code>)다. sqladmin 의 연산 필터는 <code>UTCDateTime</code> 을 날짜로 알아보지 못해 문자열을
+  바인딩하고 목록이 500 이 된다. 이 필터는 <code>YYYY-MM-DD</code> 를 <code>TIME_ZONE</code> 의 날짜로 읽어 지역 0시를 UTC 순간으로 바꾼 범위로 거른다 —
+  같은 날 <code>[D, D+1)</code>·이후(포함) <code>&gt;= D</code>·이전(미포함) <code>&lt; D</code>·<strong>기간</strong> <code>S~E</code>(양 끝 포함 <code>[S, E+1)</code>, 한쪽만이면 열린 구간), 빠른 선택(오늘·최근 7일·최근 30일 —
+  최근 N일은 오늘을 포함한 기간). 화면은 시작일·종료일 날짜 입력 둘을 제출 직전 스크립트가 값 하나로 합친다(<code>app/templates/admin/sqladmin/filters/local_date_filter.html</code>).
+  형식이 틀리거나 역순이면 필터 없이 목록을 보여 준다(WARNING <code>[admin] 날짜 필터 기간 무시</code>). <code>created_at</code> 이 있는 모든 ModelView 가 단다(<code>tests/core/test_admin_pages.py</code>).</li>
+<li>기본이 "켜짐" 인 것은 받자마자 DB 를 들여다보게 하려는 <strong>개발 우선 결정</strong>(2026-08-12)이다. 배포 환경에서도 켤 수 있다(로그인이 막는다).</li>
+</ul>
+<hr>
+<h2 id="9-celery">9. Celery</h2>
+<pre><code class="language-python">def discover_task_modules(installed_apps):          # 새 Apps() 를 run_ready=False 로 채운다
+    registry = Apps()
+    registry.populate(installed_apps, run_ready=False)
+    return registry.task_modules()                   # 앱별 &lt;앱&gt;.tasks 중 존재하는 것
+
+celery_app = Celery(&quot;project&quot;, broker=redis_settings.REDIS_URL, backend=redis_settings.REDIS_URL,
+                    include=discover_task_modules(INSTALLED_APPS))
+# JSON serializer 만 허용, task_track_started, enable_utc=True, timezone=TIME_ZONE(일정 해석용), beat_schedule={}
+</code></pre>
+<ul>
+<li>태스크는 <strong>기능 폴더의 <code>tasks.py</code></strong>(선택, <code>AppConfig.tasks_module</code>)에 <code>@celery_app.task</code> 로 정의한다. 예: <code>app/features/home/tasks.py</code> 의
+  <code>home.aggregate_access_stats</code> — <code>background_session()</code> 으로 세션을 열고, 서비스는 HTTP 경로와 같은 home provider
+  <code>build_user_access_log_service(session)</code> 로 조립한다(service-hardening ADR-012).</li>
+<li>워커 <code>include</code> 는 <code>config.INSTALLED_APPS</code> 로 만든다. <code>app/celery</code> 는 어떤 기능도 import 하지 않는다(<code>tests/test_layering_and_openapi.py::test_celery_does_not_depend_on_features</code>).
+  목록에서 앱을 빼면 그 앱의 태스크·모델도 워커에서 빠진다. 같은 registry 가 2단계(models)까지 돌므로 워커에서도 모든 설치 앱의 mapper 가 등록된다.
+  <code>ready()</code> 는 돌리지 않는다 — 접속 로그 sink 결선은 API 프로세스 전용이다.</li>
+<li>발견은 <code>importlib.util.find_spec</code> 으로 <strong>존재만</strong> 본다. 태스크 module 은 <code>celery_app</code> 을 import 하므로, 발견 단계에서 import 하면 순환 import 다.
+  태스크 module 내부의 import 오류는 워커가 include 를 import 할 때 드러난다.</li>
+<li>동기 태스크 안의 코루틴은 <code>app/celery/task.py</code> 의 <code>run_async()</code> 가 <strong>worker 프로세스당 영속 event loop</strong> 에서 실행한다.</li>
+<li>worker 종료: <code>app/celery/lifecycle.py</code> 가 <code>worker_process_shutdown</code> 신호에서 살아 있는 loop 로 <code>dispose_engine()</code> → <code>shutdown_asyncgens()</code> → loop close → 전역 참조 해제.</li>
+<li><strong>주기 실행(beat)</strong>: 일정도 기능의 <code>tasks.py</code> 가 <code>celery_app.add_periodic_task(...)</code> 로 등록한다 — beat 는 기동 때 워커와 같은 <code>include</code> 로
+  태스크 module 을 불러온 뒤 <code>beat_schedule</code> 을 읽으므로, 중앙 Celery 앱은 기능을 import 하지 않는다. 현재 일정은 home 의
+  <code>home.purge_expired_access_logs</code>(매일 03:30, <code>timezone=TIME_ZONE</code> 기준) 하나다. 실행: <code>uv run celery -A app.celery.app beat --loglevel=info</code>
+  (worker 와 별도 프로세스, <strong>한 개만</strong> — 여러 개면 같은 일정이 중복 실행된다).</li>
+<li>API 기동은 worker·beat 를 띄우지 않고, API lifespan 은 worker 의 broker 연결·loop 를 정리하지 않는다(소유권이 다른 프로세스).</li>
+<li>태스크에는 살아 있는 세션·Service·Request 를 넘기지 말고 JSON 직렬화 가능한 id·값만 넘긴다. 재시도·멱등 정책은 태스크별로 정한다.</li>
+</ul>
+<hr>
+<h2 id="10-alembic">10. Alembic 마이그레이션</h2>
+<p><code>migrations/env.py</code> 는 runtime 과 <strong>같은 registry 구현</strong>으로 모델을 모은다. 새 앱을 추가해도 이 파일은 고치지 않는다.</p>
+<pre><code class="language-python">fileConfig(config.config_file_name, disable_existing_loggers=False)   # 앱 로거를 끄지 않는다
+Apps().populate(INSTALLED_APPS, run_ready=False)                      # ready() 부수효과 없음
+target_metadata = Base.metadata
+config.set_main_option(                                              # URL → 문자열, % 는 %% 로
+    &quot;sqlalchemy.url&quot;,
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace(&quot;%&quot;, &quot;%%&quot;),
+)
+</code></pre>
+<ul>
+<li><code>target_metadata</code> 는 전역 <code>Base.metadata</code> 다. 같은 프로세스에서 미설치 모델을 먼저 import 하면 metadata 에 남으므로, registry 소유 모델만으로 완전히 필터링하는 구조는 아니다(Alembic CLI 의 깨끗한 프로세스에서는 설치 앱 모델만 들어간다).</li>
+<li>URL: <code>ALEMBIC_DATABASE_URL</code> 이 있으면 그 값을 <code>make_url()</code> 로 읽고(로컬·CI·SQLite), 없으면 primary URL 의 drivername 만 <code>mysql+pymysql</code> 로 바꾼다. DSN 은 모두 <code>sqlalchemy.engine.URL</code> 로 조립하므로 비밀번호의 <code>@ : / # ? %</code> 가 구분자로 읽히지 않는다. ConfigParser 보간 때문에 <code>%</code> 는 <code>%%</code> 로 넘긴다. <strong>migration 은 항상 writer</strong> 에서 실행한다.</li>
+<li>Alembic 은 FastAPI lifespan 에 들어가지 않으므로 Redis ping 을 하지 않는다. 서버 기동이 자동 upgrade 를 하지도 않는다.</li>
+<li><strong>배포 전</strong>: <code>e5a7c2d9f310</code> 은 기존 MySQL 시각 값이 <code>+09:00</code> 으로 저장됐다고 가정한다 — 다른 시간대로 운영했다면 적용 전에 리비전의
+  <code>LEGACY_OFFSET</code> 상수를 바꾸고, 적용 전에 백업한다(값을 UPDATE 문으로 다시 쓴다).</li>
+<li>revision 체인: <code>f4adf0ae24ea</code> baseline → <code>b2f1a9c0d3e4</code> user hashed_password → <code>c7d3e91b5a20</code> catalog_products → <code>d1f8c4a70b93</code> sales_orders → <code>e5a7c2d9f310</code> 시각 UTC·<code>DATETIME(6)</code>(head — MySQL 만 변환, 기존 KST 벽시계를 <code>CONVERT_TZ(col, '+09:00', '+00:00')</code> 로 UTC 로 옮긴다. SQLite 는 no-op).</li>
+<li>검증: <code>tests/core/test_migration_chain.py</code>(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite <code>upgrade head</code> + <code>alembic check</code>, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.</li>
+</ul>
+<hr>
+<h2 id="11_1">11. 운영·보안과 알려진 제한</h2>
+<h3 id="111">11.1 배포 체크리스트 — 사람이 확인할 것</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>확인</th>
+<th>빠뜨리면</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>DEBUG=false</code> (그리고 <code>LOG_LEVEL</code> 을 <code>DEBUG</code> 로 두지 않는다)</td>
+<td><code>/docs</code>·<code>/openapi.json</code> 공개, 시작 시 <code>create_all</code> 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>. 쓴다면 HTTPS 로만 접근(staging/production 쿠키는 <code>Secure</code>)</td>
+<td>켜 둔 <code>/admin</code> 은 로그인 화면을 공개한다(로그인은 필요하다). 예전 <code>ADMIN</code> 줄이 남아 있으면 기동이 멈춘다</td>
+</tr>
+<tr>
+<td>3</td>
+<td>외부 노출이 필요 없으면 <code>SERVER_HOST=127.0.0.1</code></td>
+<td>기본 <code>0.0.0.0</code> — <strong>앱은 이 조합을 막지 않는다.</strong> 관리 화면을 내부망으로만 쓰려면 프록시에서 <code>/admin</code> 을 제한한다</td>
+</tr>
+<tr>
+<td>4</td>
+<td>비밀값 교체: <code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>(서로 다른 <code>secrets.token_urlsafe(48)</code> 값, 세션 키는 <code>/admin</code> 세션 ID → Redis 키 HMAC)·<code>MYSQL_PASSWORD</code>·<code>REDIS_PASSWORD</code></td>
+<td>세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출</td>
+</tr>
+<tr>
+<td>5</td>
+<td>CORS 는 실제 frontend origin 만</td>
+<td><code>CORS_ALLOW_ORIGINS=["*"]</code> 와 <code>CORS_ALLOW_CREDENTIALS=true</code> 조합은 설정 로드가 거부한다</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Redis 는 <strong>7.0 이상</strong>, 인증·사설망</td>
+<td>startup 필수 자원이자 Celery broker·<code>/admin</code> 세션 저장소(Redis 를 쓸 수 없으면 관리 화면은 503). 7.0 미만이면 기동이 거부된다(<code>EXPIRE NX</code>). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>DB_WORKER_PROCESSES</code>·<code>DB_MAX_SERVER_CONNECTIONS</code> 를 실제 값으로</td>
+<td>트래픽이 몰릴 때만 "Too many connections" 로 드러난다</td>
+</tr>
+<tr>
+<td>8</td>
+<td>오케스트레이터가 <code>/health</code> 를 liveness, <code>/ready</code> 를 readiness 로 연결</td>
+<td>DB 흔들림에 프로세스 재시작</td>
+</tr>
+<tr>
+<td>9</td>
+<td>로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록</td>
+<td>—</td>
+</tr>
+<tr>
+<td>10</td>
+<td>프록시 뒤 배포면 <code>TRUSTED_PROXY_HOPS</code> 를 <strong>앞단 프록시 단 수</strong>로</td>
+<td>0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋(API·<code>/admin</code>)이 전체 사용자를 한 사람으로 취급한다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 <code>X-Forwarded-For</code> 를 믿어 IP 위조가 가능하다(service-hardening R-013)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>첫 관리자를 <code>scripts/create_superuser.py</code> 로 만들고(대화형 또는 <code>--password-stdin</code>), 관리 API 가 일반 토큰에 403 인지 확인</td>
+<td>슈퍼유저가 없으면 관리 API 도 <code>/admin</code> 로그인도 쓸 수 없다. 리비전 <code>a3c9e8f1b274</code> 는 아무도 자동 승격하지 않는다</td>
+</tr>
+<tr>
+<td>12</td>
+<td>KST→UTC 리비전 <code>e5a7c2d9f310</code> 적용 전 백업, 기존 값의 시간대가 <code>+09:00</code> 이 아니면 <code>LEGACY_OFFSET</code> 수정</td>
+<td>모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10)</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>/admin</code> 은 슈퍼유저 로그인이 필요하다 — 세션은 Redis 서버 세션, <code>SESSION_SECRET_KEY</code> 는 세션 ID → Redis 키 HMAC 키. <code>ADMIN_SESSION_MAX_AGE_SECONDS</code>(절대)·<code>ADMIN_SESSION_IDLE_SECONDS</code>(미사용)를 정책에 맞춘다(<a href="../../../README.md#세션토큰-만료">README 세션·토큰 만료</a>)</td>
+<td>키를 바꾸면 모든 관리 세션이 끊긴다(다시 로그인). Redis 를 읽을 수 있는 사람은 세션 내용(사용자 id·CSRF 토큰)을 본다 — Redis 접근을 통제한다 (쿠키는 HMAC 때문에 Redis 키로 만들 수 없다, admin-session-hardening R-008)</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>ACCESS_LOG_RETENTION_DAYS</code> 를 개인정보 정책에 맞추고(기본 365일), Celery worker 와 <strong>beat 한 개</strong>를 띄운다</td>
+<td>beat 가 없으면 보존 삭제가 돌지 않아 접속 로그가 무기한 쌓인다(§6·§9)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="112">11.2 배포 절차와 확인</h3>
+<pre><code class="language-bash">uv run alembic current            # 현재 리비전
+uv run alembic upgrade head       # writer 에서 적용 (ALEMBIC_DATABASE_URL 로 DSN 분리 가능)
+# 되돌리기: uv run alembic downgrade -1  (MySQL CI job 이 downgrade -1 → 재-upgrade 를 검증한다)
+</code></pre>
+<p>배포 후:</p>
+<pre><code class="language-bash">curl -s https://&lt;host&gt;/health                                            # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/ready            # 200 (DB 준비), 아니면 503
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/docs             # DEBUG=false 면 404
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/admin/           # 302(로그인 화면으로), ADMIN_DISABLED=true 면 404
+</code></pre>
+<p>API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순서·백업/복구 시험은 배포 인프라에서 별도로 승인한다(이 저장소는 이미지 빌드·배포를 다루지 않는다).</p>
+<h3 id="113">11.3 알려진 제한 (구현되지 않은 것)</h3>
+<p>전제로 삼지 않는다.</p>
+<ul>
+<li><strong>API 인가의 세분</strong>: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). <code>Principal</code> 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
+  다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.</li>
+<li><strong>관리 화면 인증의 범위</strong>: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 상태를 바꾸는 관리 요청은 모두 CSRF 토큰을 요구하지만
+  sqladmin 사용자 정의 <code>@action</code>(GET 라우트)은 보호 밖이다 — 이 저장소는 쓰지 않는다(admin-session-hardening R-001). 관리 화면과 API 는
+  같은 판정(<code>revocation_for_change</code>)으로 같은 집합을 커밋 전에 폐기한다(R-007 해소). 같은 경로를 메서드별 라우트로 나눈 경우 405 의 <code>Allow</code> 가 불완전하다
+  (사용자 결정으로 현행 유지, R-002). 익명 로그인 화면 방문도 Redis 세션(미사용 30분)을 만든다(R-003).</li>
+<li><strong>access 토큰 즉시 폐기</strong>: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·비밀번호 변경·삭제)로 대신한다.</li>
+<li><strong>접속 로그 신뢰 경계</strong>: <code>ip_address</code> 는 <code>TRUSTED_PROXY_HOPS</code> 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
+  <code>forwarded_for</code>·<code>real_ip</code> 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·<code>session_id</code> 쿠키 원문과 (민감 키를 가린) query string 이 저장된다
+  (사용자 결정). 보존 기간은 <code>ACCESS_LOG_RETENTION_DAYS</code>(기본 365일)이고 beat 가 떠 있어야 삭제된다(§6). 개인정보 정책을 배포 측에서 정한다.</li>
+<li><strong>접속 로그 내구성</strong>: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.</li>
+<li><strong>레이트 리밋</strong>: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.</li>
+<li><strong>자동 앱 탐색</strong>: 없음(설계 원칙).</li>
+<li><strong>미사용 설정</strong>: 없다. 메일·업로드 설정과 SESSION_EXPIRE_SECONDS(config-cleanup), API 버전 설정(config-cleanup-2)은 지웠다(<code>.env</code> 에 남아도 무시된다). 로그 포맷·콘솔 스위치는 로깅 구성에 연결했다(§5). 새 설정이 읽히지 않으면 <code>tests/core/test_settings_contract.py</code> 가 막는다.</li>
+<li><strong>검증하지 않은 것</strong>: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.</li>
+</ul>
+<hr>
+<h2 id="12_1">12. 변경 이력</h2>
+<p>아래는 과거 기록이다. 옛 이름·옛 경로가 나오는 것이 정상이며, 현재 사용법은 본문을 따른다.</p>
+<table>
+<thead>
+<tr>
+<th>날짜</th>
+<th>변경 내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-10-19</td>
+<td><strong>logging-overhaul</strong>: 앱·<code>python main.py</code>·<code>uvicorn main:app</code> CLI·Celery 워커가 같은 dictConfig·형식을 쓴다(uvicorn 로거는 root 로 전파, Celery <code>--logfile</code> 존중). 헤더 판별을 한 함수로(외부 라이브러리는 로거 이름 표), 포맷 필수 필드 검사, <code>LOG_APP_LEVELS</code>(헤더별 레벨 필터), 파일을 프로세스별(<code>app.log</code>·<code>error.log</code>·<code>celery.log</code>·<code>celery-error.log</code>·<code>celery-beat*.log</code>)로, 날짜(UTC 자정)+크기 회전과 <code>LOG_RETENTION_DAYS</code>. <code>LOG_APP_FILENAME</code>·<code>LOG_ERROR_FILENAME</code>·<code>LOG_BACKUP_COUNT</code> 삭제(남아도 무시). DSN 계정명도 가리고 <code>LOG_REDACTED_SETTINGS</code> 의 값 원문을 가린다(§5)</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td><strong>config-cleanup-2</strong>: <code>API_VERSION</code>·<code>ApiSettings</code> 를 지웠다(<code>.env</code> 에 남아도 무시). <code>LOG_CONSOLE_FORMAT</code>·<code>LOG_FILE_FORMAT</code>·<code>LOG_DATE_FORMAT</code>·<code>LOG_CONSOLE_ENABLED</code> 를 로깅 구성에 연결했다 — 앱·<code>python main.py</code> 의 uvicorn·Celery 워커(<code>setup_logging</code> 수신자)가 같은 값을 따른다. 기본값은 기존 하드코딩 형식과 같아 기본 출력은 그대로다. 잘못된 포맷은 설정 로드에서 거부, 출력이 모두 꺼지면 stderr 경고 한 줄. 설정 계약 테스트의 예외 목록을 없앴다(§3.2·§5)</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td><strong>config-cleanup</strong>: 읽는 곳이 없던 <code>SMTPSettings</code>(<code>smtp_settings</code>)·<code>UploadSettings</code>(<code>upload_settings</code>)·<code>SESSION_EXPIRE_SECONDS</code> 를 지웠다(배포 안전 검사의 <code>SMTP_PASSWORD</code> 항목 포함). 남은 <code>.env</code> 줄은 <code>extra="ignore"</code> 로 무시된다. 세션·토큰 만료는 README 표 한 곳으로 모았고, 설정 필드가 운영 코드에서 읽히는지 보는 계약 테스트를 더했다</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td><strong>admin-session-hardening (판정을 한 함수로 — 집합은 <code>UserService</code> 와 같다)</strong>: 폐기 판정을 <code>revocation_for_change</code>·<code>revocation.REVOKE_ON_DELETE</code>·<code>revocation.REVOKE_ON_PASSWORD_CHANGE</code> 한 곳으로 모았다 — API·관리 화면·<code>create_superuser --set-password</code> 가 같은 판정을 쓴다. 집합은 <code>UserService</code> 가 원래 지우던 것과 같다(비활성화·강등·삭제 = refresh + 관리 세션, service-hardening 동작 유지)에 비밀번호 변경(둘 다)을 더했다. 비밀번호 변경 스크립트는 관리 세션과 refresh 를 함께 지운다(<code>revoke_sessions_in_redis</code>). 폐기는 커밋 전(fail-closed, §7.1·§8, ADR-010)</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td><strong>admin-session-hardening</strong>: <code>/admin</code> 세션을 서명 쿠키(starlette <code>SessionMiddleware</code> + itsdangerous)에서 Redis 서버 세션(<code>AdminSessionStore</code>·<code>RedisSessionMiddleware</code>, 쿠키에는 세션 ID 만, 절대·미사용 만료 <code>ADMIN_SESSION_*</code>)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(<code>UserSessionRevoker</code> — API·<code>UserAdmin</code> 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, <code>create_superuser --set-password</code> 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(<code>AdminCsrfMiddleware</code>, 덮어쓴 <code>sqladmin/base.html</code>), 로그아웃 POST 전용(GET 405). <code>LocalDateFilter</code> 에 기간(<code>S~E</code>) 연산. <code>itsdangerous</code> 직접 의존 제거. 405 <code>Allow</code> 불완전은 사용자 결정으로 현행 유지(§8·§11)</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td><strong>security-ops-hardening</strong>: 모든 엔진에 <code>hide_parameters=True</code>(엔진 옵션 정본 <code>session.ENGINE_SAFETY_OPTIONS</code>, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 <code>ACCESS_LOG_RETENTION_DAYS</code>(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). <code>/admin</code> 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 <code>created_at</code> 날짜 필터 <code>LocalDateFilter</code>(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (<code>docs/crp/groups/security-ops-hardening/</code>).</td>
+</tr>
+<tr>
+<td>2026-10-13</td>
+<td><strong>log-redaction-fixes</strong>: 로그 메시지·traceback·<code>stack_info</code> 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette <code>HTTPException</code> 핸들러가 <code>headers</code> 를 보존(405 <code>Allow</code>), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 <code>session_id</code>·Referer·XFF 원문 저장은 사용자 결정으로 유지 (<code>docs/crp/groups/log-redaction-fixes/</code>).</td>
+</tr>
+<tr>
+<td>2026-10-12</td>
+<td><strong>admin-login</strong>: <code>/admin</code> 에 슈퍼유저 세션 로그인(<code>AdminAuthBackend</code>, Bootstrap 로그인 화면, <code>admin_session</code> 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, <code>ADMIN</code> 을 <code>ADMIN_DISABLED</code>(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. <code>itsdangerous</code> 의존성 추가. 별도 <a href="../workflows/admin-authentication.html">관리 화면 인증 가이드</a> (<code>docs/crp/groups/admin-login/</code>).</td>
+</tr>
+<tr>
+<td>2026-10-12</td>
+<td><strong>service-hardening</strong>: DSN <code>URL.create</code>, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 <code>/ready</code>, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(<code>Principal</code>·<code>OwnershipPolicy</code>·슈퍼유저·<code>scripts/create_superuser.py</code>, §7.1) (<code>docs/crp/groups/service-hardening/</code>).</td>
+</tr>
+<tr>
+<td>2026-09-21 ~ 2026-10-02</td>
+<td><strong>읽기 전용 강제를 라우터와 분리 + 게이트·문서 위생</strong>: 읽기 전용 세션의 쓰기 차단을 <code>get_bind()</code> 안에서 <code>Session</code> 전역 이벤트(<code>before_flush</code>·<code>do_orm_execute</code>)로 옮겨 <code>DB_ROUTER_ENABLED</code> 와 무관하게 항상 동작하게 했다 — 이전에는 <strong>기본 설정(라우터 off)에서 차단이 통째로 없었다</strong>(§4.4, <code>tests/core/test_read_only_guard.py</code>). <code>ValidationException</code> 을 <code>HTTP_422_UNPROCESSABLE_CONTENT</code> 로 옮겼다(값은 그대로 422, starlette 1.x 폐기 예고). 게이트에 <code>pip-audit</code> 단계를 넣어 9단계가 됐고, 게이트를 가리키는 문서 포인터를 번호에서 <strong>스텝 이름</strong>으로 바꿨다(번호는 단계가 끼면 밀린다). <code>filterwarnings</code> 를 <code>error::</code> 로 올리고 파일 핸들 누수를 없앴다. <code>redis 6.4.0</code>·<code>uvicorn 0.54.0</code> 상향, pyjwt 권고 10건 해소. 문서가 인용한 비밀값이 배포 안전 검사에 걸리는지 보는 <code>tests/test_docs_secret_examples.py</code> 를 신설했다.</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td><strong>HTML 안내서 복원 + 정합성 점검</strong>: 재구성에서 지운 <code>server-lifecycle-guide.html</code>·<code>feature-development-guide.html</code> 을 되살려 현재 코드·Markdown 과 맞췄다(다른 저장소 비교 제거, 부록 설정표를 <code>config.py</code> 에서 재생성). README 「문서 안내」를 <code>문서 / 역할 / 언제 보나</code> 표로 바꾸고 두 안내서를 넣었다. 코드 설명 정정: <code>API_DESCRIPTION</code>(다른 프로젝트 제목·UnitOfWork 제거), <code>pyproject.toml</code> 이름·설명, <code>/api/v1/catalog/products</code> 설명(<code>active_only=false</code> 는 정렬 없음), 미사용 설정(<code>ApiSettings</code>·<code>SessionSettings</code>·<code>SMTPSettings</code>·<code>UploadSettings</code>·<code>LOG_CONSOLE_ENABLED</code>·로그 포맷 3종) 표기, <code>ENV</code> 가 <code>/health</code> 에 포함된다는 잘못된 주석. 문서 검사에 HTML(코드 경로·<code>data-source</code>·링크·앵커·꺾쇠 이스케이프)과 Markdown 앵커 검사를 추가했다. 같은 날 후속: 모든 쓰기 핸들러를 <strong>응답 DTO 검증 → commit</strong> 순서로 통일했다(이전에는 commit 후 검증이라 DTO 실패 시 데이터가 남았다, <code>tests/test_validate_before_commit.py</code>). Python 규칙을 <code>&gt;=3.13</code>·ruff <code>py313</code>·mypy <code>3.13</code> 으로 올렸다.</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td><strong>문서 재구성</strong>: 진입·아키텍처·개발 세 문서로 통합했다. <code>docs/guides/QUICKSTART.md</code> 는 README 로, <code>docs/project-guide/v1.1/</code>(10편)·<code>docs/django-style-app-registry/</code>(3편)·HTML 안내서 2편(<code>server-lifecycle-guide.html</code>·<code>feature-development-guide.html</code>)은 이 문서와 <code>docs/guides/DEVELOPMENT.md</code> 로 흡수한 뒤 삭제했다. 삭제된 통합 계획서의 요구 ID 의미(§2.8)와 운영 준비 계획·배포 문서의 여전히 참인 항목(§11)을 코드와 대조해 되살렸다. 정정: 운영 Admin 차단은 존재한다(ACK 없으면 기동 거부), 공개 API 는 22 경로 / 37 오퍼레이션, 파일 로그는 staging/production 에서만, <code>exists()</code> 는 PK 인자.</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td><strong>가이드 문서 위치 이동 + 현행화</strong>: <code>docs/ARCHITECTURE.md</code>·<code>docs/QUICKSTART.md</code> 를 <code>docs/guides/</code> 로 옮기고 HTML 안내서 2종과 함께 현재 작업 트리 기준으로 대조했다. startup 필수 Redis <code>ping()</code> 과 종료 순서(background → Redis → DB), read-only 차단 범위, Alembic URL 결정 경로, 생성기의 태그 선언 단계, 테스트 마커·게이트 명령을 정정·보강했다. 같은 날 착수 명세 3종을 <code>docs/specs/orm-raw-repository/</code> 로 복원했다(코드 주석 인용 대상).</td>
+</tr>
+<tr>
+<td>2026-08-25</td>
+<td><strong>골격 목적 기준 검수 + 문서 정리</strong>: 완료된 착수 명세 5종과 폐기된 가이드 버전(<code>project-guide/v1.0/</code>)을 삭제했다. 문서가 없는 기능을 있다고 서술한 것들을 정정했다(<code>require_admin</code>·<code>AppRegistry.discover()</code> 부재, <code>/ready</code> 실재, Raw 계층 실재). 생성기 골격에 <code>operation_id</code> 를 넣어 만든 즉시 OpenAPI 계약 검사를 통과하게 했다. 기록: <code>docs/crp/groups/skeleton-purpose-audit/</code>.</td>
+</tr>
+<tr>
+<td>2026-08-20</td>
+<td>학습 경로 정비 — <code>project-guide/v1.1</code> 신설, 진입 문서와 심화 문서를 연결하고 검사로 잠갔다(<code>docs/crp/groups/learning-path/</code>).</td>
+</tr>
+<tr>
+<td>2026-08-19</td>
+<td>ORM/Raw 두 Repository 계열과 예제 2종(<code>catalog</code>·<code>reports</code>) 추가(<code>docs/crp/groups/orm-raw-repository/</code>).</td>
+</tr>
+<tr>
+<td>2026-08-13</td>
+<td><strong>레이트 리밋 제거</strong>: <code>app/core/rate_limit.py</code>·<code>slowapi</code>·<code>RATE_LIMIT_*</code> 설정·<code>auth</code> 라우트 데코레이터 삭제. 요청 한도는 리버스 프록시나 API gateway 에서 건다.</td>
+</tr>
+<tr>
+<td>2026-08-12</td>
+<td><strong>Django app registry 이식</strong>: 기능이 더 진전된 구현 기준선 위에 <code>app/core/apps/</code>(<code>AppConfig</code>·<code>Apps</code>·<code>wiring</code>)와 <code>app/core/bootstrap.create_app()</code> 을 추가했다. 설치 SSOT 가 <code>config.INSTALLED_APPS</code> 로 일원화되어 <code>main.py</code> 의 <code>include_router</code> 나열, 중앙 admin 취합 파일(<code>app/features/admin.py</code>·<code>ADMIN_VIEWS</code>), 디렉터리 스캔 모델 수집(<code>models_registry</code>)을 모두 대체했다. 기능 <code>__init__.py</code> 는 가벼운 marker 가 되고 home sink 등록은 <code>HomeConfig.ready()</code> 로 이동했다.</td>
+</tr>
+<tr>
+<td>2026-08-11</td>
+<td><strong><code>app/features/</code> 명칭 확정 + SQLAdmin 소유권을 기능으로 이전</strong>: <code>app/domains</code> → <code>app/features</code>. ModelView 는 모델과 같은 폴더의 <code>admin.py</code> 가 소유한다(과거 <code>getattr(module, "admin_views", [])</code> 관용 수집은 빈 <code>admin.py</code> 를 무신호로 건너뛰어 복원하지 않음). 같은 날 §4 문서 드리프트(의존성 <code>yield</code> 후 커밋 서술)를 핸들러 커밋으로 정정하고, <code>tests/features/</code> 잔류분을 <code>app/features/&lt;name&gt;/tests/</code> 로 통합했다. 한때 Django 배선을 걷어내고 명시 <code>include_router</code>·중앙 <code>ADMIN_VIEWS</code> 로 돌렸으나 다음 날 registry 로 복귀했다.</td>
+</tr>
+<tr>
+<td>2026-07-01</td>
+<td>표준 FastAPI 배선으로 전환: <code>AppRegistry</code>/<code>create_app()</code>/<code>app/apps.py</code> 제거, 각 앱 <code>__init__.py</code> 가 <code>router</code> 공개 + <code>main.py</code> 가 명시 <code>include_router</code>.</td>
+</tr>
+<tr>
+<td>2026-06-23</td>
+<td>기능 모델 레지스트리 아키텍처로 전환, 이 문서 최초 작성. 자동 발견 제거, <code>app/apps.py</code> 수동 등록 SSOT 로 전환.</td>
+</tr>
+</tbody>
+</table></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../assets/site.js"></script></body></html>

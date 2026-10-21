@@ -5,7 +5,7 @@
 
 - 기준: 2026-10-02 작업 트리. 코드와 이 문서가 어긋나면 **코드가 정답**이고, 확인한 뒤 이 문서를 고친다.
 - 폴더 트리는 README 의 [프로젝트 구조](../../README.md#프로젝트-구조)에만 둔다. 여기서는 모듈의 책임을 설명한다.
-- 설정 → 기동 → 요청 → 종료를 코드 흐름대로 따라 읽는 요약은 [서버 수명주기 안내서](./server-lifecycle-guide.html)다.
+- 설정 → 기동 → 요청 → 종료를 코드 흐름대로 따라 읽는 요약은 [서버 수명주기 안내서](./workflows/server-lifecycle.html)다.
   표·수치(예산·기본값·순서)의 정본은 이 문서이고, 안내서는 이 문서와 어긋나지 않게 함께 고친다.
 - 문서 전체 색인은 README 의 [문서 안내](../../README.md#문서-안내) 한 곳에 있다.
 - 문서 정합성은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사한다.
@@ -989,7 +989,7 @@ Scalar `/docs` 는 `APIRoute` 라 `Public` 을 선언한다.
 
 ## 8. 관리 화면 (SQLAdmin)
 
-설계·흐름도·쿠키 구조·위협 모델·문제 해결은 [관리 화면 인증 가이드](admin-auth-guide.html)에 있다. 여기는 요약이다.
+설계·흐름도·쿠키 구조·위협 모델·문제 해결은 [관리 화면 인증 가이드](workflows/admin-authentication.html)에 있다. 여기는 요약이다.
 
 - `ADMIN_DISABLED=false`(기본)일 때만 `create_admin()` 이 `/admin` 을 마운트하고 설치 앱의 `admin_views` 를 등록한다. `DEBUG` 와 독립이다.
   `ADMIN_DISABLED=true` 면 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두 없고, 앱의 어떤 응답에도 `/admin` 이 나오지 않는다
@@ -1193,7 +1193,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 | 2026-10-19 | **admin-session-hardening**: `/admin` 세션을 서명 쿠키(starlette `SessionMiddleware` + itsdangerous)에서 Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 쿠키에는 세션 ID 만, 절대·미사용 만료 `ADMIN_SESSION_*`)으로 옮겼다 — 로그아웃·비활성화·강등·삭제·비밀번호 변경 시 즉시 폐기(`UserSessionRevoker` — API·`UserAdmin` 이 같은 폐기 집합 refresh + 관리 세션을 커밋 전에, `create_superuser --set-password` 는 관리 세션), Redis 장애 시 관리 화면 503. 로그인 이후 모든 상태 변경 요청에 CSRF(`AdminCsrfMiddleware`, 덮어쓴 `sqladmin/base.html`), 로그아웃 POST 전용(GET 405). `LocalDateFilter` 에 기간(`S~E`) 연산. `itsdangerous` 직접 의존 제거. 405 `Allow` 불완전은 사용자 결정으로 현행 유지(§8·§11) |
 | 2026-10-19 | **security-ops-hardening**: 모든 엔진에 `hide_parameters=True`(엔진 옵션 정본 `session.ENGINE_SAFETY_OPTIONS`, §4.3) — DB 오류·로그에 바인드 값이 남지 않는다. 접속 로그 보존 기간 `ACCESS_LOG_RETENTION_DAYS`(기본 365일)와 매일 03:30 Celery beat 삭제(배치 5,000행, §6·§9). `/admin` 로그인 폼 CSRF 토큰(synchronizer token, 레이트 리밋보다 먼저 확인, §8). 관리 목록 `created_at` 날짜 필터 `LocalDateFilter`(§8). access 토큰 15분과 권한 회수 지연은 사용자 결정으로 유지 (`docs/crp/groups/security-ops-hardening/`). |
 | 2026-10-13 | **log-redaction-fixes**: 로그 메시지·traceback·`stack_info` 의 비밀값 가리기(LogRecord factory — uvicorn CLI·Celery 포함, §5), Starlette `HTTPException` 핸들러가 `headers` 를 보존(405 `Allow`), Redis 최소 버전 7.0 정의와 기동 확인(§3.4), 커버리지 하한 기본 0(NFR-08). 접속 로그의 `session_id`·Referer·XFF 원문 저장은 사용자 결정으로 유지 (`docs/crp/groups/log-redaction-fixes/`). |
-| 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](admin-auth-guide.html) (`docs/crp/groups/admin-login/`). |
+| 2026-10-12 | **admin-login**: `/admin` 에 슈퍼유저 세션 로그인(`AdminAuthBackend`, Bootstrap 로그인 화면, `admin_session` 서명 쿠키, 매 요청 DB 재확인)을 붙였다. 예전 무인증 승인 플래그와 배포 환경의 관리 화면 거부 규칙을 없앴고, `ADMIN` 을 `ADMIN_DISABLED`(true=끔, 흔적 없음)로 교체했다 — 예전 이름이 남아 있으면 기동이 멈춘다. `itsdangerous` 의존성 추가. 별도 [관리 화면 인증 가이드](workflows/admin-authentication.html) (`docs/crp/groups/admin-login/`). |
 | 2026-10-12 | **service-hardening**: DSN `URL.create`, 잠금 읽기 writer 고정, 결정적 정렬, 신뢰 홉 기반 클라이언트 IP, UTC·마이크로초 저장, Redis 필수와 `/ready`, 기능별 Celery 태스크, 인증 코어(Argon2·토큰 claims·refresh 회전·레이트 리밋), 인가(`Principal`·`OwnershipPolicy`·슈퍼유저·`scripts/create_superuser.py`, §7.1) (`docs/crp/groups/service-hardening/`). |
 | 2026-09-21 ~ 2026-10-02 | **읽기 전용 강제를 라우터와 분리 + 게이트·문서 위생**: 읽기 전용 세션의 쓰기 차단을 `get_bind()` 안에서 `Session` 전역 이벤트(`before_flush`·`do_orm_execute`)로 옮겨 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하게 했다 — 이전에는 **기본 설정(라우터 off)에서 차단이 통째로 없었다**(§4.4, `tests/core/test_read_only_guard.py`). `ValidationException` 을 `HTTP_422_UNPROCESSABLE_CONTENT` 로 옮겼다(값은 그대로 422, starlette 1.x 폐기 예고). 게이트에 `pip-audit` 단계를 넣어 9단계가 됐고, 게이트를 가리키는 문서 포인터를 번호에서 **스텝 이름**으로 바꿨다(번호는 단계가 끼면 밀린다). `filterwarnings` 를 `error::` 로 올리고 파일 핸들 누수를 없앴다. `redis 6.4.0`·`uvicorn 0.54.0` 상향, pyjwt 권고 10건 해소. 문서가 인용한 비밀값이 배포 안전 검사에 걸리는지 보는 `tests/test_docs_secret_examples.py` 를 신설했다. |
 | 2026-09-17 | **HTML 안내서 복원 + 정합성 점검**: 재구성에서 지운 `server-lifecycle-guide.html`·`feature-development-guide.html` 을 되살려 현재 코드·Markdown 과 맞췄다(다른 저장소 비교 제거, 부록 설정표를 `config.py` 에서 재생성). README 「문서 안내」를 `문서 / 역할 / 언제 보나` 표로 바꾸고 두 안내서를 넣었다. 코드 설명 정정: `API_DESCRIPTION`(다른 프로젝트 제목·UnitOfWork 제거), `pyproject.toml` 이름·설명, `/api/v1/catalog/products` 설명(`active_only=false` 는 정렬 없음), 미사용 설정(`ApiSettings`·`SessionSettings`·`SMTPSettings`·`UploadSettings`·`LOG_CONSOLE_ENABLED`·로그 포맷 3종) 표기, `ENV` 가 `/health` 에 포함된다는 잘못된 주석. 문서 검사에 HTML(코드 경로·`data-source`·링크·앵커·꺾쇠 이스케이프)과 Markdown 앵커 검사를 추가했다. 같은 날 후속: 모든 쓰기 핸들러를 **응답 DTO 검증 → commit** 순서로 통일했다(이전에는 commit 후 검증이라 DTO 실패 시 데이터가 남았다, `tests/test_validate_before_commit.py`). Python 규칙을 `>=3.13`·ruff `py313`·mypy `3.13` 으로 올렸다. |

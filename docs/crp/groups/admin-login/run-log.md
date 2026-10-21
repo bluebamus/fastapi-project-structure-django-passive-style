@@ -34,7 +34,7 @@
     `SESSION_SECRET_KEY` 소비처는 `wiring.create_admin`(서명)과 `config` 검증뿐 — 감독자 사전 확인과 일치.
   - `app/features/*/admin.py` 7개 — `column_filters` 를 `BooleanFilter`·`OperationColumnFilter` 로(시각 필터 제외), docstring 의 `ADMIN` 서술.
     **결함 재현:** 수정 전 실제 기동 스모크에서 로그인 후 7개 목록이 모두 500(`AttributeError ... 'parameter_name'`).
-  - `docs/guides/admin-auth-guide.html`(신규) — 12절, Mermaid 도식 7개(구성도·주입 그래프·기동 결정 흐름·로그인 시퀀스·요청별 판정·로그아웃·계정 수명주기).
+  - `docs/guides/workflows/admin-authentication.html`(신규) — 12절, Mermaid 도식 7개(구성도·주입 그래프·기동 결정 흐름·로그인 시퀀스·요청별 판정·로그아웃·계정 수명주기).
     기존 안내서와 같은 스타일·고정 버전 Mermaid CDN·`data-source` 코드 근거. 로컬 Chromium 으로 열어 7/7 렌더·콘솔 오류 0 확인.
     `tests/test_docs_references.py` 의 `HTML_GUIDES`·`DOC_INDEX_ORDER` 에 등록, README 문서 표·ARCHITECTURE §8 에서 링크.
   - 모든 문서·주석·생성 템플릿(`scripts/new_app.py`)의 `ADMIN` 서술 갱신, service-hardening R-001 해소·ADR-020/C-13/INV-12 대체 표시.

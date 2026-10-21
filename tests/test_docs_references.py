@@ -346,9 +346,9 @@ DOC_INDEX_ORDER = (
     "README.md",
     "docs/guides/ARCHITECTURE.md",
     "docs/guides/DEVELOPMENT.md",
-    "docs/guides/server-lifecycle-guide.html",
-    "docs/guides/feature-development-guide.html",
-    "docs/guides/admin-auth-guide.html",
+    "docs/guides/workflows/server-lifecycle.html",
+    "docs/guides/workflows/feature-development.html",
+    "docs/guides/workflows/admin-authentication.html",
     "docs/specs/orm-raw-repository/requirements.md",
     "docs/specs/orm-raw-repository/development-plan.md",
     "docs/specs/orm-raw-repository/workflow-guide.md",
@@ -356,9 +356,9 @@ DOC_INDEX_ORDER = (
 )
 
 HTML_GUIDES = (
-    "docs/guides/server-lifecycle-guide.html",
-    "docs/guides/feature-development-guide.html",
-    "docs/guides/admin-auth-guide.html",
+    "docs/guides/workflows/server-lifecycle.html",
+    "docs/guides/workflows/feature-development.html",
+    "docs/guides/workflows/admin-authentication.html",
 )
 
 #: ``<code>`` 안에서 저장소 루트 기준으로 해석하는 최상위 파일.
@@ -591,7 +591,7 @@ def test_lifecycle_guide_appendix_lists_every_setting():
 
     import config as config_module
 
-    codes = set(_scan_html("docs/guides/server-lifecycle-guide.html").codes)
+    codes = set(_scan_html("docs/guides/workflows/server-lifecycle.html").codes)
     fields = {
         name
         for obj in vars(config_module).values()

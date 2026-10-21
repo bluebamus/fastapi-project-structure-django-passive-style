@@ -1,0 +1,313 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>7. 인증 (JWT)</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>7. 인증 (JWT)</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="7-jwt">7. 인증 (JWT)</h2>
+<p>OAuth2 <strong>password flow</strong> + JWT access/refresh(회전). 자격증명은 <code>user</code> 기능의 <code>User.hashed_password</code> 에 있고,
+<code>auth</code> 는 인증 로직만 담당한다(<code>auth → user</code> 의존은 의도된 예외). 목적마다 클래스 하나인 보안 부품은
+<code>app/core/security/</code> 에 있다 — user 기능(해시)과 다른 기능의 인증 의존성(토큰 검증)도 써야 하므로 core 에 둔다.</p>
+<table>
+<thead>
+<tr>
+<th>부품</th>
+<th>위치</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PasswordHasher</code></td>
+<td><code>app/core/security/passwords.py</code></td>
+<td>pwdlib Argon2 해시. 기존 bcrypt(<code>$2…</code>)는 이전 규칙(72바이트 절단)으로 검증하고 성공하면 Argon2 새 해시를 돌려준다. 타이밍 균등화 더미 해시도 Argon2</td>
+</tr>
+<tr>
+<td><code>TokenService</code></td>
+<td><code>app/core/security/tokens.py</code></td>
+<td>PyJWT 발급·검증. claims <code>sub·type·iat·nbf·exp·jti·iss·aud</code> + access <code>username</code>·<code>su</code>(슈퍼유저 여부, bool 필수) / refresh <code>fam</code>. 실패는 원인과 무관하게 <code>InvalidTokenException</code>(401, 오류 코드 AUTH_INVALID_TOKEN)</td>
+</tr>
+<tr>
+<td><code>RefreshTokenStore</code></td>
+<td><code>app/core/security/refresh_store.py</code></td>
+<td>Redis 에 미사용 refresh(<code>auth:rt:{jti}</code>)·사용자 family 집합·family 폐기 표시를 둔다. 소비는 Redis GETDEL 하나</td>
+</tr>
+<tr>
+<td><code>RateLimiter</code></td>
+<td><code>app/core/security/rate_limit.py</code></td>
+<td>Redis 고정 창(MULTI 안에서 INCR + EXPIRE NX + TTL). 초과는 <code>TooManyRequestsException</code>(429, <code>Retry-After</code>)</td>
+</tr>
+<tr>
+<td><code>Principal</code> · <code>OwnershipPolicy</code></td>
+<td><code>app/core/security/principal.py</code></td>
+<td>요청 주체(id·username·is_superuser, 불변)와 소유권 판정 <code>ensure_can_modify(owner_id, principal)</code> — 소유자 또는 슈퍼유저, 아니면 403</td>
+</tr>
+</tbody>
+</table>
+<p>조립은 provider 함수가 한다(생성자 주입, service-hardening ADR-022). 여러 기능이 함께 쓰는 provider —
+<code>get_password_hasher</code>·<code>get_token_service</code>·<code>get_ownership_policy</code>(프로세스당 하나, <code>lru_cache</code>)와 <code>get_refresh_token_store</code>(<code>Depends(get_redis)</code>, §3.4) —
+는 <code>app/core/security/dependencies.py</code> 에 있고, 인증 기능(<code>app/features/auth/dependencies/auth_dependencies.py</code>)은 그것을 그대로 쓰면서
+<code>get_client_ip_resolver</code>·<code>get_rate_limiter</code>·<code>get_auth_service(session, hasher, tokens, store)</code> 를 더한다.</p>
+<table>
+<thead>
+<tr>
+<th>메서드</th>
+<th>경로</th>
+<th>인증</th>
+<th>요청</th>
+<th>성공</th>
+<th>실패</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/register</code></td>
+<td>—</td>
+<td>JSON (비밀번호 8~128자)</td>
+<td>201</td>
+<td>409 사용자명 중복 · 422 · 429</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/login</code></td>
+<td>—</td>
+<td><strong>form</strong> (<code>username</code>·<code>password</code>)</td>
+<td>200</td>
+<td>401 · 422 · 429</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/refresh</code></td>
+<td>—</td>
+<td>JSON <code>{"refresh_token": ...}</code></td>
+<td>200</td>
+<td>401 무효·만료·재사용·폐기·비활성 · 422</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/logout</code></td>
+<td>—</td>
+<td>JSON <code>{"refresh_token": ...}</code></td>
+<td>204</td>
+<td>401 무효·만료 · 422</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/auth/me</code></td>
+<td>Bearer</td>
+<td>—</td>
+<td>200</td>
+<td>401</td>
+</tr>
+</tbody>
+</table>
+<p>토큰 응답은 <code>{"access_token", "refresh_token", "token_type": "bearer", "expires_in": &lt;access 수명 초&gt;}</code> 다.</p>
+<p><strong>흐름</strong></p>
+<ol>
+<li><strong>login</strong> — <code>login_rate_limit</code> 의존성이 ip(<code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code>)와 ip+소문자 username(<code>AUTH_LOGIN_MAX_ATTEMPTS</code>)을
+   <code>AUTH_LOGIN_WINDOW_SECONDS</code> 창으로 센다. ip 는 접속 로그와 같은 <code>ClientIPResolver</code>(<code>TRUSTED_PROXY_HOPS</code>, §6)로 정한다.
+   <code>AuthService.authenticate</code>(<code>/admin</code> 로그인과 같은 <code>verify_credentials</code>)가 해시기를 <code>asyncio.to_thread</code> 로 부르고, bcrypt → Argon2 재해시가 있으면 <code>UserRepository.update</code> 로
+   flush 해 둔다. 새 family 로 토큰 쌍을 발급하고 refresh 의 jti 를 기록한 뒤 핸들러가 <strong>커밋</strong>하고 ip+username 카운터를 지운다.</li>
+<li><strong>refresh</strong> — refresh 토큰을 검증하고 GETDEL <code>auth:rt:{jti}</code> 로 소비한다. 값이 없으면 이미 쓴 토큰의 <strong>재사용</strong>(탈취 신호)이라
+   그 family 를 폐기하고 401 — 정상 사용자가 가진 같은 family 의 최신 토큰도 함께 죽는다. family 가 폐기됐거나 사용자가 없거나
+   비활성이면 401(비활성·부재는 family 도 폐기). 통과하면 <strong>같은 family</strong> 로 새 쌍을 발급한다.</li>
+<li><strong>logout</strong> — refresh 토큰의 family 를 폐기하고 jti 를 소비한다(멱등, 204). access 토큰은 만료(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>)까지
+   유효하다 — 즉시 폐기 목록은 두지 않고 짧은 수명으로 대신한다.</li>
+<li><strong>/me</strong> — <code>get_current_principal</code>(아래 §7.1) → read-only 세션을 <strong>primary 에 고정</strong>(<code>using_writer</code>)한 <code>UserRepository.get_by_id</code> → 없거나 비활성이면 401. replica 에서 읽으면 복제 지연 중 가입 직후의 유효한 토큰이 401 이 되고 비활성화·삭제가 늦게 반영된다(e2e-policy-2 결정 5, integration-e2e F-008). 다른 읽기 라우팅은 그대로다.
+   Redis 도 쓰기 세션도 쓰지 않는다.</li>
+<li><strong>register</strong> — <code>register_rate_limit</code>(ip, <code>AUTH_REGISTER_MAX_ATTEMPTS</code>/<code>AUTH_REGISTER_WINDOW_SECONDS</code>) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.</li>
+</ol>
+<p>access·refresh 수명(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)은 <a href="../../../../README.md#세션토큰-만료">README 세션·토큰 만료</a> 표에 있다.</p>
+<table>
+<thead>
+<tr>
+<th>설정</th>
+<th>기본값</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>JWT_ALGORITHM</code></td>
+<td><code>HS256</code></td>
+<td>HS256·HS384·HS512 만 허용. 검증은 이 값 하나만 받는다</td>
+</tr>
+<tr>
+<td><code>JWT_ISSUER</code> / <code>JWT_AUDIENCE</code></td>
+<td><code>fastapi-project</code> / <code>fastapi-project-api</code></td>
+<td>검증 시 일치해야 한다</td>
+</tr>
+<tr>
+<td><code>JWT_LEEWAY_SECONDS</code></td>
+<td><code>5</code></td>
+<td>exp·nbf·iat 시계 오차 허용</td>
+</tr>
+<tr>
+<td><code>AUTH_LOGIN_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_WINDOW_SECONDS</code></td>
+<td><code>5</code> / <code>20</code> / <code>60</code></td>
+<td>로그인 레이트 리밋</td>
+</tr>
+<tr>
+<td><code>AUTH_REGISTER_MAX_ATTEMPTS</code> / <code>AUTH_REGISTER_WINDOW_SECONDS</code></td>
+<td><code>5</code> / <code>3600</code></td>
+<td>회원가입 레이트 리밋</td>
+</tr>
+<tr>
+<td><code>ACCESS_TOKEN_SECRET_KEY</code> / <code>REFRESH_TOKEN_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td>서로 다른 값으로 <strong>배포 전 반드시 교체</strong> — 기본값이면 누구나 토큰을 위조한다. staging/production 은 placeholder 이거나 두 키가 같으면 기동이 실패한다(<code>validate_deployment_safety()</code>, §3.2)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>access 와 refresh 는 서명 키가 다르고, <code>type</code> claim 도 검사한다(키가 같게 설정돼도 종류 혼동을 막는 두 번째 벽).</li>
+<li><strong>상수 시간 인증</strong>: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
+  bcrypt 해시가 남은 사용자는 bcrypt 비용이 드는 동안만 시간이 다르다(로그인하면 Argon2 로 바뀐다).</li>
+<li><strong>논블로킹 해싱</strong>: Argon2·bcrypt 는 <code>asyncio.to_thread</code> 로 이벤트 루프 밖에서 돈다.</li>
+<li><strong>API 인증은 세션을 쓰지 않는다</strong>: 메인 앱에는 세션 미들웨어가 없고, <code>admin_session</code> 쿠키를 보내도 API 는 401 이다. 세션 로그인은 <code>/admin</code> 전용이다(§8).</li>
+</ul>
+<h3 id="71">7.1 인가 — 주체·소유권·슈퍼유저</h3>
+<p>권한은 <strong>슈퍼유저/일반 2단계</strong>다(<code>users.is_superuser</code>). 인가는 core 의 주입 경로 하나(<code>app/core/security/dependencies.py</code>)로 한다 —
+기능이 인가를 위해 user 기능을 import 하지 않는다(service-hardening C-11).</p>
+<table>
+<thead>
+<tr>
+<th>주입</th>
+<th>하는 일</th>
+<th>실패</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oauth2_scheme</code></td>
+<td><code>OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)</code> — OpenAPI 에 Bearer 스킴을 싣는다</td>
+<td>헤더가 없으면 아래가 401</td>
+</tr>
+<tr>
+<td><code>get_current_principal</code></td>
+<td>access 토큰 검증 → <code>Principal(id, username, is_superuser)</code>. <strong>DB 조회 없음</strong>. <code>request.state.user_id</code> 를 채운다</td>
+<td>401 UNAUTHORIZED(토큰 없음) · 401 AUTH_INVALID_TOKEN(만료·위조·<code>su</code> 누락·refresh 토큰). 401 의 <code>WWW-Authenticate: Bearer</code> 는 전역 핸들러가 붙인다</td>
+</tr>
+<tr>
+<td><code>require_superuser</code></td>
+<td>주체가 슈퍼유저인지 본다</td>
+<td>403 FORBIDDEN</td>
+</tr>
+<tr>
+<td><code>CurrentPrincipal</code> / <code>SuperuserPrincipal</code></td>
+<td>위 두 의존성의 <code>Annotated</code> 별칭 — 핸들러 인자 타입으로 쓴다</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>OwnershipPolicy</code></td>
+<td>서비스가 생성자로 받아 수정·삭제 전에 <code>ensure_can_modify(owner_id, principal)</code> 를 부른다. <code>owner_id</code> 가 <code>None</code> 이면 슈퍼유저만</td>
+<td>403 FORBIDDEN</td>
+</tr>
+</tbody>
+</table>
+<p><strong>접근 수준 선언과 기본 거부</strong>(<code>app/core/security/access.py</code>, access-policy). 뷰는 경로 데코레이터의 <code>dependencies=[...]</code> 에 수준을 하나 적는다.</p>
+<table>
+<thead>
+<tr>
+<th>선언</th>
+<th>실체</th>
+<th>쓰는 곳</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Public</code></td>
+<td>아무것도 하지 않는 표식 의존성</td>
+<td>안전한 메서드(GET·HEAD·OPTIONS) 공개</td>
+</tr>
+<tr>
+<td><code>PublicWrite</code></td>
+<td>아무것도 하지 않는 표식 의존성(다른 함수)</td>
+<td>인증 없는 쓰기를 명시적으로 연다 — auth register·login·refresh·logout</td>
+</tr>
+<tr>
+<td><code>LoginRequired</code></td>
+<td><code>Depends(get_current_principal)</code> — 인자 <code>CurrentPrincipal</code> 도 같은 선언으로 본다</td>
+<td>401</td>
+</tr>
+<tr>
+<td><code>SuperuserRequired</code></td>
+<td><code>Depends(require_superuser)</code> — 인자 <code>SuperuserPrincipal</code> 도 같은 선언으로 본다</td>
+<td>401 · 403</td>
+</tr>
+</tbody>
+</table>
+<p><code>create_app()</code> 의 마지막 단계(라우터·health·docs·admin 설치 뒤)에서 <code>AccessPolicyGuard().verify(app)</code> 가 서빙되는 모든 <code>APIRoute</code>
+(FastAPI 0.141 의 <code>_IncludedRouter</code> 중첩을 <code>effective_route_contexts()</code> 로 펼친 것, <code>include_in_schema=False</code> 포함)의 의존성 트리를
+재귀로 훑는다. 선언 없음 · 서로 다른 수준 동시 선언 · 쓰기 메서드에 <code>Public</code> · 안전한 메서드에 <code>PublicWrite</code> 가 하나라도 있으면
+위반 목록 전체를 담은 <code>ImproperlyConfigured</code> 로 기동을 멈춘다. <code>require_superuser</code> 는 안에서 <code>get_current_principal</code> 을 쓰므로
+슈퍼유저가 있으면 슈퍼유저 하나로 본다. 라우터 단위 <code>dependencies</code> 도 트리에 들어가므로 인정되지만 예시는 뷰 단위로 통일했다.
+FastAPI 가 붙이는 문서 경로(Starlette <code>Route</code>)와 <code>Mount</code>(<code>/admin</code> — 자체 세션 인증)는 대상이 아니다. 앱이 직접 등록한
+Scalar <code>/docs</code> 는 <code>APIRoute</code> 라 <code>Public</code> 을 선언한다.</p>
+<table>
+<thead>
+<tr>
+<th>기능</th>
+<th>공개</th>
+<th>인증</th>
+<th>소유자 또는 슈퍼유저</th>
+<th>슈퍼유저</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>blog · sns · reply</td>
+<td>목록·단건 조회</td>
+<td>생성(작성자 <code>author_id</code>·<code>author</code> 는 서버가 주체로 채운다 — 본문 값은 무시)</td>
+<td>수정·삭제(존재 확인 404 가 먼저)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>catalog</td>
+<td>목록·단건 조회</td>
+<td>—</td>
+<td>—</td>
+<td>생성·수정·삭제</td>
+</tr>
+<tr>
+<td>reports</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>일별 매출</td>
+</tr>
+<tr>
+<td>home</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>접속 로그 조회 5종(뷰마다 <code>SuperuserRequired</code>)</td>
+</tr>
+<tr>
+<td>user</td>
+<td>—</td>
+<td>—</td>
+<td>단건 조회·수정(본인 — <strong>권한 판정이 존재 확인보다 먼저</strong>라 남의 ID 는 있든 없든 403)</td>
+<td>목록·생성(비밀번호 필수, <code>is_superuser</code> 지정 가능)·삭제, <code>is_active</code>·<code>is_superuser</code> 변경</td>
+</tr>
+<tr>
+<td>auth</td>
+<td>register·login·refresh·logout</td>
+<td><code>/me</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>비활성화(<code>is_active</code> True→False)·강등(<code>is_superuser</code> True→False)·비밀번호 변경·삭제는 그 사용자의 refresh family 와 <code>/admin</code> 관리 세션을 모두 폐기한다(커밋 전).
+  무엇을 지울지는 <code>revocation_for_change</code>(<code>app/core/security/revocation.py</code>, §8)가 변경 전 값과 비교해 정한다. 강등 시 refresh 폐기는 service-hardening 부터의
+  동작(<code>test_demotion_revokes_refresh_families</code>)이고, 관리 화면도 같은 규칙을 쓴다(admin-session-hardening ADR-010 — 관리 화면 경로 = API 경로). refresh 회전은
+  DB 를 다시 읽지만(비활성 거부·새 권한으로 발급) 기존 동작을 유지한다.
+  이미 발급된 access 는 만료(기본 15분)까지 유효하다 — 즉시 폐기 목록은 두지 않는다(§11.3).</li>
+<li><code>author_id</code> 가 없는 행(인가 리비전 <code>a3c9e8f1b274</code> 이전 데이터)은 슈퍼유저만 수정·삭제한다.</li>
+<li>정본은 뷰 선언이다. "모든 오퍼레이션이 분류됐는가" 는 기동 검사가 막고, <code>tests/test_authorization_policy.py</code> 의 표는 예시 정책이
+  의도한 수준인지 가드의 판정과 대조하는 회귀용이다(OpenAPI <code>security</code> 와도 교차 확인한다).</li>
+<li>첫 관리자는 <code>uv run python -m scripts.create_superuser --username &lt;이름&gt; --email &lt;메일&gt;</code> 로 만든다(이미 있으면 승격, 비밀번호는 <code>--set-password</code> 일 때만 바꾼다).
+  사용법은 README 「첫 관리자 만들기」.</li>
+</ul>
+<hr><nav class="pager"><a href="access-logging.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="admin.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

@@ -1,0 +1,33 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9. Celery</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>9. Celery</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="9-celery">9. Celery</h2>
+<pre><code class="language-python">def discover_task_modules(installed_apps):          # 새 Apps() 를 run_ready=False 로 채운다
+    registry = Apps()
+    registry.populate(installed_apps, run_ready=False)
+    return registry.task_modules()                   # 앱별 &lt;앱&gt;.tasks 중 존재하는 것
+
+celery_app = Celery(&quot;project&quot;, broker=redis_settings.REDIS_URL, backend=redis_settings.REDIS_URL,
+                    include=discover_task_modules(INSTALLED_APPS))
+# JSON serializer 만 허용, task_track_started, enable_utc=True, timezone=TIME_ZONE(일정 해석용), beat_schedule={}
+</code></pre>
+<ul>
+<li>태스크는 <strong>기능 폴더의 <code>tasks.py</code></strong>(선택, <code>AppConfig.tasks_module</code>)에 <code>@celery_app.task</code> 로 정의한다. 예: <code>app/features/home/tasks.py</code> 의
+  <code>home.aggregate_access_stats</code> — <code>background_session()</code> 으로 세션을 열고, 서비스는 HTTP 경로와 같은 home provider
+  <code>build_user_access_log_service(session)</code> 로 조립한다(service-hardening ADR-012).</li>
+<li>워커 <code>include</code> 는 <code>config.INSTALLED_APPS</code> 로 만든다. <code>app/celery</code> 는 어떤 기능도 import 하지 않는다(<code>tests/test_layering_and_openapi.py::test_celery_does_not_depend_on_features</code>).
+  목록에서 앱을 빼면 그 앱의 태스크·모델도 워커에서 빠진다. 같은 registry 가 2단계(models)까지 돌므로 워커에서도 모든 설치 앱의 mapper 가 등록된다.
+  <code>ready()</code> 는 돌리지 않는다 — 접속 로그 sink 결선은 API 프로세스 전용이다.</li>
+<li>발견은 <code>importlib.util.find_spec</code> 으로 <strong>존재만</strong> 본다. 태스크 module 은 <code>celery_app</code> 을 import 하므로, 발견 단계에서 import 하면 순환 import 다.
+  태스크 module 내부의 import 오류는 워커가 include 를 import 할 때 드러난다.</li>
+<li>동기 태스크 안의 코루틴은 <code>app/celery/task.py</code> 의 <code>run_async()</code> 가 <strong>worker 프로세스당 영속 event loop</strong> 에서 실행한다.</li>
+<li>worker 종료: <code>app/celery/lifecycle.py</code> 가 <code>worker_process_shutdown</code> 신호에서 살아 있는 loop 로 <code>dispose_engine()</code> → <code>shutdown_asyncgens()</code> → loop close → 전역 참조 해제.</li>
+<li><strong>주기 실행(beat)</strong>: 일정도 기능의 <code>tasks.py</code> 가 <code>celery_app.add_periodic_task(...)</code> 로 등록한다 — beat 는 기동 때 워커와 같은 <code>include</code> 로
+  태스크 module 을 불러온 뒤 <code>beat_schedule</code> 을 읽으므로, 중앙 Celery 앱은 기능을 import 하지 않는다. 현재 일정은 home 의
+  <code>home.purge_expired_access_logs</code>(매일 03:30, <code>timezone=TIME_ZONE</code> 기준) 하나다. 실행: <code>uv run celery -A app.celery.app beat --loglevel=info</code>
+  (worker 와 별도 프로세스, <strong>한 개만</strong> — 여러 개면 같은 일정이 중복 실행된다).</li>
+<li>API 기동은 worker·beat 를 띄우지 않고, API lifespan 은 worker 의 broker 연결·loop 를 정리하지 않는다(소유권이 다른 프로세스).</li>
+<li>태스크에는 살아 있는 세션·Service·Request 를 넘기지 말고 JSON 직렬화 가능한 id·값만 넘긴다. 재시도·멱등 정책은 태스크별로 정한다.</li>
+</ul>
+<hr><nav class="pager"><a href="admin.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="migrations.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

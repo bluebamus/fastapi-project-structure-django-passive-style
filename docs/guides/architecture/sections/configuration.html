@@ -1,0 +1,346 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3. 서버 수명주기와 설정</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>3. 서버 수명주기와 설정</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="3">3. 서버 수명주기와 설정</h2>
+<div class="mermaid">flowchart TD
+    A["main:app import"] --> B["config.py — 설정 생성·검증"]
+    B --> C["로깅·엔진 객체 준비 (아직 접속 아님)"]
+    C --> D["create_app — registry population·미들웨어·예외·Router·/health·/ready·Admin"]
+    D --> E["lifespan 진입 → manage_application_resources"]
+    E --> F["Redis ping + 버전 >= 7.0 (실패 시 기동 중단)"]
+    F --> G{"소유 테이블 > 0 이고 DEBUG?"}
+    G -- 예 --> H["create_db_tables (개발용 DDL)"]
+    G -- 아니오 --> I["DDL 생략"]
+    H --> J["yield — 요청 처리"]
+    I --> J
+    J --> K["종료: background drain → Redis close → DB dispose"]
+</div>
+<h3 id="31">3.1 진입점과 프로세스 경계</h3>
+<ul>
+<li><code>main.py</code> 는 <code>app = create_app()</code> 과 직접 실행용 <code>uvicorn.run()</code> 만 둔다. 직접 실행(<code>uv run python main.py</code>)은
+  <code>SERVER_HOST</code>·<code>SERVER_PORT</code>·<code>reload=DEBUG</code>·<code>setup_uvicorn_logging()</code> 을 넘긴다. <code>uvicorn main:app</code> CLI 는
+  CLI 옵션을 따르며 <code>DEBUG=true</code> 만으로 reload 가 켜지지 않는다.</li>
+<li>두 경로 모두 정상 ASGI lifespan 을 탄다. <code>--lifespan off</code> 는 Redis 검증·자원 정리를 건너뛰므로 정상 경로가 아니다.</li>
+<li>reload·다중 worker 는 프로세스마다 import·lifespan 을 다시 수행한다. API worker 마다 Redis client 와 DB pool 이 따로 있고,
+  Celery worker 는 별도 프로세스다.</li>
+<li>factory 로 만든 이유는 테스트가 <strong>격리된 앱</strong>(auth 를 뺀 앱, 관리 화면을 끈 앱, 독립 registry 앱)을 만들어
+  "등록 안 한 앱은 안 붙는다"를 실행으로 증명하기 위해서다.</li>
+</ul>
+<h3 id="32">3.2 설정 로딩</h3>
+<p><code>config.py</code> 의 각 <code>BaseSettings</code> 는 <code>env_file=".env"</code>, <code>extra="ignore"</code> 로 <strong>자기 필드만</strong> 해석한다.</p>
+<ul>
+<li>우선순위: 프로세스 환경변수 → <strong>작업 디렉터리의</strong> <code>.env</code> → 필드 기본값. <code>.env.example</code> 은 복사용 목록이며 자동 fallback 이 아니다.</li>
+<li>리스트 값은 JSON 배열로 준다(예: <code>CORS_ALLOW_ORIGINS=["http://localhost:3000"]</code>). <code>DEBUG=false</code> 는 bool 로 파싱된다.</li>
+<li><code>get_*_settings()</code> 는 <code>lru_cache</code> 싱글턴이고, 모듈 끝의 <code>app_settings</code> 등 전역 참조가 import 시 만들어진다.
+  실행 중 <code>.env</code> 를 바꿔도 반영되지 않는다. 테스트에서 캐시를 비워도 이미 가져간 전역 참조는 바뀌지 않는다.</li>
+<li>타입 오류·validator 위반은 <code>config</code> import 자체를 실패시킨다(lifespan 이전).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>설정 클래스 (전역 인스턴스)</th>
+<th>소비처</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TimezoneSettings</code> (<code>timezone_settings</code>)</td>
+<td>모델 시각 기본값, 로그 시각, Celery timezone</td>
+</tr>
+<tr>
+<td><code>AppSettings</code> (<code>app_settings</code>)</td>
+<td>앱 메타데이터, <code>DEBUG</code>·<code>ENV</code>·<code>ADMIN_DISABLED</code>, 직접 실행 host/port</td>
+</tr>
+<tr>
+<td><code>DatabaseSettings</code> (<code>db_settings</code>)</td>
+<td>DSN·라우팅·풀, <code>session.py</code>, Alembic URL</td>
+</tr>
+<tr>
+<td><code>CORSSettings</code> (<code>cors_settings</code>)</td>
+<td><code>CustomCORSMiddleware</code></td>
+</tr>
+<tr>
+<td><code>LogSettings</code> (<code>log_settings</code>)</td>
+<td><code>build_dictconfig()</code> — 앱·<code>python main.py</code>·<code>uvicorn main:app</code> CLI·Celery 워커가 함께 쓴다</td>
+</tr>
+<tr>
+<td><code>MiddlewareSettings</code> (<code>middleware_settings</code>)</td>
+<td><code>UserInfoMiddleware</code> 활성·제외 규칙·민감 query 키, <code>ClientIPResolver</code> 신뢰 홉 수</td>
+</tr>
+<tr>
+<td><code>RedisSettings</code> (<code>redis_settings</code>)</td>
+<td>startup Redis ping, Celery broker/backend</td>
+</tr>
+<tr>
+<td><code>JWTSettings</code> (<code>jwt_settings</code>)</td>
+<td>토큰 서명·검증·수명</td>
+</tr>
+<tr>
+<td><code>SessionSettings</code> (<code>session_settings</code>)</td>
+<td><code>SESSION_COOKIE_NAME</code> 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 <code>session_id</code> 로 기록, 인증에는 쓰지 않는다). <code>SESSION_SECRET_KEY</code> 는 <code>/admin</code> 관리 세션 ID 를 Redis 키(<code>admin:sess:{HMAC}</code>)로 바꾸는 HMAC 키다(§8). 관리 세션 만료는 <code>ADMIN_SESSION_*</code> 가 정한다(미사용이 절대보다 크면 기동 실패, 값은 <a href="../../../../README.md#세션토큰-만료">README 세션·토큰 만료</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>API 버전 prefix(<code>/v1</code>)는 설정이 아니라 각 기능 <code>router.py</code> 가 정한다 — 버전 설정 클래스는 config-cleanup-2 에서 지웠다(<code>.env</code> 에 남은 줄은 무시된다, §12).</p>
+<p><strong>설정 검증(fail-fast)</strong></p>
+<table>
+<thead>
+<tr>
+<th>검증</th>
+<th>거부 조건</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DatabaseSettings._validate_routing</code></td>
+<td>복제 on + 라우터 off, 복제 on + replica 목록 비어 있음, 잘못된 replica 표기(IPv6 는 대괄호 필수), <code>DB_MAX_SERVER_CONNECTIONS</code> 가 0이 아닐 때 최대 연결 수 초과</td>
+</tr>
+<tr>
+<td><code>CORSSettings._reject_wildcard_with_credentials</code></td>
+<td>Origin <code>*</code> 와 <code>CORS_ALLOW_CREDENTIALS=true</code> 조합</td>
+</tr>
+<tr>
+<td><code>_validate_cross_settings()</code></td>
+<td>production/staging 에서 <code>LOG_SQL_ECHO_ENABLED=true</code></td>
+</tr>
+<tr>
+<td><code>validate_removed_settings()</code></td>
+<td>예전 <code>ADMIN</code> 설정이 환경 변수나 <code>.env</code> 에 남아 있다(대소문자 무시) — 뜻이 뒤집혀 <code>ADMIN_DISABLED</code> 로 바뀌었으므로 조용히 무시하지 않는다. test 는 검사하지 않는다</td>
+</tr>
+<tr>
+<td><code>validate_env_source()</code></td>
+<td><code>.env</code> 가 없으면 필수 값(<code>ENV</code>·비밀 키 3종·<code>MYSQL_HOST/USER/PASSWORD/DATABASE</code>)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다</td>
+</tr>
+<tr>
+<td><code>validate_deployment_safety()</code></td>
+<td>test 외 모든 ENV(개발 포함)에서 <code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>·<code>MYSQL_PASSWORD</code> 중 placeholder(빈 값·<code>your-</code> 시작·<code>change-this</code> 포함)가 있거나, 비밀 키 3종이 32자 미만이거나, access 키 = refresh 키. <code>REDIS_PASSWORD</code> 는 <strong>값이 있을 때만</strong> 같은 판정을 받는다(인증 없는 Redis 는 정당한 구성이라 빈 값을 막지 않는다). <strong>또는</strong> production/staging 에서 <code>DEBUG=true</code> 이거나 <code>LOG_LEVEL</code> 이 <code>DEBUG</code>(대소문자 무시) — 유효 로그 레벨이 DEBUG 면 세션 롤백 경로가 SQL·바인딩 값·트레이스백 전문을 남긴다(§5). 위반을 한 번에 모아 <code>ValueError</code> 로 알리고 메시지에는 설정 <strong>이름만</strong> 담는다(값은 싣지 않는다). test 는 검사하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<p><code>_validate_cross_settings()</code>·<code>validate_env_source()</code>·<code>validate_removed_settings()</code>·<code>validate_deployment_safety()</code> 는 모듈 함수라 <code>config</code> import 시점에 차례로 실행된다 — 호출을 빠뜨릴 수 없다.
+배포 환경에서 관리 화면을 켜는 것은 더 이상 거부하지 않는다 — <code>/admin</code> 은 슈퍼유저 로그인이 필요하다(§8). 쓰지 않는 배포는 <code>ADMIN_DISABLED=true</code>.</p>
+<p><strong>주요 환경변수</strong> (전체 목록과 설명은 <code>.env.example</code>)</p>
+<table>
+<thead>
+<tr>
+<th>변수</th>
+<th>기본값</th>
+<th>효과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEBUG</code></td>
+<td><code>true</code></td>
+<td>true: 개발용 테이블 자동 생성, <code>/docs</code>·<code>/openapi.json</code> 노출, 미지정 로그 레벨 DEBUG, 직접 실행 시 reload. false: 모두 반대(로그 INFO, 스키마는 Alembic)</td>
+</tr>
+<tr>
+<td><code>ADMIN_DISABLED</code></td>
+<td><code>false</code></td>
+<td>false: <code>/admin</code> 마운트(슈퍼유저 로그인 필요, §8). true: 관리 화면 자체가 없다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 생기지 않고 응답 어디에도 경로가 나오지 않는다. <code>DEBUG</code> 와 독립</td>
+</tr>
+<tr>
+<td><code>ENV</code></td>
+<td><code>development</code></td>
+<td>development / staging / production / test. 로그 핸들러·타임존과 위 검증에 쓰인다</td>
+</tr>
+<tr>
+<td><code>SERVER_HOST</code> / <code>SERVER_PORT</code></td>
+<td><code>0.0.0.0</code> / <code>8000</code></td>
+<td>직접 실행 시 바인딩</td>
+</tr>
+<tr>
+<td><code>MYSQL_HOST</code> / <code>MYSQL_PORT</code> / <code>MYSQL_USER</code> / <code>MYSQL_PASSWORD</code> / <code>MYSQL_DATABASE</code></td>
+<td><code>localhost</code> / <code>3306</code> / <code>root</code> / 빈 값 / <code>fastapi_db</code></td>
+<td>primary(writer) DSN</td>
+</tr>
+<tr>
+<td><code>DB_ROUTER_ENABLED</code> / <code>DB_REPLICATION_ENABLED</code></td>
+<td><code>false</code> / <code>false</code></td>
+<td>읽기/쓰기 라우팅(§4.4)</td>
+</tr>
+<tr>
+<td><code>REDIS_HOST</code> / <code>REDIS_PORT</code> / <code>REDIS_DB</code> / <code>REDIS_PASSWORD</code></td>
+<td><code>localhost</code> / <code>6379</code> / <code>0</code> / 없음</td>
+<td>startup ping 대상이자 Celery broker/backend</td>
+</tr>
+<tr>
+<td><code>ACCESS_TOKEN_SECRET_KEY</code> / <code>REFRESH_TOKEN_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td>JWT 서명 키(§7). test 외 모든 ENV 에서 placeholder·32자 미만·동일 키 거부</td>
+</tr>
+<tr>
+<td><code>SESSION_SECRET_KEY</code></td>
+<td><code>change-this-...</code></td>
+<td><code>/admin</code> 관리 세션 ID → Redis 키 HMAC 키(§8). 바꾸면 모든 관리 세션이 무효. test 외 모든 ENV 에서 placeholder·32자 미만 거부</td>
+</tr>
+</tbody>
+</table>
+<p>세션·토큰 만료(<code>ADMIN_SESSION_*</code>·<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)는 <a href="../../../../README.md#세션토큰-만료">README 세션·토큰 만료</a> 표 한 곳에 모았다.</p>
+<h3 id="33-create_app">3.3 <code>create_app()</code> 조립 순서</h3>
+<pre><code class="language-python">def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -&gt; FastAPI: ...
+</code></pre>
+<ol>
+<li>설치 목록 결정(<code>config.INSTALLED_APPS</code> 또는 주입값), registry 결정(전역 <code>apps</code> 또는 주입값)</li>
+<li><code>registry.populate(apps_list)</code> — config → models → <code>ready()</code></li>
+<li><code>FastAPI(...)</code> 생성 — <code>docs_url=None</code>, <code>redoc_url=None</code>, <code>openapi_url</code> 은 <code>DEBUG</code> 일 때만 <code>/openapi.json</code>, <code>lifespan</code> 연결</li>
+<li>CORS → <code>UserInfoMiddleware</code> 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 5종</li>
+<li><code>install_routers(app, registry)</code></li>
+<li><code>/health</code>, <code>/ready</code>, <code>DEBUG</code> 일 때만 Scalar <code>/docs</code></li>
+<li><code>app.state.app_registry</code> 저장, <code>admin_disabled</code>(기본 <code>ADMIN_DISABLED</code>)가 false 면 <code>create_admin(...)</code> — 끈 경우 로그에도 경로를 싣지 않는다</li>
+</ol>
+<p>2번이 3번보다 먼저인 이유는 모델·hook 등록을 앱 조립 전에 끝내기 위해서다.</p>
+<h3 id="34-lifespan">3.4 lifespan 과 자원 관리</h3>
+<p><code>lifespan</code> 은 <code>manage_application_resources(app)</code> 를 열고 yield 할 뿐이다. 자원별 코드는 <code>app/core/resources.py</code> 한 곳에 있다.</p>
+<pre><code class="language-python">async with AsyncExitStack() as cleanup:
+    cleanup.push_async_callback(_dispose_db_engines)       # 종료 시 3번째
+    await cleanup.enter_async_context(_redis(app))         # 종료 시 2번째
+    cleanup.push_async_callback(_drain_background_tasks)   # 종료 시 1번째
+    await _prepare_database(resources)
+    yield resources
+</code></pre>
+<p><strong>Redis 검증</strong> — <code>Redis.from_url(redis_settings.REDIS_URL, socket_connect_timeout=5, socket_timeout=5)</code> 후 <code>ping()</code>.
+실패하면 오류 타입만 ERROR 로 남기고 다시 raise 한다 → yield 에 도달하지 않아 서버가 시작되지 않는다.
+이어서 <code>ensure_redis_version()</code>(<code>app/core/redis.py</code>)이 <code>INFO server</code> 의 <code>redis_version</code> 을 <code>redis.REDIS_MIN_VERSION</code>(<strong>7.0</strong>)과 비교해
+낮으면 <code>UnsupportedRedisVersion</code> 으로 기동을 멈춘다. 7.0 은 근거가 있는 값이다 — 레이트 리밋이 <code>EXPIRE … NX</code>(7.0)를, refresh 회전이
+GETDEL(6.2)을 쓰고 최소 버전은 그 최댓값이다(6.x 서버는 <code>EXPIRE NX</code> 를 문법 오류로 거부해 로그인·가입이 첫 요청부터 500).
+INFO 를 막아 둔 관리형 Redis·버전을 알려 주지 않는 서버(테스트의 fakeredis 포함)는 WARNING 만 남기고 계속한다.
+<code>tests/core/test_redis_version.py</code> 가 소스의 명령과 상수를 대조한다.
+<code>DEBUG</code> 와 무관한 필수 조건이며 끄는 설정은 없다(service-hardening ADR-011). 성공한 client 는 <code>app.state.redis</code> 에 보관되고,
+요청 코드는 주입 provider <code>get_redis(request) -&gt; Redis</code>(<code>app/core/redis.py</code>) 하나로 꺼낸다 — lifespan 밖이라 client 가 없으면
+<code>ServiceUnavailableException</code>(503). 기능이 <code>Redis.from_url</code> 을 직접 만들지 않는다. 기동 뒤의 도달 가능성은 <code>/ready</code> 가 다시 본다(§3.5).
+기동 뒤 Redis 가 사라지면 Redis 를 필수로 쓰는 요청은 503(SERVICE_UNAVAILABLE) 이다(§3.5 예외 표, fail-closed). Redis 를 쓰지 않는
+조회(예: 글 목록)는 영향이 없고, 재기동하면 다시 연결된다(연결 풀이 재접속한다 — e2e L5 가 확인).</p>
+<p><strong>개발용 테이블 생성</strong> — <code>_prepare_database()</code> 는 <code>create_app()</code> 이 조립에 쓴 registry(<code>app.state.app_registry</code>)를
+받아 <code>owned_tables(registry)</code> 로 <strong>그 registry 가 소유한 테이블만</strong> 센다. 전역 <code>apps</code> 를 따로 읽거나 다시 채우지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>조건</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>소유 테이블 0개</td>
+<td>DB 에 접속하지 않는다</td>
+</tr>
+<tr>
+<td><code>DEBUG=false</code></td>
+<td>생성하지 않는다(Alembic 사용)</td>
+</tr>
+<tr>
+<td><code>DEBUG=true</code></td>
+<td><code>create_db_tables(registry=registry, populate=False)</code> — writer <code>engine.begin()</code> 안에서 <code>Base.metadata.create_all(tables=소유 테이블)</code>, 30초 timeout</td>
+</tr>
+</tbody>
+</table>
+<p><code>create_all</code> 은 없는 테이블만 만든다. 컬럼 변경·삭제·데이터 이동은 하지 않으며 DB 자체와 계정 권한은 미리 있어야 한다.
+여러 worker 가 <code>DEBUG=true</code> 로 동시에 DDL 을 시도할 수 있으므로 운영은 <code>DEBUG=false</code> + 별도 migration 주체가 원칙이다.</p>
+<blockquote>
+<p><strong>custom factory</strong> — <code>create_app(installed_apps, registry)</code> 로 조립하면 route 집합과 startup DDL 집합이 같은 registry 에서
+나온다(<code>tests/core/test_bootstrap.py::test_lifespan_creates_only_the_injected_registrys_tables</code>, service-hardening F-012).</p>
+</blockquote>
+<p><strong>종료</strong> — background task drain → Redis <code>aclose()</code> → DB engine dispose.</p>
+<table>
+<thead>
+<tr>
+<th>단계</th>
+<th>예산</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>background drain</td>
+<td>5초</td>
+<td>그중 4초는 완료 대기, 남은 시간에 미완료 태스크를 cancel 후 gather 로 회수</td>
+</tr>
+<tr>
+<td>Redis close</td>
+<td>5초</td>
+<td>client pool 정리일 뿐 서버·키에 영향 없음</td>
+</tr>
+<tr>
+<td>DB dispose</td>
+<td>10초</td>
+<td>writer · replica · background 를 <code>asyncio.gather(..., return_exceptions=True)</code> 로 <strong>병렬</strong> 회수. 한 엔진이 실패해도 나머지는 끝까지 dispose 되고, 실패는 예외 <strong>타입만</strong> 로그로 남기고 올리지 않는다(원래의 종료 원인을 덮지 않도록)</td>
+</tr>
+</tbody>
+</table>
+<p>각 단계는 <code>_run_cleanup()</code> 이 감싸 실패·timeout 을 로그로 남기고 다음 단계로 넘어간다(전체 deadline 은 없다).
+startup ping 실패도 client 종료와 이미 등록된 DB 정리 경로를 탄다(background drain 은 아직 등록 전). 끝나면
+<code>app.state.resources</code> 를 <code>None</code> 으로 되돌린다. SIGKILL·강제 종료에서는 회수를 보장하지 않는다.
+logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue listener 가 없다.</p>
+<h3 id="35-health-ready">3.5 health · ready · 오류 응답</h3>
+<table>
+<thead>
+<tr>
+<th>경로 / 오류</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /health</code></td>
+<td>liveness. <code>{"status": "healthy", "version": VERSION}</code>. DB·Redis 를 보지 않는다 — liveness 가 DB 에 의존하면 DB 가 흔들릴 때 오케스트레이터가 멀쩡한 프로세스를 죽인다</td>
+</tr>
+<tr>
+<td><code>GET /ready</code></td>
+<td>readiness. <code>ping_writer_db()</code>(writer 에 <code>SELECT 1</code>)와 <code>ping_redis()</code>(<code>get_redis</code> 로 주입한 client 에 <code>ping()</code>)를 <code>asyncio.gather</code> 로 동시에, 각각 2초 안에 실행. 하나라도 실패·timeout 이면 원인을 숨긴 503(대상과 원인 타입만 서버 WARNING — 예: <code>[Readiness] Redis 준비 확인 실패: TimeoutError</code>). 준비 안 된 인스턴스는 재시작이 아니라 LB 에서 뺀다</td>
+</tr>
+<tr>
+<td><code>/docs</code>, <code>/openapi.json</code></td>
+<td><code>DEBUG=true</code> 일 때만. Swagger UI·ReDoc 은 끔</td>
+</tr>
+<tr>
+<td>설정·registry 오류</td>
+<td>lifespan 이전 조립 실패</td>
+</tr>
+<tr>
+<td>Redis ping·Redis 7.0 미만·개발 DDL 오류</td>
+<td>startup 실패</td>
+</tr>
+<tr>
+<td>요청 중 오류</td>
+<td>전역 예외 핸들러</td>
+</tr>
+<tr>
+<td>background 저장 오류</td>
+<td>이미 나간 응답과 무관(로그만)</td>
+</tr>
+</tbody>
+</table>
+<p>전역 핸들러 5종은 모두 <code>ErrorResponse{error_code, message, detail}</code> 로 응답한다.</p>
+<table>
+<thead>
+<tr>
+<th>예외</th>
+<th>처리</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AppException</code> 계열</td>
+<td>예외의 status·error code 유지 (<code>NotFoundException</code> 404, <code>DuplicateException</code> 409, <code>DatabaseException</code> 500 등 — <code>app/core/exception.py</code>). 로그는 status &lt; 500 이면 WARNING(detail 제외), 500 이상이면 ERROR</td>
+</tr>
+<tr>
+<td><code>RequestValidationError</code></td>
+<td>422 VALIDATION_ERROR, detail 에 field·message·type 목록. OpenAPI 도 모든 operation 의 422 를 같은 <code>ErrorResponse</code> 로 광고한다 — FastAPI 기본 <code>HTTPValidationError</code> 는 <code>create_app()</code> 의 OpenAPI 후처리 한 곳에서 걷어낸다(<code>_document_real_validation_error</code>, e2e-policy-2 결정 1)</td>
+</tr>
+<tr>
+<td>Redis 연결 오류(<code>redis.exceptions.ConnectionError</code>·<code>TimeoutError</code>)</td>
+<td>503 SERVICE_UNAVAILABLE, detail 없음. <strong>예외 클래스 전용</strong> 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 <strong>한 번</strong>, keep-alive 연결도 유지된다(<code>Exception</code> 핸들러로 가면 Starlette <code>ServerErrorMiddleware</code> 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). <code>ResponseError</code> 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009)</td>
+</tr>
+<tr>
+<td>Starlette <code>HTTPException</code></td>
+<td><code>HTTP_&lt;status&gt;</code> error code. 예외의 <code>headers</code> 는 응답에 그대로 싣는다(405 <code>Allow</code> 등). <code>AppException</code> 도 <code>headers</code> 를 싣는다(429 <code>Retry-After</code>). <strong>401 은 두 핸들러가 모두 <code>WWW-Authenticate: Bearer</code> 를 붙인다</strong>(<code>_challenge</code> 한 곳 — 보호 라우트·로그인·refresh·logout·비활성 사용자 <code>/me</code> 모두, e2e-policy-2 결정 3)</td>
+</tr>
+<tr>
+<td>그 밖의 예외</td>
+<td>500 INTERNAL_SERVER_ERROR, <strong>DEBUG 에서도 detail 은 비운다</strong>. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그</td>
+</tr>
+</tbody>
+</table>
+<hr><nav class="pager"><a href="app-wiring.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="request-processing.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

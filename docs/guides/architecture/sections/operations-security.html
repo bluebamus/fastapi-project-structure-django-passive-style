@@ -1,0 +1,119 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>11. 운영·보안과 알려진 제한</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>11. 운영·보안과 알려진 제한</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="11">11. 운영·보안과 알려진 제한</h2>
+<h3 id="111">11.1 배포 체크리스트 — 사람이 확인할 것</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>확인</th>
+<th>빠뜨리면</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>DEBUG=false</code> (그리고 <code>LOG_LEVEL</code> 을 <code>DEBUG</code> 로 두지 않는다)</td>
+<td><code>/docs</code>·<code>/openapi.json</code> 공개, 시작 시 <code>create_all</code> 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>. 쓴다면 HTTPS 로만 접근(staging/production 쿠키는 <code>Secure</code>)</td>
+<td>켜 둔 <code>/admin</code> 은 로그인 화면을 공개한다(로그인은 필요하다). 예전 <code>ADMIN</code> 줄이 남아 있으면 기동이 멈춘다</td>
+</tr>
+<tr>
+<td>3</td>
+<td>외부 노출이 필요 없으면 <code>SERVER_HOST=127.0.0.1</code></td>
+<td>기본 <code>0.0.0.0</code> — <strong>앱은 이 조합을 막지 않는다.</strong> 관리 화면을 내부망으로만 쓰려면 프록시에서 <code>/admin</code> 을 제한한다</td>
+</tr>
+<tr>
+<td>4</td>
+<td>비밀값 교체: <code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>(서로 다른 <code>secrets.token_urlsafe(48)</code> 값, 세션 키는 <code>/admin</code> 세션 ID → Redis 키 HMAC)·<code>MYSQL_PASSWORD</code>·<code>REDIS_PASSWORD</code></td>
+<td>세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출</td>
+</tr>
+<tr>
+<td>5</td>
+<td>CORS 는 실제 frontend origin 만</td>
+<td><code>CORS_ALLOW_ORIGINS=["*"]</code> 와 <code>CORS_ALLOW_CREDENTIALS=true</code> 조합은 설정 로드가 거부한다</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Redis 는 <strong>7.0 이상</strong>, 인증·사설망</td>
+<td>startup 필수 자원이자 Celery broker·<code>/admin</code> 세션 저장소(Redis 를 쓸 수 없으면 관리 화면은 503). 7.0 미만이면 기동이 거부된다(<code>EXPIRE NX</code>). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>DB_WORKER_PROCESSES</code>·<code>DB_MAX_SERVER_CONNECTIONS</code> 를 실제 값으로</td>
+<td>트래픽이 몰릴 때만 "Too many connections" 로 드러난다</td>
+</tr>
+<tr>
+<td>8</td>
+<td>오케스트레이터가 <code>/health</code> 를 liveness, <code>/ready</code> 를 readiness 로 연결</td>
+<td>DB 흔들림에 프로세스 재시작</td>
+</tr>
+<tr>
+<td>9</td>
+<td>로그 보존·회전 정책과 민감값(Authorization·JWT·비밀번호·자격증명·과도한 요청 본문) 비기록</td>
+<td>—</td>
+</tr>
+<tr>
+<td>10</td>
+<td>프록시 뒤 배포면 <code>TRUSTED_PROXY_HOPS</code> 를 <strong>앞단 프록시 단 수</strong>로</td>
+<td>0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋(API·<code>/admin</code>)이 전체 사용자를 한 사람으로 취급한다(한 사람이 한도를 채우면 전원이 429). 크게 잡으면 위조된 <code>X-Forwarded-For</code> 를 믿어 IP 위조가 가능하다(service-hardening R-013)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>첫 관리자를 <code>scripts/create_superuser.py</code> 로 만들고(대화형 또는 <code>--password-stdin</code>), 관리 API 가 일반 토큰에 403 인지 확인</td>
+<td>슈퍼유저가 없으면 관리 API 도 <code>/admin</code> 로그인도 쓸 수 없다. 리비전 <code>a3c9e8f1b274</code> 는 아무도 자동 승격하지 않는다</td>
+</tr>
+<tr>
+<td>12</td>
+<td>KST→UTC 리비전 <code>e5a7c2d9f310</code> 적용 전 백업, 기존 값의 시간대가 <code>+09:00</code> 이 아니면 <code>LEGACY_OFFSET</code> 수정</td>
+<td>모든 시각이 오프셋 차이만큼 어긋난 채 저장된다(§10)</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>/admin</code> 은 슈퍼유저 로그인이 필요하다 — 세션은 Redis 서버 세션, <code>SESSION_SECRET_KEY</code> 는 세션 ID → Redis 키 HMAC 키. <code>ADMIN_SESSION_MAX_AGE_SECONDS</code>(절대)·<code>ADMIN_SESSION_IDLE_SECONDS</code>(미사용)를 정책에 맞춘다(<a href="../../../../README.md#세션토큰-만료">README 세션·토큰 만료</a>)</td>
+<td>키를 바꾸면 모든 관리 세션이 끊긴다(다시 로그인). Redis 를 읽을 수 있는 사람은 세션 내용(사용자 id·CSRF 토큰)을 본다 — Redis 접근을 통제한다 (쿠키는 HMAC 때문에 Redis 키로 만들 수 없다, admin-session-hardening R-008)</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>ACCESS_LOG_RETENTION_DAYS</code> 를 개인정보 정책에 맞추고(기본 365일), Celery worker 와 <strong>beat 한 개</strong>를 띄운다</td>
+<td>beat 가 없으면 보존 삭제가 돌지 않아 접속 로그가 무기한 쌓인다(§6·§9)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="112">11.2 배포 절차와 확인</h3>
+<pre><code class="language-bash">uv run alembic current            # 현재 리비전
+uv run alembic upgrade head       # writer 에서 적용 (ALEMBIC_DATABASE_URL 로 DSN 분리 가능)
+# 되돌리기: uv run alembic downgrade -1  (MySQL CI job 이 downgrade -1 → 재-upgrade 를 검증한다)
+</code></pre>
+<p>배포 후:</p>
+<pre><code class="language-bash">curl -s https://&lt;host&gt;/health                                            # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/ready            # 200 (DB 준비), 아니면 503
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/docs             # DEBUG=false 면 404
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;host&gt;/admin/           # 302(로그인 화면으로), ADMIN_DISABLED=true 면 404
+</code></pre>
+<p>API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순서·백업/복구 시험은 배포 인프라에서 별도로 승인한다(이 저장소는 이미지 빌드·배포를 다루지 않는다).</p>
+<h3 id="113">11.3 알려진 제한 (구현되지 않은 것)</h3>
+<p>전제로 삼지 않는다.</p>
+<ul>
+<li><strong>API 인가의 세분</strong>: 슈퍼유저/일반 2단계뿐이다(역할·권한 테이블 없음). <code>Principal</code> 은 토큰 claims 로 만들므로 강등·비활성화는 refresh 폐기로
+  다음 회전부터 막히고, 이미 발급된 access 는 만료까지 이전 권한을 가진다.</li>
+<li><strong>관리 화면 인증의 범위</strong>: 슈퍼유저 한 등급만 들어간다(관리 화면 안의 세분 권한 없음). 상태를 바꾸는 관리 요청은 모두 CSRF 토큰을 요구하지만
+  sqladmin 사용자 정의 <code>@action</code>(GET 라우트)은 보호 밖이다 — 이 저장소는 쓰지 않는다(admin-session-hardening R-001). 관리 화면과 API 는
+  같은 판정(<code>revocation_for_change</code>)으로 같은 집합을 커밋 전에 폐기한다(R-007 해소). 같은 경로를 메서드별 라우트로 나눈 경우 405 의 <code>Allow</code> 가 불완전하다
+  (사용자 결정으로 현행 유지, R-002). 익명 로그인 화면 방문도 Redis 세션(미사용 30분)을 만든다(R-003).</li>
+<li><strong>access 토큰 즉시 폐기</strong>: 블랙리스트 없음 — 짧은 수명(15분)과 refresh 폐기(logout·재사용 탐지·비활성화·강등·비밀번호 변경·삭제)로 대신한다.</li>
+<li><strong>접속 로그 신뢰 경계</strong>: <code>ip_address</code> 는 <code>TRUSTED_PROXY_HOPS</code> 가 실제 프록시 홉 수와 같을 때만 정확하다 — 값이 실제보다 크면 위조된 XFF 값을 믿는다.
+  <code>forwarded_for</code>·<code>real_ip</code> 열은 헤더 원문이라 위조될 수 있다. Referer·User-Agent·<code>session_id</code> 쿠키 원문과 (민감 키를 가린) query string 이 저장된다
+  (사용자 결정). 보존 기간은 <code>ACCESS_LOG_RETENTION_DAYS</code>(기본 365일)이고 beat 가 떠 있어야 삭제된다(§6). 개인정보 정책을 배포 측에서 정한다.</li>
+<li><strong>접속 로그 내구성</strong>: best-effort(상한 초과 drop, 종료 drain 5초). drop 과 drain timeout 로그를 모니터링한다.</li>
+<li><strong>레이트 리밋</strong>: 인증 엔드포인트(로그인·가입)에만 있다(§7). 그 밖의 요청 한도는 리버스 프록시나 API gateway 에서 건다.</li>
+<li><strong>자동 앱 탐색</strong>: 없음(설계 원칙).</li>
+<li><strong>미사용 설정</strong>: 없다. 메일·업로드 설정과 SESSION_EXPIRE_SECONDS(config-cleanup), API 버전 설정(config-cleanup-2)은 지웠다(<code>.env</code> 에 남아도 무시된다). 로그 포맷·콘솔 스위치는 로깅 구성에 연결했다(§5). 새 설정이 읽히지 않으면 <code>tests/core/test_settings_contract.py</code> 가 막는다.</li>
+<li><strong>검증하지 않은 것</strong>: Raw 집계의 실행 계획·실제 replica 지연·부하 한계(운영급 데이터 필요), 실제 배포 플랫폼의 secret store·TLS·프록시 ACL.</li>
+</ul>
+<hr><nav class="pager"><a href="migrations.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="changelog.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>
