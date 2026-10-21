@@ -914,7 +914,7 @@ OAuth2 **password flow** + JWT access/refresh(회전). 자격증명은 `user` �
    비활성이면 401(비활성·부재는 family 도 폐기). 통과하면 **같은 family** 로 새 쌍을 발급한다.
 3. **logout** — refresh 토큰의 family 를 폐기하고 jti 를 소비한다(멱등, 204). access 토큰은 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`)까지
    유효하다 — 즉시 폐기 목록은 두지 않고 짧은 수명으로 대신한다.
-4. **/me** — `get_current_principal`(아래 §7.1) → read-only 세션의 `UserRepository.get_by_id` → 없거나 비활성이면 401.
+4. **/me** — `get_current_principal`(아래 §7.1) → read-only 세션을 **primary 에 고정**(`using_writer`)한 `UserRepository.get_by_id` → 없거나 비활성이면 401. replica 에서 읽으면 복제 지연 중 가입 직후의 유효한 토큰이 401 이 되고 비활성화·삭제가 늦게 반영된다(e2e-policy-2 결정 5, integration-e2e F-008). 다른 읽기 라우팅은 그대로다.
    Redis 도 쓰기 세션도 쓰지 않는다.
 5. **register** — `register_rate_limit`(ip, `AUTH_REGISTER_MAX_ATTEMPTS`/`AUTH_REGISTER_WINDOW_SECONDS`) 뒤 Argon2 해시로 저장, 응답 DTO 검증 후 커밋.
 

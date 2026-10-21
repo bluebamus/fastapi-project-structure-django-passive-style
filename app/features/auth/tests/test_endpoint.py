@@ -6,6 +6,7 @@ fakeredis 다 — 레이트 리밋·refresh 회전이 실물 클래스로 돈다
 
 import bcrypt
 import jwt
+import pytest
 import pytest_asyncio
 from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
@@ -428,3 +429,56 @@ async def test_every_auth_401_carries_the_bearer_challenge(env):
     assert {name: r.status_code for name, r in responses.items()} == dict.fromkeys(responses, 401)
     missing = [n for n, r in responses.items() if r.headers.get("www-authenticate") != "Bearer"]
     assert not missing, f"401 에 WWW-Authenticate: Bearer 가 없다: {missing}"
+
+
+@pytest.mark.parametrize(
+    ("primary_active", "replica_active", "expected"),
+    [
+        (True, None, 200),  # 가입 직후 — replica 에 아직 없다(복제 지연)
+        (False, True, 401),  # 비활성화 직후 — replica 는 아직 활성
+    ],
+    ids=["registered-not-replicated", "deactivated-not-replicated"],
+)
+async def test_me_reads_the_user_from_primary(
+    monkeypatch, primary_active, replica_active, expected
+):
+    """인증 사용자 조회는 replica 가 아니라 primary 에서 읽는다(e2e-policy-2 결정 5, F-008).
+
+    복제가 밀려도 유효한 토큰이 401 이 되지 않고, 비활성화는 즉시 반영된다. 라우팅 세션 팩토리를
+    writer·reader 두 SQLite 로 바꿔 끼워 운영 의존성(``get_read_only_db_session``)을 그대로 탄다.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import StaticPool
+
+    from app.core.db.router import DatabaseRouter, create_routing_sessionmaker
+    from app.core.db.session import Base
+    from tests.auth_headers import USER_ID, bearer
+
+    async def engine_with(active: bool | None):
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all, tables=[User.__table__])
+            if active is not None:
+                await conn.execute(
+                    User.__table__.insert().values(
+                        id=USER_ID,
+                        username="lagger",
+                        email="lagger@ex.com",
+                        hashed_password="x",
+                        is_active=active,
+                        is_superuser=False,
+                    )
+                )
+        return engine
+
+    writer, reader = await engine_with(primary_active), await engine_with(replica_active)
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+    monkeypatch.setattr("app.core.db.session.AsyncSessionLocal", maker)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/v1/auth/me", headers=bearer(USER_ID, "lagger"))
+    finally:
+        await writer.dispose()
+        await reader.dispose()
+
+    assert resp.status_code == expected, resp.text

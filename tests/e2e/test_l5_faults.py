@@ -241,7 +241,7 @@ def test_replica_outage(stack: Stack):
             word in logged for word in (stack.secrets["E2E_MYSQL_PASSWORD"], "fastapi_passive_e2e:")
         )
         me = probe(stack, "GET", "/api/v1/auth/me", headers=bearer(user["access"]))
-        assert me["status"] == 200, "읽기 전용 세션의 인증 읽기도 primary 로 넘어간다"
+        assert me["status"] == 200, "인증 사용자 조회는 primary 에서 읽는다(e2e-policy-2 결정 5)"
         write = probe(
             stack,
             "POST",
