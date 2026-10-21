@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
 
 
-def _challenge(status_code: int, headers: dict[str, str] | None) -> dict[str, str] | None:
+def _challenge(status_code: int, headers: Mapping[str, str] | None) -> Mapping[str, str] | None:
     """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(e2e-policy-2 결정 3).
 
     보호 라우트·로그인·refresh·logout·비활성 사용자 어디서 던졌든 이 한 곳을 지난다(RFC 6750 §3).
