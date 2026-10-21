@@ -4,7 +4,7 @@
 [아키텍처 레퍼런스](./ARCHITECTURE.md), 설치·실행은 [README](../../README.md)에 있다.
 
 실물 참조는 두 예제 기능이다 — ORM 은 `app/features/catalog/`, Raw SQL 은 `app/features/reports/`.
-같은 흐름을 요청 한 건 단위로 따라 읽는 요약은 [신규 뷰·테이블 개발 안내서](./feature-development-guide.html)다(절차·규칙의 정본은 이 문서).
+같은 흐름을 요청 한 건 단위로 따라 읽는 요약은 [신규 뷰·테이블 개발 안내서](./workflows/feature-development.html)다(절차·규칙의 정본은 이 문서).
 두 기능은 등록·Dependency·Service·트랜잭션·DTO 검증·예외 처리가 같고 **Repository 만 다르다**(`tests/test_orm_raw_parity.py`).
 
 ## 목차
@@ -361,7 +361,7 @@ flowchart TD
 ```
 
 HTTP 메서드 이름만으로 판단하지 않는다. 한 원자 작업에 여러 Service 가 참여하면 같은 writer 세션을 주입하고 커밋 주체를 하나로 둔다.
-인가(`CurrentPrincipal`)는 DB 를 읽지 않는다. 사용자 엔티티가 필요한 인증(`get_current_user`)은 read-only 세션을 따로 쓰므로, 인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려면 쓰기 세션에서 다시 조회한다.
+인가(`CurrentPrincipal`)는 DB 를 읽지 않는다. 사용자 엔티티가 필요한 인증(`get_current_user`)은 read-only 세션을 따로 쓰되 primary 에 고정해 읽으므로(복제 지연 중에도 가입 직후 토큰이 통하고 비활성화가 즉시 반영된다), 인증 단계에서 읽은 객체를 쓰기 세션에서 수정하려면 쓰기 세션에서 다시 조회한다.
 
 ### 4.2 커밋과 응답
 
@@ -480,7 +480,7 @@ async def create_item(payload: ItemCreate, principal: CurrentPrincipal, service:
   실제 토큰을 보낸다. 토큰 검증·`su` claim·`request.state.user_id` 기록까지 같이 시험된다.
 - `Principal` 은 토큰 claims 로 만든다(DB 조회 없음). 강등·비활성화가 즉시 반영돼야 하는 판정이면 DB 를 다시 읽는다.
 - **API 에 세션(쿠키) 인증을 섞지 않는다.** `/admin` 의 세션 로그인은 SQLAdmin 하위 앱 전용이다 — 메인 앱에 세션 미들웨어를 붙이거나
-  API 의존성이 `admin_session` 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 [관리 화면 인증 가이드](admin-auth-guide.html).
+  API 의존성이 `admin_session` 을 읽게 하면 쿠키 기반 CSRF 면이 API 로 넓어진다. 이유와 구조는 [관리 화면 인증 가이드](workflows/admin-authentication.html).
 - 새 기능의 `admin.py` ModelView 는 따로 인증을 붙이지 않는다 — `/admin` 전체가 `AdminAuthBackend` 뒤에 있다. 로그인 화면은
   `app/templates/admin/sqladmin/login.html` 이 덮어쓴다(유지 대상, 수정 규칙은 가이드 §16). 폼의 CSRF hidden 입력
   (`csrf_token(request)`)을 지우면 모든 로그인이 403 이다. 로그인 이후 화면은 `app/templates/admin/sqladmin/base.html` 이 sqladmin 원본을 확장해
@@ -667,7 +667,7 @@ E2E_KEEP_STACK=1 ... -m e2e tests/e2e/test_l2_api_matrix.py              # 파�
   잘못된 메서드·선언된 접근 수준 대조 / L3 인증 수명·레이트 리밋·소유권·사용자 변경 시 세션 폐기·접속 로그·보존 삭제(worker)·
   매출·Celery 왕복·beat 일정·읽기/쓰기 분리(replica 전용 행·복제 지연) / L4 관리 화면 7 뷰의 목록·상세·생성·수정·삭제·일괄 삭제·
   내보내기·날짜 필터 4종·기간 필터 UI, CSRF, 로그아웃, 세션 만료·폐기, `ADMIN_DISABLED` / L5 Redis·primary·replica·worker 장애와
-  회복, CSRF 본문 버퍼링 측정 / L6 Alembic 왕복, `create_superuser`, 기동 거부, 로그 경로·파일·회전·레벨, 인증 캐시가 빈 첫 연결 /
+  회복, CSRF 본문 상한(413·400)·측정 / L6 Alembic 왕복, `create_superuser`, 기동 거부, 로그 경로·파일·회전·레벨, 인증 캐시가 빈 첫 연결 /
   마지막에 인벤토리 대조(빈 칸 = 실패)와 로그 비밀값 검사.
 - **새 API·관리 뷰·태스크·Redis 키를 추가하면**: 인벤토리 대조기(`test_zz_inventory.py`)가 앱에서 대상을 다시 뽑으므로, 칸을
   채우지 않으면 e2e 가 실패한다. operation 이면 `test_l2_api_matrix.py` 의 REQUESTS(유효한 요청)와 필요하면 INVALID·
@@ -685,8 +685,8 @@ E2E_KEEP_STACK=1 ... -m e2e tests/e2e/test_l2_api_matrix.py              # 파�
 | `README.md` | 개요·빠른 시작·프로젝트 구조·API 목록·문서 색인 | route·실행 절차·트리 변경 |
 | `docs/guides/ARCHITECTURE.md` | 동작 레퍼런스·운영·변경 이력 | 코드 동작·설정·보안 경계 변경 |
 | `docs/guides/DEVELOPMENT.md` | 작성 절차·규칙·테스트 | 생성기·규칙·게이트 변경 |
-| `docs/guides/server-lifecycle-guide.html` | 설정 → 기동 → 요청 → 종료 흐름 요약(HTML) | 수명주기·설정·로깅·종료 순서 변경 — ARCHITECTURE 와 함께 |
-| `docs/guides/feature-development-guide.html` | 신규 뷰·테이블 흐름 요약(HTML) | Repository·세션·트랜잭션·생성기 절차 변경 — DEVELOPMENT 와 함께 |
+| `docs/guides/workflows/server-lifecycle.html` | 설정 → 기동 → 요청 → 종료 흐름 요약(HTML) | 수명주기·설정·로깅·종료 순서 변경 — ARCHITECTURE 와 함께 |
+| `docs/guides/workflows/feature-development.html` | 신규 뷰·테이블 흐름 요약(HTML) | Repository·세션·트랜잭션·생성기 절차 변경 — DEVELOPMENT 와 함께 |
 | `docs/specs/orm-raw-repository/` | 착수 기준선(고정) | 고치지 않는다 — 코드 주석의 `development-plan §N`·`RAW-REP-*` 인용 대상 |
 | `docs/crp/groups/` | 검수 기록(append-only) | 새 결정은 행을 추가한다 |
 

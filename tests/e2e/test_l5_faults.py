@@ -152,10 +152,11 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
             assert not result["closed"], f"{name}: keep-alive 연결이 끊겼다"
             assert result["unhandled"] == 0 and result["redis_unavailable"] == 1, (name, result)
 
-        # 관리 화면, 쿠키 없는 첫 요청 — 세션 **저장**(응답 직전)이 실패하면 현행 500(문서화된 동작, 정책 결정 대상).
+        # 관리 화면, 쿠키 없는 첫 요청 — 응답 직전 세션 **저장** 실패도 503(e2e-policy-2 결정 6, F-009).
         anonymous = probe(stack, "GET", "/admin/login")
-        assert anonymous["status"] == 500, anonymous
-        _record_unhandled({"admin-anonymous": anonymous})
+        assert anonymous["status"] == 503, anonymous
+        assert "관리 세션 저장소(Redis)를 사용할 수 없습니다" in anonymous["body"], anonymous
+        assert not anonymous["closed"] and anonymous["unhandled"] == 0, anonymous
         # fail-closed — 폐기(Redis)가 실패하면 비활성화 커밋도 하지 않는다.
         assert (
             stack.sql("SELECT is_active FROM users WHERE id=%s", (victim["id"],))[0]["is_active"]
@@ -177,16 +178,6 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
         fresh.close()
         admin.close()
     covers("fault", "Redis 정지", "Redis 재기동")
-
-
-def _record_unhandled(results: dict[str, dict[str, Any]]) -> None:
-    doubled = sorted(n for n, r in results.items() if r["unhandled"] >= 2)
-    closed = sorted(n for n, r in results.items() if r["closed"])
-    if doubled or closed:
-        OBSERVATIONS.add(
-            f"Redis 장애 500 경로({', '.join(sorted(results))}) — 처리되지 않은 예외 기록 2건 이상: "
-            f"{', '.join(doubled) or '없음'}, keep-alive 연결 끊김: {', '.join(closed) or '없음'}"
-        )
 
 
 # ── MySQL primary ─────────────────────────────────────────────────────────
@@ -241,7 +232,7 @@ def test_replica_outage(stack: Stack):
             word in logged for word in (stack.secrets["E2E_MYSQL_PASSWORD"], "fastapi_passive_e2e:")
         )
         me = probe(stack, "GET", "/api/v1/auth/me", headers=bearer(user["access"]))
-        assert me["status"] == 200, "읽기 전용 세션의 인증 읽기도 primary 로 넘어간다"
+        assert me["status"] == 200, "인증 사용자 조회는 primary 에서 읽는다(e2e-policy-2 결정 5)"
         write = probe(
             stack,
             "POST",
@@ -358,25 +349,28 @@ def _measure(stack: Stack, pid: int, label: str, mib: int, body: bytes) -> dict[
 
 
 def test_measure_csrf_form_body_buffering(stack: Stack):
-    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어는 본문 전체를 메모리에 읽고 파싱한다.
+    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어의 본문 상한(e2e-policy-2 결정 7, F-007).
 
-    상한을 둘지는 사용자 결정이다(계획서 §5-2) — 응답·시간·RSS 를 재서 기록만 한다. 두 모양으로 잰다.
+    본문이 10 MiB 를 넘으면 413(``Content-Length`` 로 먼저, 읽지 않는다), 필드 하나가 1 MiB 를 넘으면 400,
+    그 밖은 끝까지 읽고 토큰이 없어 403 이다. 500 은 없다. 응답·시간·RSS 를 재서 기록한다. 두 모양:
 
-    * ``fields-512KiB``: 512 KiB 필드 여러 개 — 끝까지 읽고 파싱한 뒤 토큰이 없어 403.
-    * ``one-field``: 필드 하나 — Starlette 폼 파서의 필드 상한(1 MiB)을 넘으면 미들웨어 안에서 예외가 난다.
+    * ``fields-512KiB``: 512 KiB 필드 여러 개.
+    * ``one-field``: 필드 하나.
     """
+    from app.core.security.admin_auth import MAX_FORM_BODY_BYTES
+
     pid = _server_pid(stack)
     results = []
+    expected = {}
     for mib in (1, 10, 50):
         chunk = b"x" * (512 * 1024)
         many = b"username=a&password=b&" + b"&".join(b"f%d=" % i + chunk for i in range(mib * 2))
-        results.append(_measure(stack, pid, "fields-512KiB", mib, many))
-        results.append(
-            _measure(
-                stack, pid, "one-field", mib, b"username=a&password=b&pad=" + b"x" * (mib * 2**20)
-            )
-        )
-    assert all(r["status"] == 403 for r in results if r["shape"] == "fields-512KiB"), results
+        one = b"username=a&password=b&pad=" + b"x" * (mib * 2**20)
+        for label, body, small in (("fields-512KiB", many, 403), ("one-field", one, 400)):
+            results.append(_measure(stack, pid, label, mib, body))
+            expected[(label, mib)] = 413 if len(body) > MAX_FORM_BODY_BYTES else small
+    assert {(r["shape"], r["MiB"]): r["status"] for r in results} == expected, results
+    assert not any(r["connection_closed"] for r in results if r["status"] in (400, 403)), results
     (stack.run_dir / "csrf-body-measure.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), "utf-8"
     )

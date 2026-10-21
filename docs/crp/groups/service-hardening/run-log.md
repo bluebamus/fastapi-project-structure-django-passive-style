@@ -120,7 +120,7 @@
     (모듈 dict 스냅샷 복원) — `test_security_hardening.py` 의 reload 3곳과 `test_deployment_safety.py::load_config` 가 공용으로 쓴다
     (reload 로 "복구" 하던 코드는 지웠다).
   - 문서: `docs/guides/DEVELOPMENT.md` §6.2(세션 오버라이드 헬퍼·`restore_config`·호출 시점 patch),
-    `docs/guides/feature-development-guide.html`(endpoint 테스트 문단).
+    `docs/guides/workflows/feature-development.html`(endpoint 테스트 문단).
 - **새 테스트와 fail-on-revert(대상 파일을 작업 폴더 밖에 복사해 두고 수정 전 내용을 넣어 실행 후 복원):**
   - `tests/test_session_overrides.py::test_read_only_override_rejects_a_sneaky_write`·`test_writer_override_is_pinned_to_the_writer` —
     헬퍼에서 `mark_read_only`·`using_writer` 를 빼면 둘 다 실패 확인(DID NOT RAISE / pinned False)

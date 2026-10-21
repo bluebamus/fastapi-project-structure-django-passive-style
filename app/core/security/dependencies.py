@@ -28,7 +28,6 @@ from redis.asyncio import Redis
 from app.core.exception import (
     ErrorResponse,
     ForbiddenException,
-    InvalidTokenException,
     UnauthorizedException,
 )
 from app.core.redis import get_redis
@@ -42,8 +41,6 @@ from config import jwt_settings
 
 #: 토큰이 없을 때 FastAPI 기본 응답({"detail": ...}) 대신 저장소의 오류 봉투로 401 을 낸다.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-_BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
 
 #: 보호 라우트의 OpenAPI 오류 응답 — ``responses={**UNAUTHORIZED_RESPONSE, ...}`` 로 싣는다.
 UNAUTHORIZED_RESPONSE: dict[int | str, dict[str, Any]] = {
@@ -117,18 +114,14 @@ async def get_current_principal(
     성공하면 ``request.state.user_id`` 를 채워 접속 로그에 사용자 ID 가 남게 한다.
 
     Raises:
-        UnauthorizedException: Authorization 헤더가 없음(401, ``WWW-Authenticate: Bearer``).
+        UnauthorizedException: Authorization 헤더가 없음(401).
         InvalidTokenException: 서명·만료·claim·종류 중 하나라도 어긋남(401).
+
+    401 의 ``WWW-Authenticate: Bearer`` 는 전역 예외 핸들러가 붙인다(e2e-policy-2 결정 3).
     """
     if not token:
-        raise UnauthorizedException(headers=dict(_BEARER_CHALLENGE))
-    try:
-        claims = token_service.decode(token, ACCESS)
-    except InvalidTokenException as exc:
-        # 위조·만료도 같은 도전 헤더를 싣는다(RFC 6750 §3) — 없을 때만 붙으면 클라이언트가
-        # "다시 인증하라" 는 신호를 놓친다(integration-e2e F-001).
-        exc.headers = {**(exc.headers or {}), **_BEARER_CHALLENGE}
-        raise
+        raise UnauthorizedException()
+    claims = token_service.decode(token, ACCESS)
     principal = Principal(id=claims["sub"], username=claims["username"], is_superuser=claims["su"])
     request.state.user_id = principal.id
     return principal

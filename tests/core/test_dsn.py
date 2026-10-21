@@ -120,3 +120,25 @@ def test_redis_url_without_password_has_no_credentials():
     parsed = parse_url(RedisSettings(_env_file=None, REDIS_PASSWORD=None).REDIS_URL)
 
     assert "password" not in parsed
+
+
+def test_mysql_rsa_auth_dependency_is_declared_through_the_driver():
+    """MySQL 8.4 ``caching_sha2_password`` 전체 인증(TLS 아닌 연결)의 RSA 암호화에 cryptography 가 필요하다.
+
+    유일한 사용처가 드라이버라 드라이버의 공식 추가 옵션 ``aiomysql[rsa]``(= ``PyMySQL[rsa]``)로 선언한다 —
+    직접 적은 ``cryptography`` 는 사용처와 떨어져 낡는다(e2e-policy-2 의존성 통일).
+    """
+    import tomllib
+    from pathlib import Path
+
+    import pymysql._auth
+
+    deps = tomllib.loads(Path("pyproject.toml").read_text("utf-8"))["project"]["dependencies"]
+    names = {dep.split("(")[0].split(">")[0].split("<")[0].strip(): dep for dep in deps}
+
+    assert "aiomysql[rsa]" in names, deps
+    assert (
+        "cryptography" not in names
+    ), "cryptography 를 직접 선언하지 않는다 — aiomysql[rsa] 가 끌어온다"
+    assert "pymysql" in names, "Alembic(동기 드라이버)이 pymysql 을 직접 쓴다"
+    assert pymysql._auth._have_cryptography is True

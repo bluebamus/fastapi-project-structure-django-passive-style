@@ -28,6 +28,7 @@
 | REQ-003 | 2026-10-20 | e2e 정책 결정 1 — Redis 장애 → 503 | Redis 를 필수로 쓰는 API 경로(로그인·refresh·logout·가입·사용자 비활성화/강등/삭제)와 관리 화면이 Redis 연결 오류 때 500 대신 503(기존 오류 형식 `SERVICE_UNAVAILABLE`), 내부 정보 0, traceback 한 번, keep-alive 유지. 한 곳(예외 핸들러)에서 | Active |
 | REQ-004 | 2026-10-20 | e2e 정책 결정 2 — replica 장애 → primary 재시도 | replica 로 가는 읽기가 연결 계열 오류로 실패하면 primary 로 한 번 다시 실행 + WARNING(비밀값 없이). `/ready` 불변. 읽기 전용 세션에만. 단일 DB 구성은 변화 0 | Active |
 | REQ-005 | 2026-10-20 | e2e 정책 결정 3 — import 중 로그 줄이 파일에 빠짐 → 고친다 | 설정 로드 직후 파일 핸들러까지 붙여 기동 초기 줄도 프로세스별 파일에. 웹·`python main.py`·`uvicorn main:app`·worker·beat 모두. 핸들러 중복·줄 중복 없음 | Active |
+| REQ-006 | 2026-10-21 | e2e 정책 결정 2차(사용자 확정) — 결정 1~7 + 추가 결정(결정 2 ①·`aiomysql[rsa]`) | ① 422 OpenAPI = 실제 `ErrorResponse`(F-010) ② 처리기 없는 예외 500: 기록 1번·keep-alive 유지(F-013) ③ 이 앱의 모든 401 에 `WWW-Authenticate: Bearer`(F-012) ④ `create_superuser --set-password` 세션 폐기(이미 충족 → 계약 고정) ⑤ 인증 사용자 조회는 primary(F-008) ⑥ 관리 화면 Redis 장애는 응답 직전 저장 실패까지 503(F-009) ⑦ CSRF 폼 본문 10 MiB 초과 413·필드 1 MiB 초과 400(F-007) ⑧ cryptography 를 `aiomysql[rsa]` 로 선언(F-014). 결정마다 TDD·fail-on-revert·별도 커밋 | Active |
 
 ## 3. 설계 결정 (ADR)
 
@@ -44,6 +45,8 @@
 | ADR-009 | 2026-10-20 | (REQ-003) Redis 오류는 **`RedisError` 전용 예외 핸들러** 한 곳에서 503(`SERVICE_UNAVAILABLE`)으로 바꾼다 | 처리되지 않은 예외를 `Exception` 핸들러가 받으면 Starlette `ServerErrorMiddleware` 가 응답 뒤 예외를 다시 던져 traceback 이 두 번 남고 uvicorn 이 keep-alive 를 끊는다. 클래스 전용 핸들러는 `ExceptionMiddleware` 에서 끝나 다시 던지지 않는다. 연결 계열(`ConnectionError`·`TimeoutError`)만 — 명령 오류는 결함이라 500. 관리 화면은 sqladmin 하위 앱의 미들웨어(세션)가 앱 핸들러 바깥이라 이 핸들러가 닿지 않는다 — 세션 **로드** 실패는 이미 미들웨어가 503, 쿠키 없는 첫 요청의 응답 직전 **저장** 실패는 문서화된 현행 500 으로 남긴다(바꾸려면 정책 결정, residual-risk R-004) | Active |
 | ADR-010 | 2026-10-20 | (REQ-004) replica 재시도 범위 | 아래 §3.1 | Active |
 | ADR-011 | 2026-10-20 | (REQ-005) 로깅 구성 시점 | 아래 §3.2 | Active |
+| ADR-012 | 2026-10-21 | (REQ-006) 정책 결정 2차의 반영 위치 | 아래 §3.3 | Active |
+| ADR-013 | 2026-10-21 | (REQ-006) cryptography 는 드라이버 추가 옵션 `aiomysql[rsa]` 로 선언한다(직접 줄 삭제, `pymysql` 은 Alembic 용으로 유지) | 유일한 사용처가 MySQL 8.4 `caching_sha2_password` 전체 인증(TLS 아닌 연결)의 RSA 암호화다 — 사용처와 같은 줄에 두면 드라이버를 바꿀 때 함께 사라진다. `uv lock` 결과 표기만 바뀌고 cryptography 50.0.0 은 그대로. `tests/core/test_dsn.py::test_mysql_rsa_auth_dependency_is_declared_through_the_driver` | Active |
 
 ### 3.1 ADR-010 — replica 읽기 재시도 범위
 
@@ -71,6 +74,23 @@
   경우가 실패한다(fail-on-revert).
 - **대체 관계**: logging-overhaul ADR-003(프로세스별 파일)을 대체하지 않고, "기동 초기 줄도 파일에" 를 그 위의 계약으로 명시한다
   (그 그룹 문서는 append-only 라 고치지 않는다 — ARCHITECTURE §5 에 한 줄을 더했다).
+
+### 3.3 ADR-012 — 정책 결정 2차의 반영 위치
+
+- **결정 1(422)**: `create_app()` 의 OpenAPI 후처리 한 곳(`_document_real_validation_error`)에서 모든 operation 의 422 스키마를
+  `ErrorResponse` 로 바꾸고 `HTTPValidationError`·`ValidationError` 컴포넌트를 걷어낸다. 실제 응답은 그대로다.
+- **결정 2(처리기 없는 예외)**: `@app.middleware("http")` `answer_unhandled_exception` 을 사용자 미들웨어 중 **가장 바깥**(마지막 등록)에 둔다.
+  `call_next` 의 예외를 기존 `Exception` 처리기로 응답해 `ServerErrorMiddleware` 의 재던짐(→ uvicorn `Exception in ASGI application`·연결
+  종료)을 막는다. `DEBUG=true` 는 다시 던진다. 응답이 시작된 뒤(스트리밍 본문 중)의 예외는 `call_next` 밖이라 오지 않는다 — 확인만 했다
+  (기존대로 1건 기록 후 재던짐).
+- **결정 3(401)**: `AppException`·`HTTPException` 핸들러가 401 이면 도전 헤더를 붙인다(`_challenge`). F-001 때 `get_current_principal` 에
+  붙이던 개별 부착은 지웠다 — 한 곳이다.
+- **결정 4**: 코드 변경 없음. `ensure_superuser` 는 커밋 뒤 폐기, Redis 실패면 종료 코드 1(새 비밀번호는 남는다 — 순서 명시). 계약 테스트만 더했다.
+- **결정 5**: `get_current_user` 가 읽기 전용 세션을 `using_writer` 로 primary 에 고정한다(읽기 전용 표시는 유지). 다른 읽기 라우팅은 그대로.
+- **결정 6**: `RedisSessionMiddleware` 가 응답 시작 전 저장(`_commit`)의 `RedisError` 를 받아 앱 응답 대신 읽기 실패와 같은 503 을 낸다.
+- **결정 7**: `AdminCsrfMiddleware` — `Content-Length` 로 먼저, 없거나 거짓이면 읽는 도중 누적으로 10 MiB 초과를 413, 폼 파서의 필드 상한
+  예외(1 MiB)를 미들웨어 안에서 400. 상한은 **모듈 상수**다 — 이 저장소의 미들웨어 상수 관례(`SAFE_METHODS`·`_FORM_TYPES`)를 따랐고
+  운영에서 바꿀 이유가 없다.
 
 ## 4. 불가침 제약
 

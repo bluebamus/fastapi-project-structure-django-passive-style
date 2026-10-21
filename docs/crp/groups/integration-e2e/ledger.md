@@ -17,3 +17,16 @@
 | F-010 | LOW | 계획서 L2(422 형식) | Accept-out-of-scope | Observed | e2e L2 관측 | 422 실제 응답은 `ErrorResponse{error_code, message, detail[field,message,type]}` 인데 OpenAPI 는 FastAPI 기본 `HTTPValidationError{detail[loc,msg,type]}` 를 광고한다 — 응답 형식 변경은 정책 결정(residual-risk R-005) |
 | F-011 | LOW | 계획서 L2(405) | Accept-out-of-scope | Observed | e2e L2 관측 | 메서드 분할 경로의 405 `Allow` 는 처음 맞은 라우트의 메서드만 싣는다 — 사용자 결정으로 현행 유지(값만 기록) |
 | F-012 | LOW | 계획서 L2(미인증) | Decision-needed | Open | e2e L2 관측 · residual-risk R-006 | PublicWrite 인 로그인·refresh·logout 의 자격 오류 401 에는 `WWW-Authenticate` 가 없다(보호 라우트는 F-001 로 붙는다). 붙일지는 정책 결정 |
+| F-013 | MED | REQ-006(결정 2) | Fix | Fixed (`8665236`) | `tests/core/test_unhandled_exception.py` | 처리기 없는 예외(버그)는 `Exception` 처리기가 500 을 낸 뒤 `ServerErrorMiddleware` 가 다시 던져 uvicorn 이 `Exception in ASGI application` 으로 한 번 더 기록하고 keep-alive 연결을 닫았다(실제 uvicorn 재현: traceback 2·연결 종료). 가장 바깥 사용자 미들웨어에서 같은 처리기로 끝낸다 |
+| F-014 | LOW | REQ-006(의존성) | Fix | Fixed (`ab7f15d`) | `tests/core/test_dsn.py` | `cryptography` 를 직접 선언 — 사용처(드라이버 RSA 인증)와 떨어져 있었다. `aiomysql[rsa]` 로 통일 |
+
+### 상태 갱신 — 2026-10-21 (e2e-policy-2, 원 행은 고치지 않는다)
+
+| ID | 새 Status | 커밋 | 근거 |
+|---|---|---|---|
+| F-001 | Fixed — 부착 위치를 전역 핸들러(`_challenge`)로 옮김 | `6788468` | 결정 3 |
+| F-007 | Fixed — 413(10 MiB)·400(필드 1 MiB) | `6bfc431` | `tests/core/test_admin_csrf.py`·e2e L5 측정 |
+| F-008 | Fixed — 인증 사용자 조회 primary | `4743b1c` | `app/features/auth/tests/test_endpoint.py::test_me_reads_the_user_from_primary`·e2e L3 |
+| F-009 | Fixed — 응답 직전 저장 실패도 503 | `c3e8280` | `tests/core/security/test_admin_session.py`·e2e L5 |
+| F-010 | Fixed — 422 광고 = 실제 본문 | `371d896`·`95ae048` | `tests/test_openapi_contract.py`·e2e L2 단정 |
+| F-012 | Fixed — 모든 401 에 도전 헤더 | `6788468`·`62da6f6` | `tests/core/test_exception_headers.py`·e2e L2 단정 |

@@ -24,12 +24,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -71,6 +72,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """
     async with manage_application_resources(app):
         yield
+
+
+def _challenge(status_code: int, headers: Mapping[str, str] | None) -> Mapping[str, str] | None:
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(e2e-policy-2 결정 3).
+
+    보호 라우트·로그인·refresh·logout·비활성 사용자 어디서 던졌든 이 한 곳을 지난다(RFC 6750 §3).
+    예외가 이미 도전 헤더를 들고 왔으면 그것을 쓴다.
+    """
+    if status_code != 401:
+        return headers
+    return {"WWW-Authenticate": "Bearer", **(headers or {})}
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -130,7 +142,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),
-            headers=exc.headers,
+            headers=_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -194,7 +206,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
             ).model_dump(mode="json"),
             # 405 의 Allow, 401 의 WWW-Authenticate, 429 의 Retry-After 같은 HTTP 의미 헤더는
             # 예외가 들고 온다. 본문만 바꾸고 헤더를 버리면 그 의미가 사라진다(M-03).
-            headers=exc.headers,
+            headers=_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(Exception)
@@ -253,6 +265,58 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=None,
             ).model_dump(mode="json"),
         )
+
+    # 사용자 미들웨어 중 **가장 바깥**(마지막 등록)이어야 한다 — CORS·UserInfo 안에서 난 예외도 받는다.
+    # create_app() 이 미들웨어를 붙인 뒤 이 함수를 부른다(tests/core/test_unhandled_exception.py 가 순서를 고정).
+    @app.middleware("http")
+    async def answer_unhandled_exception(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다(e2e-policy-2 결정 2).
+
+        ``ServerErrorMiddleware`` 는 ``Exception`` 처리기로 응답한 뒤 예외를 다시 던진다 — uvicorn 이 traceback 을
+        한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기(로그 형식·마스킹·본문)로 끝내면 기록은 한 번,
+        연결은 유지된다. 응답이 시작된 뒤의 예외(스트리밍 본문)는 ``call_next`` 밖이라 여기 오지 않는다 — 기존대로다.
+        ``DEBUG=true`` 면 지금처럼 다시 던진다.
+        """
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            if app_settings.DEBUG:
+                raise
+            return await general_exception_handler(request, exc)
+
+
+def _document_real_validation_error(app: FastAPI) -> None:
+    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다(e2e-policy-2 결정 1, F-010).
+
+    FastAPI 는 모든 operation 의 422 를 기본 ``HTTPValidationError``(``detail[loc,msg,type]``)로 적지만, 이 앱의
+    검증 핸들러는 ``ErrorResponse``(``detail[field,message,type]``)를 낸다. 응답은 그대로 두고 문서만 한 곳에서
+    바로잡는다 — 라우트마다 ``responses`` 를 덧붙이면 빠지는 라우트가 생긴다.
+    """
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        # generate() 는 app.openapi_schema 에 같은 객체를 캐시한다 — 아래 수정이 캐시에 남는다.
+        schema = generate()
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        for name in ("HTTPValidationError", "ValidationError"):
+            components.pop(name, None)
+        components.setdefault("ErrorResponse", ErrorResponse.model_json_schema())
+        for item in schema.get("paths", {}).values():
+            for operation in item.values():
+                response = operation.get("responses", {}).get("422")
+                if response is not None:
+                    response["content"] = {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    }
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 class HealthResponse(BaseModel):
@@ -414,6 +478,7 @@ def create_app(
         logger.info("API 문서 비활성화 (운영 모드): /docs, /openapi.json 접근 차단")
 
     _register_exception_handlers(app)
+    _document_real_validation_error(app)
 
     # 5. registry 기반 Router 설치 — main.py 에 include_router 한 줄을 더하지 않는다.
     install_routers(app, app_registry)

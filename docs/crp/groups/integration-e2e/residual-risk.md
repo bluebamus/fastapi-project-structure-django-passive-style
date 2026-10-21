@@ -12,3 +12,14 @@
 | R-006 | PublicWrite 인증 operation 의 401 에 `WWW-Authenticate` 없음(F-012) | LOW | 로그인·refresh 의 오류 응답 의미 변경 | 2026-10-20 | 표준 OAuth2 클라이언트 호환이 필요해지면 |
 | R-007 | Windows 에서는 Celery worker 가 `solo` 풀이고 하네스의 종료가 강제 종료라 Warm shutdown 로그가 없다 | LOW | 플랫폼 한계 — Linux(prefork)에서 확인한다 | 2026-10-20 | — |
 | R-008 | Redis 키 접두어 인벤토리는 운영 코드의 키 **리터럴**(f-string)을 정규식으로 뽑는다 — 문자열을 조립하는 새 방식이면 놓친다 | LOW | 현재 키는 모두 리터럴이다 | 2026-10-20 | 키 생성 방식을 바꾸면 추출기도 바꾼다 |
+
+### 갱신 — 2026-10-21 (e2e-policy-2, 원 행은 고치지 않는다)
+
+| ID | 상태 | 근거 |
+|---|---|---|
+| R-001 | 해소 — 버퍼링 상한 10 MiB(413). 재측정: 10·50 MiB 본문 413·0.005~0.035초·RSS 변화 0 | ledger F-007 |
+| R-002 | 해소 — 필드 하나 > 1 MiB 는 400, 연결 유지 | ledger F-007 |
+| R-003 | 해소 — 인증 사용자 조회 primary | ledger F-008 |
+| R-004 | 해소 — 응답 직전 저장 실패도 503 | ledger F-009 |
+| R-005 | 해소 — 422 광고 = 실제 본문 | ledger F-010 |
+| R-006 | 해소 — 모든 401 에 `WWW-Authenticate: Bearer` | ledger F-012 |

@@ -10,7 +10,7 @@
 | 설정 | `config.py` | 소스 | `SMTPSettings`·`UploadSettings`·`get_smtp_settings`·`get_upload_settings`·`smtp_settings`·`upload_settings`·`SESSION_EXPIRE_SECONDS` 삭제, `validate_deployment_safety` 의 `SMTP_PASSWORD` 항목 삭제, `SessionSettings` docstring |
 | 예시 | `.env.example` | 설정 | SMTP 절·업로드 절·`SESSION_EXPIRE_SECONDS` 줄 삭제 |
 | 테스트 | `tests/core/test_settings_contract.py`(3절 추가), `tests/core/test_deployment_safety.py`, `tests/core/test_security_hardening.py` | 테스트 | 계약 테스트 · SMTP 항목 정리 |
-| 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/admin-auth-guide.html`, `docs/guides/server-lifecycle-guide.html`, `docs/crp/groups/config-cleanup/` | 문서 | 만료 정본 표·업그레이드 노트·지운 설정 제거 |
+| 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/workflows/admin-authentication.html`, `docs/guides/workflows/server-lifecycle.html`, `docs/crp/groups/config-cleanup/` | 문서 | 만료 정본 표·업그레이드 노트·지운 설정 제거 |
 
 - 착수 기준선 커밋: `6aae442` (main)
 - 마이그레이션: 변경 없음 · 의존성: 변경 없음(`python-multipart` 유지, ADR-004)

@@ -19,7 +19,7 @@
 ## Round 2 — 2026-10-12 · ADMIN_DISABLED · 세션 범위 · 가이드 · 목록 500
 - [x] (F-006) `ADMIN_DISABLED`, `validate_removed_settings`, `create_app(admin_disabled=…)`, 경로 없는 비활성 로그, 응답·헤더 무흔적 테스트 · fail-on-revert
 - [x] 세션 범위 확인(ADR-006) — 메인 앱 무세션·API 가 관리 쿠키 거부·`/admin` 밖 Set-Cookie 없음 테스트, 쿠키 이름 충돌 가드 · fail-on-revert
-- [x] `docs/guides/admin-auth-guide.html`(도식 7개 — 구성도·주입·기동 흐름·로그인 시퀀스·요청별 판정·로그아웃·계정 수명주기, Chromium 렌더 확인) + 문서 계약 테스트 등록
+- [x] `docs/guides/workflows/admin-authentication.html`(도식 7개 — 구성도·주입·기동 흐름·로그인 시퀀스·요청별 판정·로그아웃·계정 수명주기, Chromium 렌더 확인) + 문서 계약 테스트 등록
 - [x] (F-007) `column_filters` → `sqladmin.filters`, 모든 뷰 목록·필터·상세 200 테스트, browser 테스트·기동 스모크에서 목록 확인 · fail-on-revert
 - [x] 모든 문서 반영 + 낡은 서술 grep(결과는 run-log)
 - [x] GATE 3 인수기준 그린 — `.env` 없는 클론에서 1052 passed · 34 deselected · skip 0 · coverage 96.37%

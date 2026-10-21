@@ -24,6 +24,8 @@ from typing import Any
 
 from sqladmin import Admin
 from sqladmin.authentication import AuthenticationBackend
+from starlette.exceptions import HTTPException
+from starlette.formparsers import MultiPartException
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
@@ -70,6 +72,18 @@ CSRF_FAILED_MESSAGE = "요청이 만료되었습니다. 다시 시도하세요."
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 _FORM_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
+
+#: 토큰을 보려고 버퍼링하는 폼 본문의 상한 — 넘으면 413(e2e-policy-2 결정 7). 관리 폼은 수 KiB 다
+#: (CSV 가져오기는 헤더 토큰이라 이 경로를 타지 않는다). 설정이 아니라 상수다 — 바꿀 운영 이유가 없다.
+MAX_FORM_BODY_BYTES = 10 * 1024 * 1024
+#: 폼 필드 하나의 상한 — 넘으면 400. Starlette 폼 파서의 기본값과 같다.
+MAX_FORM_FIELD_BYTES = 1024 * 1024
+BODY_TOO_LARGE_MESSAGE = "요청 본문이 너무 큽니다."
+FIELD_TOO_LARGE_MESSAGE = "폼 필드가 너무 큽니다."
+
+
+class _BodyTooLarge(Exception):
+    """버퍼링 중 누적 크기가 상한을 넘었다."""
 
 
 class AdminCsrf:
@@ -132,11 +146,28 @@ class AdminCsrfMiddleware:
         submitted: object = request.headers.get(AdminCsrf.HEADER)
         content_type = request.headers.get("content-type", "")
         if submitted is None and content_type.startswith(_FORM_TYPES):
-            # ponytail: 본문 전체를 메모리에 둔다 — 관리 폼 크기면 충분하다(CSV 가져오기는 헤더 경로).
-            body = await _read_body(receive)
+            # 본문을 메모리에 두되 상한(10 MiB)까지만 — 먼저 Content-Length 로, 없거나 거짓이면 읽는 도중 누적으로 자른다.
+            # 필드 하나가 1 MiB 를 넘으면 파서 예외가 미들웨어 밖으로 새어 500 이 되지 않게 여기서 400 으로 끝낸다.
+            declared = request.headers.get("content-length", "")
+            try:
+                if declared.isdigit() and int(declared) > MAX_FORM_BODY_BYTES:
+                    raise _BodyTooLarge
+                body = await _read_body(receive)
+            except _BodyTooLarge:
+                await PlainTextResponse(BODY_TOO_LARGE_MESSAGE, status_code=413)(
+                    scope, receive, send
+                )
+                return
             receive = _replay(body, receive)
-            async with Request(scope, _replay(body, receive)).form() as form:
-                submitted = form.get(AdminCsrf.FORM_FIELD)
+            try:
+                form_request = Request(scope, _replay(body, receive))
+                async with form_request.form(max_part_size=MAX_FORM_FIELD_BYTES) as form:
+                    submitted = form.get(AdminCsrf.FORM_FIELD)
+            except (MultiPartException, HTTPException):
+                await PlainTextResponse(FIELD_TOO_LARGE_MESSAGE, status_code=400)(
+                    scope, receive, send
+                )
+                return
 
         if not AdminCsrf.is_valid(request, submitted):
             logger.warning("[AdminCsrf] 토큰 불일치 %s %s", scope["method"], request.url.path)
@@ -148,11 +179,15 @@ class AdminCsrfMiddleware:
 
 async def _read_body(receive: Receive) -> bytes:
     chunks: list[bytes] = []
+    size = 0
     while True:
         message = await receive()
         if message["type"] != "http.request":
             break
         chunks.append(message.get("body", b""))
+        size += len(chunks[-1])
+        if size > MAX_FORM_BODY_BYTES:
+            raise _BodyTooLarge
         if not message.get("more_body", False):
             break
     return b"".join(chunks)

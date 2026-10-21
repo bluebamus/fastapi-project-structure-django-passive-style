@@ -264,8 +264,8 @@ def test_documented_error_responses_reference_the_shared_model(operations, spec)
                 continue
             content = response.get("content", {}).get("application/json", {})
             ref = content.get("schema", {}).get("$ref", "")
-            # FastAPI 가 기본 제공하는 422(HTTPValidationError)는 대상이 아니다.
-            if not ref or ref.endswith("/HTTPValidationError"):
+            # 422 도 대상이다 — 기본 HTTPValidationError 광고를 ErrorResponse 로 바꿨다(e2e-policy-2 결정 1).
+            if not ref:
                 continue
             if not ref.endswith("/ErrorResponse"):
                 offenders.append(f"{method.upper()} {path} -> {code}: {ref}")
@@ -463,3 +463,52 @@ def test_core_schema_snapshot_is_unchanged(schemas):
         "예제 DTO 의 필드 집합 또는 필수 여부가 바뀌었다. "
         f"의도한 변경이면 이 스냅샷을 함께 고칠 것: {actual}"
     )
+
+
+# =============================================================================
+# 5. 422 문서 = 실제 응답 (e2e-policy-2 결정 1 · integration-e2e F-010)
+# =============================================================================
+def _real_422_body() -> dict[str, Any]:
+    """앱의 검증 핸들러가 실제로 내는 422 본문 — 같은 ``create_app()`` 조립으로 만든다."""
+    from fastapi.testclient import TestClient
+
+    from app.core.bootstrap import create_app
+
+    probe = create_app()
+
+    @probe.get("/_probe/validation")
+    async def _validation(n: int) -> None:  # pragma: no cover - 검증에서 막힌다
+        return None
+
+    response = TestClient(probe).get("/_probe/validation", params={"n": "x"})
+    assert response.status_code == 422, response.text
+    return response.json()
+
+
+def test_every_422_schema_accepts_the_real_422_body(operations):
+    """422 를 광고하는 모든 operation 의 스키마가 실제 422 본문을 받아들인다.
+
+    FastAPI 기본 광고(``HTTPValidationError``: ``detail[loc,msg,type]``)는 이 앱의 실제 본문
+    (``ErrorResponse``: ``error_code``·``message``·``detail[field,message,type]``)과 다르다 — 클라이언트
+    생성기가 만든 타입이 실제 응답을 읽지 못한다.
+    """
+    from tests.e2e.openapi_check import errors
+
+    body = _real_422_body()
+    documented = [
+        (method, path, operation["responses"]["422"])
+        for method, path, operation in operations
+        if "422" in operation.get("responses", {})
+    ]
+    assert documented, "422 를 광고하는 operation 이 없다 — 검사가 헛돈다"
+    offenders = {
+        f"{method.upper()} {path}": found
+        for method, path, response in documented
+        if (found := errors(response["content"]["application/json"]["schema"], body))
+    }
+    assert not offenders, f"422 광고가 실제 본문과 다르다: {offenders}"
+
+
+def test_fastapi_default_validation_schemas_are_not_published(schemas):
+    """실제로 내지 않는 기본 검증 오류 스키마는 문서에 남기지 않는다."""
+    assert not {"HTTPValidationError", "ValidationError"} & set(schemas)

@@ -181,7 +181,7 @@ uv run uvicorn main:app --reload --port 8000
 
 기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, `MYSQL_DATABASE=fastapi_db`)에 맞춘 로컬 전용 예시입니다.
 빈 비밀번호는 개발 환경에서도 설정 검증이 거부하므로 비밀번호를 지정합니다.
-MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
+MySQL 8.4 의 기본 인증(`caching_sha2_password`, TLS 아닌 연결의 전체 인증 RSA 암호화)은 `aiomysql[rsa]` 가 끌어오는 `cryptography` 가 처리합니다. 문자셋을 직접 만들 때는
 `CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;` 를 씁니다.
 
 - API 문서: <http://127.0.0.1:8000/docs> · 관리 화면: <http://127.0.0.1:8000/admin> (먼저 [첫 관리자 만들기](#첫-관리자-만들기)로
@@ -214,7 +214,7 @@ MySQL 8.4 의 기본 인증은 의존성의 `cryptography` 가 처리합니다. 
 > 로그인·생성·수정·삭제·로그아웃 같은 상태를 바꾸는 요청은 모두 CSRF 토큰을 싣고(화면 스크립트가 자동으로 붙인다), 없거나 다르면 403 입니다.
 > 로그아웃은 POST 전용입니다(GET 은 405). 날짜 필터는 같은 날·이후·이전과 **기간**(시작일~종료일, 양 끝 포함)을 고를 수 있습니다.
 > 세션은 **`/admin` 전용**이며 API 인증(JWT Bearer)과 섞이지 않습니다. 설계·흐름도·문제 해결은
-> [관리 화면 인증 가이드](docs/guides/admin-auth-guide.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
+> [관리 화면 인증 가이드](docs/guides/workflows/admin-authentication.html), 배포 체크리스트는 [아키텍처 §11](docs/guides/ARCHITECTURE.md#11-운영보안과-알려진-제한)에 있습니다.
 
 선택 기능(Celery worker, replica 라우팅, Alembic)은 기본 실행에 필요 없습니다 — 필요할 때 [아키텍처 레퍼런스](docs/guides/ARCHITECTURE.md)를 봅니다.
 
@@ -371,7 +371,7 @@ async def create_post(payload: PostCreate, principal: CurrentPrincipal): ...   #
 | 본인 또는 슈퍼유저 | user 단건 GET·PATCH (`is_active`·`is_superuser` 변경은 슈퍼유저만) |
 | 슈퍼유저 | user 목록·생성(비밀번호 필수)·삭제, catalog 생성·수정·삭제, reports, home 접속 로그 5종 |
 
-토큰이 없으면 401(`WWW-Authenticate: Bearer`), 토큰이 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다.
+토큰이 없거나 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다. 로그인·refresh·logout 의 자격 오류를 포함해 이 앱이 내는 401 은 모두 `WWW-Authenticate: Bearer` 를 싣습니다.
 사용자를 비활성화·강등·삭제하면(또는 `--set-password` 로 비밀번호를 바꾸면) 그 사용자의 refresh 토큰과 `/admin` 관리 세션이 모두 폐기됩니다(이미 받은 access 는 만료까지 유효).
 
 ```bash
@@ -533,9 +533,9 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 | `README.md` (이 문서) | 개요 · 빠른 시작 · 문서 안내 | 처음 받았을 때, 실행 방법·API 목록을 볼 때 |
 | [docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 | App Registry·수명주기·설정·세션/트랜잭션·Repository API·운영 체크리스트·변경 이력을 확인할 때 |
 | [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 | 새 기능·API·테이블을 만들 때, ORM/Raw 를 고를 때, 테스트·CI 게이트를 돌릴 때 |
-| [docs/guides/server-lifecycle-guide.html](docs/guides/server-lifecycle-guide.html) | 서버 수명주기 안내서 (설정 → 기동 → 요청 → 종료 추적) | 기동 실패·로그 레벨·요청별 세션·종료 순서를 코드 흐름대로 따라갈 때 |
-| [docs/guides/feature-development-guide.html](docs/guides/feature-development-guide.html) | 신규 뷰·테이블 개발 안내서 | catalog(ORM)·reports(Raw) 예제를 따라 새 뷰·테이블을 연결할 때 |
-| [docs/guides/admin-auth-guide.html](docs/guides/admin-auth-guide.html) | 관리 화면(`/admin`) 인증 가이드 — 세션 범위·구성도·로그인 시퀀스·쿠키·위협 모델·운영 | 관리 화면 로그인을 이해·운영·확장할 때, `ADMIN_DISABLED` 를 정할 때 |
+| [docs/guides/workflows/server-lifecycle.html](docs/guides/workflows/server-lifecycle.html) | 서버 수명주기 안내서 (설정 → 기동 → 요청 → 종료 추적) | 기동 실패·로그 레벨·요청별 세션·종료 순서를 코드 흐름대로 따라갈 때 |
+| [docs/guides/workflows/feature-development.html](docs/guides/workflows/feature-development.html) | 신규 뷰·테이블 개발 안내서 | catalog(ORM)·reports(Raw) 예제를 따라 새 뷰·테이블을 연결할 때 |
+| [docs/guides/workflows/admin-authentication.html](docs/guides/workflows/admin-authentication.html) | 관리 화면(`/admin`) 인증 가이드 — 세션 범위·구성도·로그인 시퀀스·쿠키·위협 모델·운영 | 관리 화면 로그인을 이해·운영·확장할 때, `ADMIN_DISABLED` 를 정할 때 |
 | [docs/specs/orm-raw-repository/requirements.md](docs/specs/orm-raw-repository/requirements.md) | 고정 기준선 — ORM/Raw 착수 요구명세 | 코드 주석의 `RAW-REP-*`·`NFR-0xx`·`DOC-*` 원문을 찾을 때 |
 | [docs/specs/orm-raw-repository/development-plan.md](docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 개발계획 | 코드 주석의 `development-plan §N`·`Phase N` 인용을 따라갈 때 |
 | [docs/specs/orm-raw-repository/workflow-guide.md](docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 워크플로 지침 | 착수 당시의 작업·검수 절차를 확인할 때 |

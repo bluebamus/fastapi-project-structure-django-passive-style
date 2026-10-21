@@ -13,7 +13,7 @@
 | 주석 | `app/core/resources.py` | 소스 | ADR-019 설명의 핸들러 이름 |
 | 예시 | `.env.example` | 설정 | 로그 절 |
 | 테스트 | `tests/utils/test_log_overhaul.py`(신규), `tests/utils/{test_logs,test_log_settings,test_log_redaction,conftest}.py`, `tests/core/test_settings_contract.py` | 테스트 | |
-| 문서 | `README.md`(로깅 절 신설·업그레이드 노트), `docs/guides/ARCHITECTURE.md`(§3.2 표·§5·§12), `docs/guides/DEVELOPMENT.md`(§1), `docs/guides/server-lifecycle-guide.html`(로깅 문단·부록), `docs/crp/groups/logging-overhaul/`, 이전 그룹 residual-risk(덧붙임) | 문서 | |
+| 문서 | `README.md`(로깅 절 신설·업그레이드 노트), `docs/guides/ARCHITECTURE.md`(§3.2 표·§5·§12), `docs/guides/DEVELOPMENT.md`(§1), `docs/guides/workflows/server-lifecycle.html`(로깅 문단·부록), `docs/crp/groups/logging-overhaul/`, 이전 그룹 residual-risk(덧붙임) | 문서 | |
 
 - 착수 기준선 커밋: `bb33c22` (main) · 브랜치 `feat/logging-overhaul`
 - 마이그레이션: 변경 없음 · 의존성: 변경 없음(fakeredis 는 기존 dev 의존성, 스모크에만 사용)
