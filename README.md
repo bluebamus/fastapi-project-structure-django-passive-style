@@ -162,7 +162,7 @@ Remove-Item Env:DEBUG      # 끝난 뒤 개발 기본값으로 복원
 | 이 상태에서 | 결과 | 이유 |
 |---|---|---|
 | `GET /health` | 200 | DB 를 보지 않는다 |
-| `GET /ready` | 503 | writer DB 의 SELECT 1 이 실패한다(Redis 는 기동 조건이라 이미 응답한다) |
+| `GET /ready` | 503 | writer DB 의 SELECT 1 이 실패한다(`/ready` 는 DB·Redis 를 함께 보지만, Redis 는 기동 조건이라 이미 응답한다) |
 | 기능 API (`GET /api/v1/blog/posts` 등) | 500 | MySQL 이 필요하다 |
 | `/docs`, `/openapi.json` | 404 | `DEBUG=false` 가 문서를 끈다 |
 
@@ -525,7 +525,7 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 
 ## 문서 안내
 
-**문서 색인은 이 표 한 곳에만 둡니다.** 같은 내용을 두 곳에 쓰지 않습니다 — HTML 안내서는 흐름을 따라 읽는
+**문서 색인은 이 표 한 곳에만 둡니다**(`docs/guides/index.html` 은 브라우저에서 가이드로 들어가는 링크 목록입니다). 같은 내용을 두 곳에 쓰지 않습니다 — HTML 안내서는 흐름을 따라 읽는
 요약이고, 표·수치의 정본은 Markdown 가이드입니다(HTML 은 브라우저로 엽니다).
 
 | 문서 | 역할 | 언제 보나 |
