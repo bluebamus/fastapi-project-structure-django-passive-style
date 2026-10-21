@@ -371,7 +371,7 @@ async def create_post(payload: PostCreate, principal: CurrentPrincipal): ...   #
 | 본인 또는 슈퍼유저 | user 단건 GET·PATCH (`is_active`·`is_superuser` 변경은 슈퍼유저만) |
 | 슈퍼유저 | user 목록·생성(비밀번호 필수)·삭제, catalog 생성·수정·삭제, reports, home 접속 로그 5종 |
 
-토큰이 없으면 401(`WWW-Authenticate: Bearer`), 토큰이 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다.
+토큰이 없거나 만료·위조됐거나 refresh 토큰을 access 로 보내면 401, 권한이 없으면 403 입니다. 로그인·refresh·logout 의 자격 오류를 포함해 이 앱이 내는 401 은 모두 `WWW-Authenticate: Bearer` 를 싣습니다.
 사용자를 비활성화·강등·삭제하면(또는 `--set-password` 로 비밀번호를 바꾸면) 그 사용자의 refresh 토큰과 `/admin` 관리 세션이 모두 폐기됩니다(이미 받은 access 는 만료까지 유효).
 
 ```bash

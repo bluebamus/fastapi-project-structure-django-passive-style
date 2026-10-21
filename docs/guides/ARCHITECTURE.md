@@ -512,7 +512,7 @@ logging 은 console/file 핸들러를 직접 붙이는 구조라 닫을 queue li
 | `AppException` 계열 | 예외의 status·error code 유지 (`NotFoundException` 404, `DuplicateException` 409, `DatabaseException` 500 등 — `app/core/exception.py`). 로그는 status < 500 이면 WARNING(detail 제외), 500 이상이면 ERROR |
 | `RequestValidationError` | 422 VALIDATION_ERROR, detail 에 field·message·type 목록. OpenAPI 도 모든 operation 의 422 를 같은 `ErrorResponse` 로 광고한다 — FastAPI 기본 `HTTPValidationError` 는 `create_app()` 의 OpenAPI 후처리 한 곳에서 걷어낸다(`_document_real_validation_error`, e2e-policy-2 결정 1) |
 | Redis 연결 오류(`redis.exceptions.ConnectionError`·`TimeoutError`) | 503 SERVICE_UNAVAILABLE, detail 없음. **예외 클래스 전용** 핸들러라 응답 뒤 예외를 다시 던지지 않는다 — traceback 은 ERROR 로 **한 번**, keep-alive 연결도 유지된다(`Exception` 핸들러로 가면 Starlette `ServerErrorMiddleware` 가 다시 던져 traceback 이 두 번 남고 uvicorn 이 연결을 끊는다). 대상: 가입·로그인(레이트 리밋), refresh·logout(회전 기록), 사용자 비활성화·강등·삭제(세션 폐기 — 실패하면 커밋하지 않는다). `ResponseError` 같은 명령 오류는 결함이라 500 그대로 (integration-e2e ADR-009) |
-| Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow`·401 `WWW-Authenticate` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`) |
+| Starlette `HTTPException` | `HTTP_<status>` error code. 예외의 `headers` 는 응답에 그대로 싣는다(405 `Allow` 등). `AppException` 도 `headers` 를 싣는다(429 `Retry-After`). **401 은 두 핸들러가 모두 `WWW-Authenticate: Bearer` 를 붙인다**(`_challenge` 한 곳 — 보호 라우트·로그인·refresh·logout·비활성 사용자 `/me` 모두, e2e-policy-2 결정 3) |
 | 그 밖의 예외 | 500 INTERNAL_SERVER_ERROR, **DEBUG 에서도 detail 은 비운다**. SQLAlchemy 예외는 traceback 없이 타입·드라이버 코드만 로그 |
 
 ---
@@ -943,7 +943,7 @@ access·refresh 수명(`ACCESS_TOKEN_EXPIRE_MINUTES`·`REFRESH_TOKEN_EXPIRE_DAYS
 | 주입 | 하는 일 | 실패 |
 |---|---|---|
 | `oauth2_scheme` | `OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)` — OpenAPI 에 Bearer 스킴을 싣는다 | 헤더가 없으면 아래가 401 |
-| `get_current_principal` | access 토큰 검증 → `Principal(id, username, is_superuser)`. **DB 조회 없음**. `request.state.user_id` 를 채운다 | 401 UNAUTHORIZED(토큰 없음, `WWW-Authenticate: Bearer`) · 401 AUTH_INVALID_TOKEN(만료·위조·`su` 누락·refresh 토큰) |
+| `get_current_principal` | access 토큰 검증 → `Principal(id, username, is_superuser)`. **DB 조회 없음**. `request.state.user_id` 를 채운다 | 401 UNAUTHORIZED(토큰 없음) · 401 AUTH_INVALID_TOKEN(만료·위조·`su` 누락·refresh 토큰). 401 의 `WWW-Authenticate: Bearer` 는 전역 핸들러가 붙인다 |
 | `require_superuser` | 주체가 슈퍼유저인지 본다 | 403 FORBIDDEN |
 | `CurrentPrincipal` / `SuperuserPrincipal` | 위 두 의존성의 `Annotated` 별칭 — 핸들러 인자 타입으로 쓴다 | — |
 | `OwnershipPolicy` | 서비스가 생성자로 받아 수정·삭제 전에 `ensure_can_modify(owner_id, principal)` 를 부른다. `owner_id` 가 `None` 이면 슈퍼유저만 | 403 FORBIDDEN |

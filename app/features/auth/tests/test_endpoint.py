@@ -404,3 +404,27 @@ async def test_access_token_carries_the_superuser_flag(env):
     assert me.json()["is_superuser"] is True
     listed = await client.get("/api/v1/user/users", headers={"Authorization": f"Bearer {root}"})
     assert listed.status_code == 200
+
+
+async def test_every_auth_401_carries_the_bearer_challenge(env):
+    """로그인·refresh·logout 의 자격 오류와 비활성 사용자의 ``/me`` 도 ``WWW-Authenticate: Bearer`` 를 싣는다.
+
+    보호 라우트(토큰 검사)만이 아니라 이 앱이 내는 401 은 모두 같다(e2e-policy-2 결정 3, F-012).
+    """
+    client, maker, _ = env
+    await _register(client)
+    access = (await _login(client)).json()["access_token"]
+    async with maker() as session:
+        await session.execute(update(User).values(is_active=False))
+        await session.commit()
+
+    responses = {
+        "login": await _login(client, password="wrong-password"),
+        "refresh": await _refresh(client, "not-a-jwt"),
+        "logout": await _logout(client, "not-a-jwt"),
+        "me-inactive": await _me(client, access),
+    }
+
+    assert {name: r.status_code for name, r in responses.items()} == dict.fromkeys(responses, 401)
+    missing = [n for n, r in responses.items() if r.headers.get("www-authenticate") != "Bearer"]
+    assert not missing, f"401 에 WWW-Authenticate: Bearer 가 없다: {missing}"

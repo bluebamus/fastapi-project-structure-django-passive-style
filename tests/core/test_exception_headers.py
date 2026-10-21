@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core import bootstrap
+from app.core.exception import InvalidTokenException, UnauthorizedException
 
 
 @pytest.fixture
@@ -24,6 +25,14 @@ def client() -> TestClient:
             detail="probe",
             headers={"WWW-Authenticate": "Bearer", "X-Probe": "kept"},
         )
+
+    @app.get("/_probe/unauthorized")
+    async def _unauthorized(kind: str) -> None:
+        if kind == "app":
+            raise UnauthorizedException()
+        if kind == "token":
+            raise InvalidTokenException()
+        raise HTTPException(status_code=401, detail="probe")
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -66,3 +75,12 @@ def test_404_without_headers_keeps_the_envelope(client: TestClient):
 
     assert response.status_code == 404
     assert response.json() == {"error_code": "HTTP_404", "message": "Not Found", "detail": None}
+
+
+@pytest.mark.parametrize("kind", ["app", "token", "http"])
+def test_every_401_carries_the_bearer_challenge(client: TestClient, kind: str):
+    """헤더 없이 던진 401 도 ``WWW-Authenticate: Bearer`` 를 싣는다 — 핸들러 한 곳이 붙인다(e2e-policy-2 결정 3)."""
+    response = client.get("/_probe/unauthorized", params={"kind": kind})
+
+    assert response.status_code == 401
+    assert response.headers.get("www-authenticate") == "Bearer"

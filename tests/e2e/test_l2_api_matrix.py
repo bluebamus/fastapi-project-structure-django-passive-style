@@ -305,12 +305,11 @@ def test_public_write_auth_operations_reject_bad_credentials(world: World):
         assert bad.json()["error_code"] == "AUTH_INVALID_TOKEN"
         responses[op] = bad
         covers(f"op:{op}", "미인증")
-    missing = sorted(op for op, r in responses.items() if "www-authenticate" not in r.headers)
-    if missing:
-        OBSERVATIONS.add(
-            f"PublicWrite 인증 operation 의 401 에는 WWW-Authenticate 가 없다({', '.join(missing)}) — "
-            "보호 라우트(Bearer 검사)는 붙는다. 로그인·refresh 의 자격 오류에 도전 헤더를 붙일지는 정책 결정"
-        )
+    # 이 앱의 401 은 모두 도전 헤더를 싣는다(e2e-policy-2 결정 3, F-012).
+    missing = sorted(
+        op for op, r in responses.items() if r.headers.get("www-authenticate") != "Bearer"
+    )
+    assert not missing, f"401 에 WWW-Authenticate: Bearer 가 없다: {missing}"
 
 
 # ── 권한 부족 ─────────────────────────────────────────────────────────────

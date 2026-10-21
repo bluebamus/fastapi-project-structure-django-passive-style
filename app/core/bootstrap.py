@@ -74,6 +74,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
 
 
+def _challenge(status_code: int, headers: dict[str, str] | None) -> dict[str, str] | None:
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(e2e-policy-2 결정 3).
+
+    보호 라우트·로그인·refresh·logout·비활성 사용자 어디서 던졌든 이 한 곳을 지난다(RFC 6750 §3).
+    예외가 이미 도전 헤더를 들고 왔으면 그것을 쓴다.
+    """
+    if status_code != 401:
+        return headers
+    return {"WWW-Authenticate": "Bearer", **(headers or {})}
+
+
 def _register_exception_handlers(app: FastAPI) -> None:
     """글로벌 예외 핸들러를 등록합니다(앱 예외·검증·HTTP·Redis 연결 오류·그 밖의 예외)."""
 
@@ -131,7 +142,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),
-            headers=exc.headers,
+            headers=_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -195,7 +206,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
             ).model_dump(mode="json"),
             # 405 의 Allow, 401 의 WWW-Authenticate, 429 의 Retry-After 같은 HTTP 의미 헤더는
             # 예외가 들고 온다. 본문만 바꾸고 헤더를 버리면 그 의미가 사라진다(M-03).
-            headers=exc.headers,
+            headers=_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(Exception)
