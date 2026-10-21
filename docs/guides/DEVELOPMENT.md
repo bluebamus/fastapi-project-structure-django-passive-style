@@ -687,11 +687,13 @@ E2E_KEEP_STACK=1 ... -m e2e tests/e2e/test_l2_api_matrix.py              # 파�
 | `docs/guides/DEVELOPMENT.md` | 작성 절차·규칙·테스트 | 생성기·규칙·게이트 변경 |
 | `docs/guides/workflows/server-lifecycle.html` | 설정 → 기동 → 요청 → 종료 흐름 요약(HTML) | 수명주기·설정·로깅·종료 순서 변경 — ARCHITECTURE 와 함께 |
 | `docs/guides/workflows/feature-development.html` | 신규 뷰·테이블 흐름 요약(HTML) | Repository·세션·트랜잭션·생성기 절차 변경 — DEVELOPMENT 와 함께 |
+| `docs/guides/workflows/admin-authentication.html` | `/admin` 인증 — 세션·CSRF·폐기·운영(HTML) | 관리 세션·로그인·CSRF·폐기·`ADMIN_*` 설정 변경 — ARCHITECTURE §8 과 함께 |
+| `docs/guides/index.html` | 브라우저용 가이드 진입 링크 목록(색인 아님) | `docs/guides/` 아래 문서를 추가·삭제·이름 변경할 때 |
 | `docs/specs/orm-raw-repository/` | 착수 기준선(고정) | 고치지 않는다 — 코드 주석의 `development-plan §N`·`RAW-REP-*` 인용 대상 |
 | `docs/crp/groups/` | 검수 기록(append-only) | 새 결정은 행을 추가한다 |
 
 - 같은 내용을 두 문서에 쓰지 않는다. 필요하면 링크한다. HTML 안내서는 흐름 요약이며 표·수치는 Markdown 을 링크하거나 같은 값을 쓴다.
-- 문서 색인은 README 「문서 안내」 한 곳뿐이다. 문서를 추가·삭제하면 그 표와 `tests/test_docs_references.py` 의 DOC_INDEX_ORDER 를 함께 고친다.
+- 문서 색인은 README 「문서 안내」 한 곳뿐이다(`docs/guides/index.html` 은 가이드로 들어가는 링크 목록이라 색인으로 치지 않는다). 문서를 추가·삭제하면 그 표와 `tests/test_docs_references.py` 의 DOC_INDEX_ORDER 를 함께 고친다.
 - HTML 본문의 `<`·`>` 는 `&lt;`·`&gt;` 로 쓴다. 다른 저장소와의 비교는 쓰지 않는다(이력은 `docs/crp/` 에만).
 - 코드와 문서가 다르면 코드를 확인한 뒤 문서를 고친다. 과거 서술은 ARCHITECTURE 의 변경 이력에만 둔다.
 - 문서 검사는 세 Markdown 문서의 import 경로·심볼·환경변수·저장소 경로·링크·앵커 실재, HTML 안내서의 `<code>` 경로·`data-source`·상대 링크·앵커·꺾쇠 이스케이프·부록 설정 목록, 제거된 결선 방식·옛 등록 절차의 부재,

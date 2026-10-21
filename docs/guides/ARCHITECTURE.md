@@ -3,11 +3,11 @@
 이 문서는 **지금 코드가 어떻게 동작하는가**를 한곳에 모은 정본이다. 설치·실행은
 [README](../../README.md), 새 기능을 만드는 방법과 규칙은 [개발 가이드](./DEVELOPMENT.md)가 맡는다.
 
-- 기준: 2026-10-02 작업 트리. 코드와 이 문서가 어긋나면 **코드가 정답**이고, 확인한 뒤 이 문서를 고친다.
+- 기준: 2026-10-21 main `8553cdc`. 코드와 이 문서가 어긋나면 **코드가 정답**이고, 확인한 뒤 이 문서를 고친다.
 - 폴더 트리는 README 의 [프로젝트 구조](../../README.md#프로젝트-구조)에만 둔다. 여기서는 모듈의 책임을 설명한다.
 - 설정 → 기동 → 요청 → 종료를 코드 흐름대로 따라 읽는 요약은 [서버 수명주기 안내서](./workflows/server-lifecycle.html)다.
   표·수치(예산·기본값·순서)의 정본은 이 문서이고, 안내서는 이 문서와 어긋나지 않게 함께 고친다.
-- 문서 전체 색인은 README 의 [문서 안내](../../README.md#문서-안내) 한 곳에 있다.
+- 문서 전체 색인은 README 의 [문서 안내](../../README.md#문서-안내) 한 곳에 있다. `docs/guides/index.html` 은 브라우저에서 가이드로 들어가는 링크 목록일 뿐 색인이 아니다.
 - 문서 정합성은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py` 가 검사한다.
 
 ## 목차
@@ -399,6 +399,8 @@ API 버전 prefix(`/v1`)는 설정이 아니라 각 기능 `router.py` 가 정�
 |---|---|
 | `DatabaseSettings._validate_routing` | 복제 on + 라우터 off, 복제 on + replica 목록 비어 있음, 잘못된 replica 표기(IPv6 는 대괄호 필수), `DB_MAX_SERVER_CONNECTIONS` 가 0이 아닐 때 최대 연결 수 초과 |
 | `CORSSettings._reject_wildcard_with_credentials` | Origin `*` 와 `CORS_ALLOW_CREDENTIALS=true` 조합 |
+| `LogSettings` field validator 3종 | `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT` 이 샘플 레코드로 렌더되지 않거나 필수 필드가 빠짐, `LOG_APP_LEVELS` 해석 실패, 빈 `LOG_DATE_FORMAT` |
+| `SessionSettings._validate_admin_session_expiry` | `ADMIN_SESSION_IDLE_SECONDS` > `ADMIN_SESSION_MAX_AGE_SECONDS` |
 | `_validate_cross_settings()` | production/staging 에서 `LOG_SQL_ECHO_ENABLED=true` |
 | `validate_removed_settings()` | 예전 `ADMIN` 설정이 환경 변수나 `.env` 에 남아 있다(대소문자 무시) — 뜻이 뒤집혀 `ADMIN_DISABLED` 로 바뀌었으므로 조용히 무시하지 않는다. test 는 검사하지 않는다 |
 | `validate_env_source()` | `.env` 가 없으면 필수 값(`ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`)이 환경 변수로 모두 있어야 한다. 컨테이너 주입은 통과. test 는 검사하지 않는다 |
@@ -432,10 +434,11 @@ def create_app(installed_apps=None, registry=None, *, admin_disabled=None) -> Fa
 1. 설치 목록 결정(`config.INSTALLED_APPS` 또는 주입값), registry 결정(전역 `apps` 또는 주입값)
 2. `registry.populate(apps_list)` — config → models → `ready()`
 3. `FastAPI(...)` 생성 — `docs_url=None`, `redoc_url=None`, `openapi_url` 은 `DEBUG` 일 때만 `/openapi.json`, `lifespan` 연결
-4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러 5종
+4. CORS → `UserInfoMiddleware` 등록(나중에 추가한 UserInfo 가 바깥쪽에서 감싼다), 전역 예외 핸들러(Redis 연결·타임아웃 → 503, `AppException`, 요청 검증 422, Starlette `HTTPException`, `Exception` → 500)와 그 바깥의 `answer_unhandled_exception` 미들웨어(처리기 없는 예외를 500 으로 끝낸다, `DEBUG=true` 면 다시 던진다), OpenAPI 의 422 를 실제 본문 `ErrorResponse` 로 광고하는 후처리(`_document_real_validation_error`)
 5. `install_routers(app, registry)`
 6. `/health`, `/ready`, `DEBUG` 일 때만 Scalar `/docs`
 7. `app.state.app_registry` 저장, `admin_disabled`(기본 `ADMIN_DISABLED`)가 false 면 `create_admin(...)` — 끈 경우 로그에도 경로를 싣지 않는다
+8. `AccessPolicyGuard().verify(app)` — 접근 수준을 선언하지 않은 API 라우트가 있으면 기동을 멈춘다(라우트가 모두 붙은 뒤라야 빠짐없이 본다)
 
 2번이 3번보다 먼저인 이유는 모델·hook 등록을 앱 조립 전에 끝내기 위해서다.
 
@@ -448,7 +451,7 @@ async with AsyncExitStack() as cleanup:
     cleanup.push_async_callback(_dispose_db_engines)       # 종료 시 3번째
     await cleanup.enter_async_context(_redis(app))         # 종료 시 2번째
     cleanup.push_async_callback(_drain_background_tasks)   # 종료 시 1번째
-    await _prepare_database(resources)
+    await _prepare_database(resources, app.state.app_registry)
     yield resources
 ```
 
@@ -577,6 +580,7 @@ FastAPI 는 한 요청 안에서 같은 Dependency 를 기본 캐시(`use_cache=
 
 모든 엔진은 `pool_pre_ping`, `pool_recycle=DB_POOL_RECYCLE`(280초 — DB/프록시 `wait_timeout` 보다 짧게),
 반환 시 rollback, `connect_timeout` 10초, utf8mb4 를 쓴다. 엔진 생성은 import 시점이지만 **실제 연결은 첫 사용 때**다.
+드라이버 의존성은 `aiomysql[rsa]` 다 — 함께 오는 `cryptography` 가 MySQL 8.4 `caching_sha2_password` 의 TLS 아닌 전체 인증(RSA)을 처리한다. 없으면 인증 캐시가 빈 첫 접속이 실패한다.
 
 모든 엔진(writer·reader·background, Alembic 의 `engine_from_config` 포함)은 `session.ENGINE_SAFETY_OPTIONS` 를 펼쳐 받는다 — 지금은
 `hide_parameters=True` 하나다. DB 오류(`IntegrityError` 등)의 메시지와 SQLAlchemy 로그에서 **바인드 값**(이메일·비밀번호 해시·토큰)이
@@ -927,7 +931,7 @@ access·refresh 수명(`ACCESS_TOKEN_EXPIRE_MINUTES`·`REFRESH_TOKEN_EXPIRE_DAYS
 | `JWT_LEEWAY_SECONDS` | `5` | exp·nbf·iat 시계 오차 허용 |
 | `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 레이트 리밋 |
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 레이트 리밋 |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 서로 다른 값으로 **배포 전 반드시 교체** — 기본값이면 누구나 토큰을 위조한다. staging/production 은 placeholder 이거나 두 키가 같으면 기동이 실패한다(`validate_deployment_safety()`, §3.2) |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 서로 다른 값으로 **배포 전 반드시 교체** — 기본값이면 누구나 토큰을 위조한다. test 외 모든 ENV 에서 placeholder·32자 미만이거나 두 키가 같으면 기동이 실패한다(`validate_deployment_safety()`, §3.2) |
 
 - access 와 refresh 는 서명 키가 다르고, `type` claim 도 검사한다(키가 같게 설정돼도 종류 혼동을 막는 두 번째 벽).
 - **상수 시간 인증**: 사용자가 없거나 비밀번호가 없는 계정도 더미 Argon2 해시로 검증 비용을 치러 응답 시간차로 사용자명 존재를 알 수 없게 한다.
@@ -1113,7 +1117,7 @@ config.set_main_option(                                              # URL → �
 - Alembic 은 FastAPI lifespan 에 들어가지 않으므로 Redis ping 을 하지 않는다. 서버 기동이 자동 upgrade 를 하지도 않는다.
 - **배포 전**: `e5a7c2d9f310` 은 기존 MySQL 시각 값이 `+09:00` 으로 저장됐다고 가정한다 — 다른 시간대로 운영했다면 적용 전에 리비전의
   `LEGACY_OFFSET` 상수를 바꾸고, 적용 전에 백업한다(값을 UPDATE 문으로 다시 쓴다).
-- revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders → `e5a7c2d9f310` 시각 UTC·`DATETIME(6)`(head — MySQL 만 변환, 기존 KST 벽시계를 `CONVERT_TZ(col, '+09:00', '+00:00')` 로 UTC 로 옮긴다. SQLite 는 no-op).
+- revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders → `e5a7c2d9f310` 시각 UTC·`DATETIME(6)`(MySQL 만 변환, 기존 KST 벽시계를 `CONVERT_TZ(col, '+09:00', '+00:00')` 로 UTC 로 옮긴다. SQLite 는 no-op) → `a3c9e8f1b274` `users.is_superuser`·blog/sns/reply `author_id`(head).
 - 검증: `tests/core/test_migration_chain.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.
 
 ---
@@ -1127,7 +1131,7 @@ config.set_main_option(                                              # URL → �
 | 1 | `DEBUG=false` (그리고 `LOG_LEVEL` 을 `DEBUG` 로 두지 않는다) | `/docs`·`/openapi.json` 공개, 시작 시 `create_all` 실행으로 스키마 관리 주체가 둘로 갈린다. production/staging 에서는 기동이 거부된다(§3.2) |
 | 2 | 관리 화면을 쓰지 않으면 `ADMIN_DISABLED=true`. 쓴다면 HTTPS 로만 접근(staging/production 쿠키는 `Secure`) | 켜 둔 `/admin` 은 로그인 화면을 공개한다(로그인은 필요하다). 예전 `ADMIN` 줄이 남아 있으면 기동이 멈춘다 |
 | 3 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` | 기본 `0.0.0.0` — **앱은 이 조합을 막지 않는다.** 관리 화면을 내부망으로만 쓰려면 프록시에서 `/admin` 을 제한한다 |
-| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 세션 ID → Redis 키 HMAC)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder 이거나 access·refresh 가 같으면 기동이 거부된다. DB·Redis 비밀번호는 앱이 검사하지 않는다 — 기본 자격증명 노출 |
+| 4 | 비밀값 교체: `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`(서로 다른 `secrets.token_urlsafe(48)` 값, 세션 키는 `/admin` 세션 ID → Redis 키 HMAC)·`MYSQL_PASSWORD`·`REDIS_PASSWORD` | 세 비밀키가 placeholder·32자 미만이거나 access·refresh 가 같으면 기동이 거부된다(test 외 모든 ENV). `MYSQL_PASSWORD` 는 빈 값·placeholder 를, `REDIS_PASSWORD` 는 값이 있을 때만 placeholder 를 거부한다(§3.2) — 그 밖의 약한 비밀번호는 앱이 판정하지 않는다 |
 | 5 | CORS 는 실제 frontend origin 만 | `CORS_ALLOW_ORIGINS=["*"]` 와 `CORS_ALLOW_CREDENTIALS=true` 조합은 설정 로드가 거부한다 |
 | 6 | Redis 는 **7.0 이상**, 인증·사설망 | startup 필수 자원이자 Celery broker·`/admin` 세션 저장소(Redis 를 쓸 수 없으면 관리 화면은 503). 7.0 미만이면 기동이 거부된다(`EXPIRE NX`). INFO 를 막은 관리형 Redis 는 확인을 건너뛰므로 버전을 직접 확인한다 |
 | 7 | `DB_WORKER_PROCESSES`·`DB_MAX_SERVER_CONNECTIONS` 를 실제 값으로 | 트래픽이 몰릴 때만 "Too many connections" 로 드러난다 |
@@ -1151,7 +1155,7 @@ uv run alembic upgrade head       # writer 에서 적용 (ALEMBIC_DATABASE_URL �
 
 ```bash
 curl -s https://<host>/health                                            # 200
-curl -s -o /dev/null -w '%{http_code}\n' https://<host>/ready            # 200 (DB 준비), 아니면 503
+curl -s -o /dev/null -w '%{http_code}\n' https://<host>/ready            # 200 (DB·Redis 준비), 아니면 503
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/docs             # DEBUG=false 면 404
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/admin/           # 302(로그인 화면으로), ADMIN_DISABLED=true 면 404
 ```
@@ -1186,6 +1190,9 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-21 | **가이드 검수 반영**(docs/guide-fixes): 안내서·ARCHITECTURE·DEVELOPMENT·README 의 틀린 값과 누락을 코드에 맞췄다 — 조립 8단계, `/ready` 의 DB·Redis, 리비전 head `a3c9e8f1b274`, 배포 안전 검사 범위, 오류 경로(Redis 503·처리기 없는 예외 500·422) (`docs/crp/groups/docs-guide-review/`) |
+| 2026-10-21 | **e2e-policy-2 · 문서 구조 개편**: OpenAPI 422 를 실제 `ErrorResponse` 로 광고, 처리기 없는 예외를 `answer_unhandled_exception` 미들웨어가 500 으로 끝냄(연결 유지), 모든 401 에 `WWW-Authenticate: Bearer`, `create_superuser` 의 명령줄 비밀번호 폐기, 인증 조회 primary, 관리 화면 503, CSRF 상한. `aiomysql[rsa]` 로 `cryptography` 선언 통일. 가이드를 `docs/guides/`(index.html·`workflows/`)로 재배치 (`docs/crp/groups/integration-e2e/`) |
+| 2026-10-21 | **integration-e2e**: 실제 uvicorn·MySQL·Redis·Celery 를 띄우는 전수 통합 테스트(`e2e` 마커)와 CI e2e job, Redis 연결 오류 → 503(`redis_unavailable_handler`), 사용자 결정 3건 (`docs/crp/groups/integration-e2e/`) |
 | 2026-10-19 | **logging-overhaul**: 앱·`python main.py`·`uvicorn main:app` CLI·Celery 워커가 같은 dictConfig·형식을 쓴다(uvicorn 로거는 root 로 전파, Celery `--logfile` 존중). 헤더 판별을 한 함수로(외부 라이브러리는 로거 이름 표), 포맷 필수 필드 검사, `LOG_APP_LEVELS`(헤더별 레벨 필터), 파일을 프로세스별(`app.log`·`error.log`·`celery.log`·`celery-error.log`·`celery-beat*.log`)로, 날짜(UTC 자정)+크기 회전과 `LOG_RETENTION_DAYS`. `LOG_APP_FILENAME`·`LOG_ERROR_FILENAME`·`LOG_BACKUP_COUNT` 삭제(남아도 무시). DSN 계정명도 가리고 `LOG_REDACTED_SETTINGS` 의 값 원문을 가린다(§5) |
 | 2026-10-19 | **config-cleanup-2**: `API_VERSION`·`ApiSettings` 를 지웠다(`.env` 에 남아도 무시). `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT`·`LOG_CONSOLE_ENABLED` 를 로깅 구성에 연결했다 — 앱·`python main.py` 의 uvicorn·Celery 워커(`setup_logging` 수신자)가 같은 값을 따른다. 기본값은 기존 하드코딩 형식과 같아 기본 출력은 그대로다. 잘못된 포맷은 설정 로드에서 거부, 출력이 모두 꺼지면 stderr 경고 한 줄. 설정 계약 테스트의 예외 목록을 없앴다(§3.2·§5) |
 | 2026-10-19 | **config-cleanup**: 읽는 곳이 없던 `SMTPSettings`(`smtp_settings`)·`UploadSettings`(`upload_settings`)·`SESSION_EXPIRE_SECONDS` 를 지웠다(배포 안전 검사의 `SMTP_PASSWORD` 항목 포함). 남은 `.env` 줄은 `extra="ignore"` 로 무시된다. 세션·토큰 만료는 README 표 한 곳으로 모았고, 설정 필드가 운영 코드에서 읽히는지 보는 계약 테스트를 더했다 |
