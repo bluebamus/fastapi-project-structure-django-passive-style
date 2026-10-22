@@ -7,14 +7,28 @@
   <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>배포와 운영</h1><p>설정, migration, readiness, 관측, 정상 종료를 연결한 운영 체크리스트입니다.</p></header>
+<header class="hero"><p class="eyebrow">PROJECT GUIDE</p><h1>배포와 운영</h1><p>설정, migration, readiness, 관측, 정상 종료를 연결한 운영 체크리스트입니다.</p></header>
 <nav class="topnav" aria-label="가이드 메뉴">
   <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
   <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
   <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
 </nav>
 <main>
-<section><h2>배포 전 필수 확인</h2><ul><li>운영용 DB·Redis URL과 충분히 긴 서명 키를 비밀 저장소에서 주입합니다.</li><li>debug와 불필요한 관리자 기능을 끄고 CORS·trusted proxy 범위를 실제 인프라에 맞춥니다.</li><li><code>alembic upgrade head</code>를 애플리케이션 rollout과 호환되는 순서로 실행합니다.</li><li>웹 프로세스와 Celery worker/beat의 설정·코드 버전을 맞춥니다.</li><li><code>/health</code>는 생존, <code>/ready</code>는 트래픽 수신 가능 여부에 사용합니다.</li></ul></section>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN(11.12.0)을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section><h2>배포 전 필수 확인</h2>
+<p>전체 목록의 정본은 <a href="../../../README.md#운영-배포-체크리스트">README 운영 배포 체크리스트</a>와 <a href="../ARCHITECTURE.md#111-배포-체크리스트--사람이-확인할-것">아키텍처 §11.1</a>입니다. 이 페이지는 요약입니다.</p>
+<ul>
+<li><code>ENV=staging</code> 또는 <code>production</code>으로 둡니다. 이때 <code>DEBUG=true</code>·<code>LOG_LEVEL=DEBUG</code>·<code>LOG_SQL_ECHO_ENABLED=true</code>면 기동이 거부되고, <code>/admin</code> 쿠키에 <code>Secure</code>가 붙어 HTTPS가 필요합니다.</li>
+<li>DB·Redis 접속은 개별 키로 주입합니다: <code>MYSQL_HOST</code>·<code>MYSQL_PORT</code>·<code>MYSQL_USER</code>·<code>MYSQL_PASSWORD</code>·<code>MYSQL_DATABASE</code>, <code>REDIS_HOST</code>·<code>REDIS_PORT</code>·<code>REDIS_DB</code>·<code>REDIS_PASSWORD</code>. URL 형식은 Alembic 전용 <code>ALEMBIC_DATABASE_URL</code>(선택)뿐입니다.</li>
+<li>비밀 키 3종(<code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>)은 서로 다른 32자 이상 무작위 값을 비밀 저장소에서 주입합니다. <code>.env</code> 없이 환경 변수로만 주입하면 <code>ENV</code>·비밀 키 3종·<code>MYSQL_HOST/USER/PASSWORD/DATABASE</code>가 모두 있어야 합니다.</li>
+<li>프록시 뒤라면 <code>TRUSTED_PROXY_HOPS</code>를 앞단 프록시 단 수로 둡니다. 0이면 모든 사용자가 프록시 IP 하나로 보여 로그인 rate limit을 함께 씁니다. 실제보다 크면 IP를 위조할 수 있습니다.</li>
+<li>시각 마이그레이션 리비전 <code>e5a7c2d9f310</code>은 기존 MySQL 시각을 KST(<code>+09:00</code>)로 가정합니다. 다른 시간대였다면 <code>LEGACY_OFFSET</code>을 바꾸고, 적용 전에 백업합니다. 그다음 <code>uv run alembic upgrade head</code>를 rollout과 호환되는 순서로 실행합니다.</li>
+<li>첫 관리자는 <code>scripts/create_superuser.py</code>로 만듭니다. 관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>로 끕니다.</li>
+<li>Redis 7.0 이상이어야 합니다. 접속 로그 보존 삭제는 Celery worker와 beat(하나만)를 띄워야 돕니다.</li>
+<li>uvicorn <code>--workers</code> 2 이상이거나 Celery prefork면 <code>LOG_FILE_ENABLED=false</code>로 두고 stdout을 수집합니다(파일 회전은 한 프로세스 전용).</li>
+<li><code>/health</code>는 생존, <code>/ready</code>(writer DB <code>SELECT 1</code> + Redis <code>PING</code>)는 트래픽 수신 가능 여부에 씁니다.</li>
+</ul>
+</section>
 <section><h2>배포 흐름</h2><div class="mermaid">flowchart LR
 Build[잠금 파일로 빌드] --&gt; Test[테스트·정적 검사]
 Test --&gt; Migrate[호환 migration]
@@ -30,11 +44,31 @@ Rollout --&gt; Ready{/ready 통과?}
 Ready --&gt;|예| Traffic[트래픽 전환]
 Ready --&gt;|아니오| Halt[전환 중단·원인 조사]
 Traffic --&gt; Observe[로그·지표·오류 관측]</code></pre></details></section>
-<section><h2>운영 관측과 장애 대응</h2><ul><li>request id를 기준으로 접근 로그와 예외 로그를 연결합니다.</li><li>5xx 증가, readiness 실패, DB pool 고갈, Redis 오류, task 적체를 알림 대상으로 둡니다.</li><li>DB/Redis 장애 시 기능별 영향 범위를 확인하고, 인증 저장소 오류를 무조건 허용으로 우회하지 않습니다.</li><li>종료 grace 기간은 실제 가장 긴 정상 요청과 background 정리 시간을 근거로 정합니다.</li></ul></section>
+<section><h2>운영 관측과 장애 대응</h2>
+<ul>
+<li>요청 상관용 ID는 없습니다. 예외 로그의 <code>path</code>·<code>method</code>와 접속 로그(client IP·경로·상태·<code>user_id</code>)·시각으로 대조합니다.</li>
+<li>5xx 증가, readiness 실패, DB pool 고갈, Redis 오류, task 적체를 알림 대상으로 둡니다.</li>
+<li>Redis 장애 중에는 Redis를 쓰는 경로(가입·로그인·refresh·logout·사용자 비활성화·강등·삭제, <code>/admin</code>)가 503을 내고 <code>/ready</code>가 503이 됩니다. Redis가 돌아오면 재시작 없이 회복합니다. 인증 저장소 오류를 허용으로 우회하지 않습니다(fail-closed).</li>
+<li>종료 grace 기간은 실제 가장 긴 정상 요청과 background 정리 시간을 근거로 정합니다.</li>
+</ul>
+</section>
 <section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="config.py" href="../../../config.py"><code>config.py</code></a></li><li><a data-source="app/core/resources.py" href="../../../app/core/resources.py"><code>app/core/resources.py</code></a></li><li><a data-source="alembic.ini" href="../../../alembic.ini"><code>alembic.ini</code></a></li></ul></section>
 <section><h2>관련 문서</h2><ul><li><a href="../getting-started/index.html">부팅</a></li><li><a href="../reference/configuration.html">환경 설정</a></li><li><a href="../development/testing.html">테스트</a></li></ul></section>
 </main>
 <footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
 </body>
 </html>
