@@ -20,7 +20,7 @@ from app.core.middlewares.access_log_sink import get_access_log_sink, set_access
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.client_ip import ClientIPResolver
 from app.core.middlewares.user_info_middleware import UserInfoMiddleware
-from config import session_settings
+from config import middleware_settings, session_settings
 
 
 def _request(headers: dict[str, str] | None = None, peer: str | None = "10.0.0.9") -> Request:
@@ -186,3 +186,26 @@ async def test_injected_resolver_decides_the_recorded_ip(sink: _RecordingSink):
     await _get(_app(hops=1), "/ok", headers=headers)
 
     assert [entry["ip_address"] for entry in sink.saved] == ["10.0.0.9", "203.0.113.7"]
+
+
+@pytest.mark.parametrize(
+    ("enabled", "url", "recorded"),
+    [
+        (False, "/ok", False),  # ACCESS_LOG_ENABLED=false 면 아무것도 저장하지 않는다
+        (True, "/skip", False),  # 제외 경로는 정확 일치
+        (True, "/skip/child", True),  # 접두사는 제외가 아니다
+        (True, "/app.css", False),  # 제외 확장자는 접미사 일치
+        (True, "/ok", True),
+    ],
+)
+async def test_only_enabled_and_not_excluded_requests_are_stored(
+    sink: _RecordingSink, monkeypatch: pytest.MonkeyPatch, enabled: bool, url: str, recorded: bool
+):
+    """문서가 말하는 저장 범위(``_should_skip``) — 로컬 .env 값과 무관하게 고정한다."""
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_ENABLED", enabled)
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_EXCLUDE_PATHS", ["/skip"])
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_EXCLUDE_EXTENSIONS", [".css"])
+
+    await _get(_app(), url)
+
+    assert [entry["request_path"] for entry in sink.saved] == ([url] if recorded else [])
