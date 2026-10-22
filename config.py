@@ -133,7 +133,7 @@ App Registry(`AppConfig`)가 컨벤션대로 처리합니다. URL 은 각 기능
 - **CRUD 예제**: blog · reply · sns · user
 - **인증**: OAuth2 password flow + JWT access/refresh (`/api/v1/auth/*`)
 - **데이터 접근 두 계열**: catalog(ORM, `BaseRepository`) · reports(Raw SQL, `RawRepositoryBase`)
-- **접속 로그**: 요청마다 수집해 별도 풀에서 저장, home 앱이 조회·통계 제공
+- **접속 로그**: `ACCESS_LOG_ENABLED=true` 일 때 제외 경로(정확 일치)·확장자(접미사 일치)가 아닌 요청을 수집해 별도 풀에서 저장, home 앱이 조회·통계 제공
 
 ### 아키텍처
 
