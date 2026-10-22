@@ -2,7 +2,8 @@
 UserAccessLog Service
 
 접속 로그 관련 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성 또는 background_session 이 책임진다.
+트랜잭션 경계: 요청 경로는 핸들러가, 요청 밖(sink·Celery 태스크)은 background_session() 이 맡는다.
+예외는 ``purge_expired`` — 잠금을 짧게 하려고 배치마다 스스로 커밋한다.
 """
 
 from collections.abc import Sequence

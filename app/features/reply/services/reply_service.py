@@ -2,7 +2,8 @@
 Reply Service
 
 댓글 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_session)이 책임진다.
+트랜잭션 경계: 요청 경로는 쓰기 핸들러 본문이 응답 DTO 검증 뒤 `await service.commit()` 으로,
+요청 밖은 background_session() 이 커밋한다. 서비스는 커밋하지 않는다(세션은 의존성이 연다).
 """
 
 from collections.abc import Sequence
