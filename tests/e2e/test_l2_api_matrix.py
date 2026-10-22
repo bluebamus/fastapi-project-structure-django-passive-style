@@ -305,7 +305,7 @@ def test_public_write_auth_operations_reject_bad_credentials(world: World):
         assert bad.json()["error_code"] == "AUTH_INVALID_TOKEN"
         responses[op] = bad
         covers(f"op:{op}", "미인증")
-    # 이 앱의 401 은 모두 도전 헤더를 싣는다(e2e-policy-2 결정 3, F-012).
+    # 이 앱의 401 은 모두 도전 헤더를 싣는다(integration-e2e ADR-012 결정 3, F-012).
     missing = sorted(
         op for op, r in responses.items() if r.headers.get("www-authenticate") != "Bearer"
     )
@@ -440,7 +440,7 @@ def test_invalid_input_is_422_in_the_project_error_format(world: World, op: str)
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR", body
     assert body["detail"] and {"field", "message", "type"} <= set(body["detail"][0]), body
-    # 422 광고 = 실제 본문(e2e-policy-2 결정 1, F-010).
+    # 422 광고 = 실제 본문(integration-e2e ADR-012 결정 1, F-010).
     assert not response_errors(op, 422, body), response_errors(op, 422, body)
     covers(f"op:{op}", "검증오류")
 

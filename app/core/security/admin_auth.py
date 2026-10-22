@@ -73,7 +73,7 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 _FORM_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
 
-#: 토큰을 보려고 버퍼링하는 폼 본문의 상한 — 넘으면 413(e2e-policy-2 결정 7). 관리 폼은 수 KiB 다
+#: 토큰을 보려고 버퍼링하는 폼 본문의 상한 — 넘으면 413(integration-e2e ADR-012 결정 7). 관리 폼은 수 KiB 다
 #: (CSV 가져오기는 헤더 토큰이라 이 경로를 타지 않는다). 설정이 아니라 상수다 — 바꿀 운영 이유가 없다.
 MAX_FORM_BODY_BYTES = 10 * 1024 * 1024
 #: 폼 필드 하나의 상한 — 넘으면 400. Starlette 폼 파서의 기본값과 같다.

@@ -152,7 +152,7 @@ def test_redis_outage_and_recovery(stack: Stack, superuser):
             assert not result["closed"], f"{name}: keep-alive 연결이 끊겼다"
             assert result["unhandled"] == 0 and result["redis_unavailable"] == 1, (name, result)
 
-        # 관리 화면, 쿠키 없는 첫 요청 — 응답 직전 세션 **저장** 실패도 503(e2e-policy-2 결정 6, F-009).
+        # 관리 화면, 쿠키 없는 첫 요청 — 응답 직전 세션 **저장** 실패도 503(integration-e2e ADR-012 결정 6, F-009).
         anonymous = probe(stack, "GET", "/admin/login")
         assert anonymous["status"] == 503, anonymous
         assert "관리 세션 저장소(Redis)를 사용할 수 없습니다" in anonymous["body"], anonymous
@@ -232,7 +232,9 @@ def test_replica_outage(stack: Stack):
             word in logged for word in (stack.secrets["E2E_MYSQL_PASSWORD"], "fastapi_passive_e2e:")
         )
         me = probe(stack, "GET", "/api/v1/auth/me", headers=bearer(user["access"]))
-        assert me["status"] == 200, "인증 사용자 조회는 primary 에서 읽는다(e2e-policy-2 결정 5)"
+        assert (
+            me["status"] == 200
+        ), "인증 사용자 조회는 primary 에서 읽는다(integration-e2e ADR-012 결정 5)"
         write = probe(
             stack,
             "POST",
@@ -349,7 +351,7 @@ def _measure(stack: Stack, pid: int, label: str, mib: int, body: bytes) -> dict[
 
 
 def test_measure_csrf_form_body_buffering(stack: Stack):
-    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어의 본문 상한(e2e-policy-2 결정 7, F-007).
+    """익명 ``POST /admin/login`` 에 토큰 없는 큰 폼 본문 — CSRF 미들웨어의 본문 상한(integration-e2e ADR-012 결정 7, F-007).
 
     본문이 10 MiB 를 넘으면 413(``Content-Length`` 로 먼저, 읽지 않는다), 필드 하나가 1 MiB 를 넘으면 400,
     그 밖은 끝까지 읽고 토큰이 없어 403 이다. 500 은 없다. 응답·시간·RSS 를 재서 기록한다. 두 모양:

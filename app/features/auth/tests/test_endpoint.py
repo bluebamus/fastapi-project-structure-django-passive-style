@@ -410,7 +410,7 @@ async def test_access_token_carries_the_superuser_flag(env):
 async def test_every_auth_401_carries_the_bearer_challenge(env):
     """로그인·refresh·logout 의 자격 오류와 비활성 사용자의 ``/me`` 도 ``WWW-Authenticate: Bearer`` 를 싣는다.
 
-    보호 라우트(토큰 검사)만이 아니라 이 앱이 내는 401 은 모두 같다(e2e-policy-2 결정 3, F-012).
+    보호 라우트(토큰 검사)만이 아니라 이 앱이 내는 401 은 모두 같다(integration-e2e ADR-012 결정 3, F-012).
     """
     client, maker, _ = env
     await _register(client)
@@ -442,7 +442,7 @@ async def test_every_auth_401_carries_the_bearer_challenge(env):
 async def test_me_reads_the_user_from_primary(
     monkeypatch, primary_active, replica_active, expected
 ):
-    """인증 사용자 조회는 replica 가 아니라 primary 에서 읽는다(e2e-policy-2 결정 5, F-008).
+    """인증 사용자 조회는 replica 가 아니라 primary 에서 읽는다(integration-e2e ADR-012 결정 5, F-008).
 
     복제가 밀려도 유효한 토큰이 401 이 되지 않고, 비활성화는 즉시 반영된다. 라우팅 세션 팩토리를
     writer·reader 두 SQLite 로 바꿔 끼워 운영 의존성(``get_read_only_db_session``)을 그대로 탄다.

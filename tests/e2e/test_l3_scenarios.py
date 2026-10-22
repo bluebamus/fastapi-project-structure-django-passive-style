@@ -424,7 +424,7 @@ def test_write_then_read_consistency_under_replication_lag(stack: Stack, api: ht
 
 def test_me_right_after_register_under_replication_lag(stack: Stack, api: httpx.Client):
     """복제가 밀린 상태에서도 가입 직후 ``/me`` 는 200 이다 — 인증 사용자 조회는 primary 에서 읽는다
-    (e2e-policy-2 결정 5, integration-e2e F-008). 같은 지연 중 비활성화도 즉시 401 로 반영된다.
+    (integration-e2e ADR-012 결정 5, F-008). 같은 지연 중 비활성화도 즉시 401 로 반영된다.
     """
     name = unique("lag")
     stack.sql("STOP REPLICA SQL_THREAD", target="replica", root=True)

@@ -264,7 +264,7 @@ def test_documented_error_responses_reference_the_shared_model(operations, spec)
                 continue
             content = response.get("content", {}).get("application/json", {})
             ref = content.get("schema", {}).get("$ref", "")
-            # 422 도 대상이다 — 기본 HTTPValidationError 광고를 ErrorResponse 로 바꿨다(e2e-policy-2 결정 1).
+            # 422 도 대상이다 — 기본 HTTPValidationError 광고를 ErrorResponse 로 바꿨다(integration-e2e ADR-012 결정 1).
             if not ref:
                 continue
             if not ref.endswith("/ErrorResponse"):
@@ -466,7 +466,7 @@ def test_core_schema_snapshot_is_unchanged(schemas):
 
 
 # =============================================================================
-# 5. 422 문서 = 실제 응답 (e2e-policy-2 결정 1 · integration-e2e F-010)
+# 5. 422 문서 = 실제 응답 (integration-e2e ADR-012 결정 1 · F-010)
 # =============================================================================
 def _real_422_body() -> dict[str, Any]:
     """앱의 검증 핸들러가 실제로 내는 422 본문 — 같은 ``create_app()`` 조립으로 만든다."""
