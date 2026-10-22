@@ -1190,6 +1190,7 @@ API 와 worker 의 코드·환경 버전을 맞춘다. 무중단 migration 순�
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-10-22 | **HTML 가이드 사이트**(docs-guide-site): `docs/guides/index.html` 허브 아래 부팅·아키텍처·API·설정·요청 처리·인증·시퀀스·기능 8편·개발·테스트·운영 HTML 을 더하고 검수 지적을 코드대로 고쳤다. 내용 계약은 `tests/test_docs_guide_site.py`. |
 | 2026-10-21 | **가이드 검수 반영**(docs/guide-fixes): 안내서·ARCHITECTURE·DEVELOPMENT·README 의 틀린 값과 누락을 코드에 맞췄다 — 조립 8단계, `/ready` 의 DB·Redis, 리비전 head `a3c9e8f1b274`, 배포 안전 검사 범위, 오류 경로(Redis 503·처리기 없는 예외 500·422) (`docs/crp/groups/docs-guide-review/`) |
 | 2026-10-21 | **e2e-policy-2 · 문서 구조 개편**: OpenAPI 422 를 실제 `ErrorResponse` 로 광고, 처리기 없는 예외를 `answer_unhandled_exception` 미들웨어가 500 으로 끝냄(연결 유지), 모든 401 에 `WWW-Authenticate: Bearer`, `create_superuser` 의 명령줄 비밀번호 폐기, 인증 조회 primary, 관리 화면 503, CSRF 상한. `aiomysql[rsa]` 로 `cryptography` 선언 통일. 가이드를 `docs/guides/`(index.html·`workflows/`)로 재배치 (`docs/crp/groups/integration-e2e/`) |
 | 2026-10-21 | **integration-e2e**: 실제 uvicorn·MySQL·Redis·Celery 를 띄우는 전수 통합 테스트(`e2e` 마커)와 CI e2e job, Redis 연결 오류 → 503(`redis_unavailable_handler`), 사용자 결정 3건 (`docs/crp/groups/integration-e2e/`) |

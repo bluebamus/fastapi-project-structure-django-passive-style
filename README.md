@@ -544,7 +544,7 @@ DSN 의 계정명·비밀번호(`mysql+aiomysql://***:***@host/db` — 계정명
 
 명세 3종은 **2026-08 착수 시점의 고정 기준선**이라 내용을 고치지 않습니다. 현재 사용법은 위 가이드가 기준입니다.
 코드와 문서가 어긋나면 코드가 정답이며, 확인한 뒤 문서를 고칩니다. 문서 정합성(경로·심볼·환경변수·링크·앵커, 문서가 인용한
-비밀값, HTML 의 `data-source`·코드 경로 포함)은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py`·`tests/test_docs_secret_examples.py` 가 검사합니다.
+비밀값, HTML 의 `data-source`·코드 경로 포함)은 `tests/test_docs_consistency.py`·`tests/test_docs_references.py`·`tests/test_docs_secret_examples.py` 가, HTML 가이드의 API 표·설정 표·Mermaid 버전·허브 링크는 `tests/test_docs_guide_site.py` 가 검사합니다.
 
 ## 참고 자료
 
