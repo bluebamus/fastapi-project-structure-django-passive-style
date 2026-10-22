@@ -38,7 +38,8 @@ BASE_DOCS = ENTRY_DOCS
 #: 재구성으로 사라진 문서 위치. 현행 문서가 이곳을 가리키면 학습자를 없는 문서로 보낸다.
 #: HTML 안내서(``workflows/server-lifecycle.html``·``workflows/feature-development.html``)는
 #: 2026-09-17 재구성에서 지웠다가 같은 날 되살렸으므로 이 목록에서 뺐다 — 대신 아래
-#: ``HTML_GUIDES`` 검사가 실재·링크·코드 경로를 본다.
+#: ``INDEXED_HTML_GUIDES`` 검사가 실재·README 링크를, ``SOURCE_HTML_GUIDES`` 검사가
+#: ``data-source``·코드 경로를 본다.
 RETIRED_DOC_LOCATIONS = (
     "docs/project-guide/",
     "project-guide/v",
@@ -366,7 +367,9 @@ HTML_GUIDES = tuple(
     for path in sorted((REPO_ROOT / "docs" / "guides").rglob("*.html"))
 )
 SOURCE_HTML_GUIDES = tuple(
-    path for path in HTML_GUIDES if path not in {"docs/guides/index.html", "docs/guides/features/index.html"}
+    path
+    for path in HTML_GUIDES
+    if path not in {"docs/guides/index.html", "docs/guides/features/index.html"}
 )
 
 #: ``<code>`` 안에서 저장소 루트 기준으로 해석하는 최상위 파일.
