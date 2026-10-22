@@ -1,7 +1,9 @@
 """
 사용자 접속 정보 수집 미들웨어
 
-모든 요청에서 사용자의 접속 정보를 수집하여 데이터베이스에 저장합니다.
+``ACCESS_LOG_ENABLED=true`` 이고 ``ACCESS_LOG_EXCLUDE_PATHS``(정확 일치)·
+``ACCESS_LOG_EXCLUDE_EXTENSIONS``(접미사 일치)에 걸리지 않는 요청만
+접속 정보를 수집하여 데이터베이스에 저장합니다.
 """
 
 import time
@@ -27,6 +29,8 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
 
     요청 시작 시 사용자 정보를 수집하고,
     응답 완료 후 백그라운드에서 데이터베이스에 저장합니다.
+    비활성(``ACCESS_LOG_ENABLED=false``)이거나 제외 경로·확장자인 요청은
+    수집·저장 없이 통과시킵니다(``_should_skip``).
 
     수집 정보:
         - IP 주소 (주입된 ClientIPResolver 가 신뢰 홉 수로 정한다)

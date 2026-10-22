@@ -825,7 +825,7 @@ startup 로그의 `(DEBUG=%s)` 는 표시 값일 뿐 출력 조건이 아니다.
 
 ## 6. 접속 로그
 
-`UserInfoMiddleware` 가 요청마다 정보를 모으고, 응답 후 저장을 백그라운드 태스크로 넘긴다. core 는 저장 구현을 모른다.
+`UserInfoMiddleware` 가 `ACCESS_LOG_ENABLED=true` 이고 제외 경로(정확 일치)·확장자(접미사 일치)에 걸리지 않는 요청의 정보를 모으고, 응답 후 저장을 백그라운드 태스크로 넘긴다(아래 설정 표). core 는 저장 구현을 모른다.
 
 ```text
 UserInfoMiddleware (app/core/middlewares/user_info_middleware.py)
