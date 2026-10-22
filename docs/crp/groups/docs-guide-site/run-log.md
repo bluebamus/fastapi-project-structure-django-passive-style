@@ -22,3 +22,8 @@
 - **계약 테스트(red→green):** 저장소 밖 복사본에서 features/auth `register` 접근 수준 public_write→login, 설정 표 `MYSQL_PORT` 3306→9999 로 변조 →
   보강 전 테스트 5 passed(헛통과) / 보강 후 각각 1 failed → 원본 7 passed. X-2: fragment 변조는 기존 검사가 이미 1 failed. Mermaid 고정 URL 삭제도 기존 검사가 1 failed
 - **수렴 판정:** `CONVERGED` (Open Fix 0 · Not a defect 1 — X-2)
+
+### 후속 P-F1 — 2026-10-22 · 접속 로그 저장 범위 (병합 후 가로 대조)
+- **트리거:** main `fc8ae20` 병합 뒤 가로 대조에서 "모든 요청에서 수집·저장" 문구가 `_should_skip`(활성·제외 경로·제외 확장자)과 어긋남
+- **변경:** `329ad95` (docstring·API 소개 문자열·.env.example 주석·문서만, 코드 동작 무변경)
+- **상태:** 수정됨 — 검수 대기
