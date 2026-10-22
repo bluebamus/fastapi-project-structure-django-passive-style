@@ -58,7 +58,7 @@ URL 은 라우터 파일 계층이 소유합니다. 디렉터리를 만드는 �
 ```
 fastapi-project-structure-django-passive-style/
 ├── main.py                      # app = create_app() + 로컬 uvicorn 실행만
-├── config.py                    # INSTALLED_APPS + Pydantic Settings 12종
+├── config.py                    # INSTALLED_APPS + Pydantic Settings 9종
 ├── pyproject.toml / uv.lock     # 의존성·도구 설정 ([tool.uv] package = false)
 ├── alembic.ini
 ├── compose.test.yaml            # 테스트 전용 MySQL 8.4 (127.0.0.1:3309) · Redis (127.0.0.1:6380)

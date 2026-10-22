@@ -387,7 +387,7 @@ flowchart TD
 | `CORSSettings` (`cors_settings`) | `CustomCORSMiddleware` |
 | `LogSettings` (`log_settings`) | `build_dictconfig()` — 앱·`python main.py`·`uvicorn main:app` CLI·Celery 워커가 함께 쓴다 |
 | `MiddlewareSettings` (`middleware_settings`) | `UserInfoMiddleware` 활성·제외 규칙·민감 query 키, `ClientIPResolver` 신뢰 홉 수 |
-| `RedisSettings` (`redis_settings`) | startup Redis ping, Celery broker/backend |
+| `RedisSettings` (`redis_settings`) | startup Redis ping, `/admin` 서버 세션, refresh 토큰 회전 기록, 레이트 리밋, Celery broker/backend (일반 캐시는 없다) |
 | `JWTSettings` (`jwt_settings`) | 토큰 서명·검증·수명 |
 | `SessionSettings` (`session_settings`) | `SESSION_COOKIE_NAME` 은 접속 로그 미들웨어가 읽는다(그 쿠키 값을 `session_id` 로 기록, 인증에는 쓰지 않는다). `SESSION_SECRET_KEY` 는 `/admin` 관리 세션 ID 를 Redis 키(`admin:sess:{HMAC}`)로 바꾸는 HMAC 키다(§8). 관리 세션 만료는 `ADMIN_SESSION_*` 가 정한다(미사용이 절대보다 크면 기동 실패, 값은 [README 세션·토큰 만료](../../README.md#세션토큰-만료)) |
 
