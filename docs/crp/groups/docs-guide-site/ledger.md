@@ -41,3 +41,19 @@
 
 Partial 사유(GS-03·DEP-03): `app/core/middlewares/` 에 Redis 를 쓰는 미들웨어가 없고, `bootstrap.py` 의 Redis 연결 오류 처리기는
 Redis 를 실제로 부른 경로에서만 503 을 낸다. README 「운영 배포 체크리스트」도 "Redis 를 쓰지 않는 조회는 그대로 동작" 이라 적는다 — 코드대로 썼다.
+
+## 2차 라운드 — 2026-10-22 (REQ-002, 원 행은 고치지 않는다)
+
+지적 ID 는 재검수 보고(round2)의 것. 커밋: `bab635a` 문서 · `1a47a02` 계약 테스트 · `1cbe48b` 인용 정리 · 기록 커밋(이 절).
+
+| ID | Sev | 위치 | 처리 | Status | 커밋 |
+|---|---|---|---|---|---|
+| P-N1 | MED | `.env.example` Redis 절 | "캐시·세션 구현은 없다" → 일반 캐시 없음, Redis 는 /admin 서버 세션·refresh 회전 기록·레이트 리밋·Celery. 같은 문장의 `RedisSettings` docstring·ARCHITECTURE 설정 표·server-lifecycle 표도 함께 | Fixed | `bab635a` |
+| P-N2 | LOW | README 구조 트리 | Settings 12종 → 9종(`config.py` 의 `BaseSettings` 클래스 9개) | Fixed | `bab635a` |
+| P-N3 | MED | features/auth 도식(렌더·원문) | AuthRouter → Rate limiter 간선에 `register·login` 라벨 | Fixed | `bab635a` |
+| P-N4 | MED | features/auth 본문·주의점 | 커밋은 DB 를 쓰는 register(DTO 검증 뒤)·login(토큰 발급 뒤, 재해시 저장)만, refresh·logout 은 Redis 원자 연산이라 커밋 없음 | Fixed | `bab635a` |
+| P-N5 | MED | `tests/test_docs_guide_site.py` | 설정 표 "코드 기본값" 열을 Settings 필드 기본값과 대조(`DESCRIPTION` 만 축약 표기로 제외) | Fixed | `1a47a02` |
+| X-1 | MED | `tests/test_docs_guide_site.py` | `features/*.html` 의 API 행이 OpenAPI × `AccessPolicyGuard` 판정 집합의 부분집합 | Fixed | `1a47a02` |
+| X-2 | LOW | 링크 fragment 검사 | **고치지 않음** — 이 저장소는 이미 검사한다: `test_html_guide_relative_links_and_anchors_resolve`(모든 가이드 HTML, `#` 뒤를 대상 HTML id·Markdown 제목 앵커로 확인)·`test_markdown_link_anchors_resolve`. 저장소 밖 복사본에서 HTML·Markdown fragment 를 각각 없는 앵커로 바꾸면 둘 다 1 failed | Not a defect | — |
+| X-3 | LOW | app·tests 17개 파일 + ARCHITECTURE 현행 절 | "e2e-policy-2 결정 N" → `integration-e2e ADR-012 결정 N`(design-baseline §3.3), "의존성 통일" → ADR-013. 변경 이력 행은 과거 기록이라 그대로 | Fixed | `1cbe48b` |
+| 정정-01 | MED | 이 원장·checklist·run-log Round 1 | 1차의 "FEAT-01 Fixed"·`CONVERGED (Open Fix 0)` 선언은 사실과 달랐다 — features/auth 의 "쓰기 핸들러 모두 커밋"(P-N4)과 P-N1~P-N3·P-N5 가 남아 있었다. 원 행은 두고 이 행으로 정정한다 | Corrected | 기록 커밋 |

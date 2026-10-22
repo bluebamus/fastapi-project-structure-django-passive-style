@@ -14,3 +14,11 @@
   링크 검사 broken 0 · HTML 태그 균형 오류 0 · 바뀐 파일 CR 0(main 과 같은 LF) · 2차 검수 표지(직접 commit 문구·request id·not integration·DB·Redis URL·mermaid@11 미고정·index 한 줄) 0
 - **잔여:** R-001(Mermaid 실제 렌더 미확인), R-002(설정 설명은 Field description 수준)
 - **수렴 판정:** `CONVERGED` (Open Fix 0 · Partial 2 — GS-03·DEP-03 는 코드대로 고침, ledger 사유)
+
+### Round 2 — 2026-10-22 · 재검수 남은 결함 (REQ-002 "2번으로 진행해줘")
+- **트리거:** 재검수 보고(Codex 실증 + Claude 재검수)의 passive 남은 결함 P-N1~P-N5 + 공통 X-1~X-3
+- **정정:** Round 1 의 `CONVERGED (Open Fix 0)` 는 사실과 달랐다(ledger 정정-01)
+- **변경:** `bab635a`·`1a47a02`·`1cbe48b` + 기록 커밋 (코드 동작 무변경 — 문서·docstring·주석·.env.example 주석·테스트)
+- **계약 테스트(red→green):** 저장소 밖 복사본에서 features/auth `register` 접근 수준 public_write→login, 설정 표 `MYSQL_PORT` 3306→9999 로 변조 →
+  보강 전 테스트 5 passed(헛통과) / 보강 후 각각 1 failed → 원본 7 passed. X-2: fragment 변조는 기존 검사가 이미 1 failed. Mermaid 고정 URL 삭제도 기존 검사가 1 failed
+- **수렴 판정:** `CONVERGED` (Open Fix 0 · Not a defect 1 — X-2)

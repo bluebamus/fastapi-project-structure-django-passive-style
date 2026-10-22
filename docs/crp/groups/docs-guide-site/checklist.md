@@ -14,3 +14,10 @@
 - [x] 허브·CSS — `f00b28e`
 - [x] 계약 테스트 — `ffb09e7`
 - [x] README·ARCHITECTURE 변경 이력·docs-guide-review residual-risk 원복·이 그룹 — 기록 커밋
+
+## Round 2 — 2026-10-22 · 재검수 남은 결함 (REQ-002)
+- [x] 지적마다 코드 근거를 다시 확인 — P-N1~P-N5·X-1·X-3 맞음, X-2 는 이미 검사 중(고치지 않음)
+- [x] 문서 — `bab635a`
+- [x] 계약 테스트 보강(기능별 API 표·설정 기본값), 깨진 복사본에서 먼저 실패 확인 — `1a47a02`
+- [x] "e2e-policy-2 결정" 인용 정리 — `1cbe48b`
+- [x] 1차 수렴 선언 정정(ledger 정정-01)
