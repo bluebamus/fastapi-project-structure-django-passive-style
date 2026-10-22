@@ -430,7 +430,7 @@ def register_and_login(api: httpx.Client, username: str | None = None) -> dict[s
     )
     assert created.status_code == 201, created.text
     tokens = login(api, username)
-    # /me 는 primary 에서 읽어 바로 200 이다(e2e-policy-2 결정 5). 대기는 일시 오류에 대한 여유로만 남긴다.
+    # /me 는 primary 에서 읽어 바로 200 이다(integration-e2e ADR-012 결정 5). 대기는 일시 오류에 대한 여유로만 남긴다.
     me = wait_for(
         lambda: (r := api.get("/api/v1/auth/me", headers=bearer(tokens["access"]))).status_code
         == 200

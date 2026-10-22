@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API 레퍼런스</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">PROJECT GUIDE</p><h1>API 레퍼런스</h1><p><code>app.openapi()</code>의 38개 operation과 각 operation의 접근 수준을 정리합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN(11.12.0)을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section><h2>공통 규칙</h2><ul><li>기능 API는 <code>/api/v1</code> 아래에 있으며 health/readiness는 루트 경로입니다.</li><li>입력은 Pydantic 스키마로 검증되고 도메인·저장소 오류는 공통 오류 응답으로 변환됩니다.</li><li><code>public_write</code>는 익명 쓰기입니다. rate limit은 register·login에만 걸립니다(429 + <code>Retry-After</code>).</li>
+<li>정확한 요청·응답 스키마는 <code>DEBUG=true</code>일 때만 열리는 <code>/docs</code>·<code>/openapi.json</code>에서 확인합니다.</li>
+<li><code>/admin</code>은 <code>ADMIN_DISABLED=false</code>(기본)일 때 마운트되는 SQLAdmin 하위 앱이라 이 표와 OpenAPI에 없습니다.</li></ul></section>
+<section><h2>전체 엔드포인트 (38개 operation)</h2><div class="table-wrap"><table><thead>
+<tr><th>메서드</th><th>경로</th><th>접근 수준</th><th>추가 판정</th><th>용도</th></tr>
+</thead><tbody>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs</code></td><td>superuser</td><td>—</td><td>접근 로그 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/recent</code></td><td>superuser</td><td>—</td><td>최근 접근 로그</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-ip/{ip_address}</code></td><td>superuser</td><td>—</td><td>IP별 조회</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-user/{user_id}</code></td><td>superuser</td><td>—</td><td>사용자별 조회</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/stats</code></td><td>superuser</td><td>—</td><td>접근 통계</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/blog/posts</code></td><td>login</td><td>—</td><td>게시물 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts</code></td><td>public</td><td>—</td><td>게시물 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>public</td><td>—</td><td>게시물 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>게시물 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>게시물 삭제</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/reply/replies</code></td><td>login</td><td>—</td><td>댓글 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/reply/replies</code></td><td>public</td><td>—</td><td>댓글 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>public</td><td>—</td><td>댓글 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>댓글 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>댓글 삭제</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/sns/posts</code></td><td>login</td><td>—</td><td>SNS 게시물 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts</code></td><td>public</td><td>—</td><td>SNS 게시물 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>public</td><td>—</td><td>SNS 게시물 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>SNS 게시물 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>login</td><td>작성자 또는 슈퍼유저(서비스의 <code>OwnershipPolicy</code>)</td><td>SNS 게시물 삭제</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/user/users</code></td><td>superuser</td><td>—</td><td>사용자 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users</code></td><td>superuser</td><td>—</td><td>사용자 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>login</td><td>본인 또는 슈퍼유저(서비스가 판정, <code>is_active</code>·<code>is_superuser</code> 변경은 슈퍼유저만)</td><td>사용자 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>login</td><td>본인 또는 슈퍼유저(서비스가 판정, <code>is_active</code>·<code>is_superuser</code> 변경은 슈퍼유저만)</td><td>사용자 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>superuser</td><td>—</td><td>사용자 삭제</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/register</code></td><td>public_write</td><td>—</td><td>회원 가입</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/login</code></td><td>public_write</td><td>—</td><td>액세스·리프레시 토큰 발급</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/refresh</code></td><td>public_write</td><td>—</td><td>리프레시 토큰 회전</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>public_write</td><td>—</td><td>토큰 계열 폐기</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/auth/me</code></td><td>login</td><td>—</td><td>현재 사용자 조회</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/catalog/products</code></td><td>superuser</td><td>—</td><td>상품 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/catalog/products</code></td><td>public</td><td>—</td><td>상품 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>public</td><td>—</td><td>상품 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>superuser</td><td>—</td><td>상품 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>superuser</td><td>—</td><td>상품 삭제</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/reports/daily-sales</code></td><td>superuser</td><td>—</td><td>일 매출 집계 조회</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/health</code></td><td>public</td><td>—</td><td>프로세스 생존 확인</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/ready</code></td><td>public</td><td>—</td><td>서비스 준비 상태 확인</td></tr>
+</tbody></table></div></section>
+<section><h2>호출 흐름</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant R as Router
+participant P as Principal/Policy
+participant S as Service
+participant D as Repository
+C-&gt;&gt;R: HTTP 요청 + Bearer token
+R-&gt;&gt;P: 인증·인가
+P--&gt;&gt;R: Principal 또는 거부
+R-&gt;&gt;S: 검증된 명령/조회
+S-&gt;&gt;D: 저장·조회
+D--&gt;&gt;S: 결과
+S--&gt;&gt;R: 응답 모델
+R--&gt;&gt;C: JSON + 상태 코드</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant R as Router
+participant P as Principal/Policy
+participant S as Service
+participant D as Repository
+C-&gt;&gt;R: HTTP 요청 + Bearer token
+R-&gt;&gt;P: 인증·인가
+P--&gt;&gt;R: Principal 또는 거부
+R-&gt;&gt;S: 검증된 명령/조회
+S-&gt;&gt;D: 저장·조회
+D--&gt;&gt;S: 결과
+S--&gt;&gt;R: 응답 모델
+R--&gt;&gt;C: JSON + 상태 코드</code></pre></details></section>
+<section><h2>코드 근거</h2>
+<p>접근 수준 열은 <code>AccessPolicyGuard().levels(app)</code>의 판정이고, 추가 판정 열은 서비스가 하는 소유자·본인 확인입니다.</p>
+<ul>
+<li><a data-source="app/core/security/access.py" href="../../../app/core/security/access.py"><code>app/core/security/access.py</code></a> — 접근 수준 선언과 AccessPolicyGuard(기본 거부)</li>
+<li><a data-source="app/core/apps/wiring.py" href="../../../app/core/apps/wiring.py"><code>app/core/apps/wiring.py</code></a> — 설치 앱 라우터 조립(install_routers)</li>
+<li><a data-source="tests/test_authorization_policy.py" href="../../../tests/test_authorization_policy.py"><code>tests/test_authorization_policy.py</code></a> — 오퍼레이션별 의도한 접근 수준 회귀 표</li>
+<li><a data-source="tests/test_route_inventory.py" href="../../../tests/test_route_inventory.py"><code>tests/test_route_inventory.py</code></a> — 공개 경로 목록 고정</li>
+<li><a data-source="tests/test_docs_guide_site.py" href="../../../tests/test_docs_guide_site.py"><code>tests/test_docs_guide_site.py</code></a> — 이 표와 OpenAPI × 가드 판정 대조</li>
+<li><a data-source="app/features/home/api/routers/v1/home.py" href="../../../app/features/home/api/routers/v1/home.py"><code>app/features/home/api/routers/v1/home.py</code></a></li>
+<li><a data-source="app/features/blog/api/routers/v1/blog.py" href="../../../app/features/blog/api/routers/v1/blog.py"><code>app/features/blog/api/routers/v1/blog.py</code></a></li>
+<li><a data-source="app/features/reply/api/routers/v1/reply.py" href="../../../app/features/reply/api/routers/v1/reply.py"><code>app/features/reply/api/routers/v1/reply.py</code></a></li>
+<li><a data-source="app/features/sns/api/routers/v1/sns.py" href="../../../app/features/sns/api/routers/v1/sns.py"><code>app/features/sns/api/routers/v1/sns.py</code></a></li>
+<li><a data-source="app/features/user/api/routers/v1/user.py" href="../../../app/features/user/api/routers/v1/user.py"><code>app/features/user/api/routers/v1/user.py</code></a></li>
+<li><a data-source="app/features/auth/api/routers/v1/auth.py" href="../../../app/features/auth/api/routers/v1/auth.py"><code>app/features/auth/api/routers/v1/auth.py</code></a></li>
+<li><a data-source="app/features/catalog/api/routers/v1/products.py" href="../../../app/features/catalog/api/routers/v1/products.py"><code>app/features/catalog/api/routers/v1/products.py</code></a></li>
+<li><a data-source="app/features/reports/api/routers/v1/sales_reports.py" href="../../../app/features/reports/api/routers/v1/sales_reports.py"><code>app/features/reports/api/routers/v1/sales_reports.py</code></a></li>
+</ul>
+</section>
+<section><h2>관련 문서</h2><ul><li><a href="../workflows/request-processing.html">요청 처리</a></li><li><a href="../workflows/authentication.html">API 인증</a></li><li><a href="../features/index.html">기능별 상세</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

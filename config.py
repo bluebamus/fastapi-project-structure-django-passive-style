@@ -978,8 +978,10 @@ class RedisSettings(BaseSettings):
     """
     Redis 연결 설정
 
-    소비처는 두 곳이다 — 기동 시 연결 검증(``app/core/resources.py`` 의 ``ping()``)과
-    Celery broker/result backend(``app/celery/app.py``). 캐시·세션 구현은 없다.
+    소비처 — 기동 시 연결 검증(``app/core/resources.py`` 의 ``ping()``), /admin 서버 세션
+    (``app/core/security/admin_session.py``), refresh 토큰 회전 기록(``refresh_store.py``),
+    레이트 리밋(``rate_limit.py``), Celery broker/result backend(``app/celery/app.py``).
+    일반 캐시 구현은 없다.
     """
 
     model_config = SettingsConfigDict(

@@ -117,7 +117,7 @@ async def get_current_principal(
         UnauthorizedException: Authorization 헤더가 없음(401).
         InvalidTokenException: 서명·만료·claim·종류 중 하나라도 어긋남(401).
 
-    401 의 ``WWW-Authenticate: Bearer`` 는 전역 예외 핸들러가 붙인다(e2e-policy-2 결정 3).
+    401 의 ``WWW-Authenticate: Bearer`` 는 전역 예외 핸들러가 붙인다(integration-e2e ADR-012 결정 3).
     """
     if not token:
         raise UnauthorizedException()

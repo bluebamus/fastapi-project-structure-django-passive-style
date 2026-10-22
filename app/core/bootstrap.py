@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def _challenge(status_code: int, headers: Mapping[str, str] | None) -> Mapping[str, str] | None:
-    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(e2e-policy-2 결정 3).
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(integration-e2e ADR-012 결정 3).
 
     보호 라우트·로그인·refresh·logout·비활성 사용자 어디서 던졌든 이 한 곳을 지난다(RFC 6750 §3).
     예외가 이미 도전 헤더를 들고 왔으면 그것을 쓴다.
@@ -272,7 +272,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def answer_unhandled_exception(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다(e2e-policy-2 결정 2).
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다(integration-e2e ADR-012 결정 2).
 
         ``ServerErrorMiddleware`` 는 ``Exception`` 처리기로 응답한 뒤 예외를 다시 던진다 — uvicorn 이 traceback 을
         한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기(로그 형식·마스킹·본문)로 끝내면 기록은 한 번,
@@ -288,7 +288,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _document_real_validation_error(app: FastAPI) -> None:
-    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다(e2e-policy-2 결정 1, F-010).
+    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다(integration-e2e ADR-012 결정 1, F-010).
 
     FastAPI 는 모든 operation 의 422 를 기본 ``HTTPValidationError``(``detail[loc,msg,type]``)로 적지만, 이 앱의
     검증 핸들러는 ``ErrorResponse``(``detail[field,message,type]``)를 낸다. 응답은 그대로 두고 문서만 한 곳에서

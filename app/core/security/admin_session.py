@@ -216,7 +216,7 @@ class RedisSessionMiddleware:
     * 세션이 비면(로그아웃) Redis 키를 지우고 쿠키를 지운다.
     * ``rotate`` 가 요청되면(로그인 성공) 새 세션 ID 를 발급하고 이전 키를 지운다(세션 고정 방지).
     * Redis 를 쓸 수 없으면 통과시키지 않는다 — 503(fail-closed). 응답 직전 저장(쿠키 없는 첫 요청의 세션
-      생성 등)이 실패해도 앱이 만든 응답 대신 같은 503 을 낸다(e2e-policy-2 결정 6) — 응답 시작 전이라 바꿀 수 있다.
+      생성 등)이 실패해도 앱이 만든 응답 대신 같은 503 을 낸다(integration-e2e ADR-012 결정 6) — 응답 시작 전이라 바꿀 수 있다.
 
     Args:
         store: 요청 시점에 저장소를 돌려주는 provider — Redis 는 lifespan 이 기동 때 만든다.

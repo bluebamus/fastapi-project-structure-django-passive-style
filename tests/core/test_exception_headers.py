@@ -79,7 +79,7 @@ def test_404_without_headers_keeps_the_envelope(client: TestClient):
 
 @pytest.mark.parametrize("kind", ["app", "token", "http"])
 def test_every_401_carries_the_bearer_challenge(client: TestClient, kind: str):
-    """헤더 없이 던진 401 도 ``WWW-Authenticate: Bearer`` 를 싣는다 — 핸들러 한 곳이 붙인다(e2e-policy-2 결정 3)."""
+    """헤더 없이 던진 401 도 ``WWW-Authenticate: Bearer`` 를 싣는다 — 핸들러 한 곳이 붙인다(integration-e2e ADR-012 결정 3)."""
     response = client.get("/_probe/unauthorized", params={"kind": kind})
 
     assert response.status_code == 401

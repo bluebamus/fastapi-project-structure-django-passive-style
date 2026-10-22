@@ -1,4 +1,4 @@
-"""처리기가 없는 예외(버그) → 500, 기록 한 번, keep-alive 유지 (e2e-policy-2 결정 2).
+"""처리기가 없는 예외(버그) → 500, 기록 한 번, keep-alive 유지 (integration-e2e ADR-012 결정 2).
 
 Starlette ``ServerErrorMiddleware`` 는 ``Exception`` 처리기로 응답한 뒤 예외를 **다시 던진다** — uvicorn 이
 ``Exception in ASGI application`` 으로 한 번 더 기록하고 연결을 닫는다. 사용자 미들웨어 중 가장 바깥에서
