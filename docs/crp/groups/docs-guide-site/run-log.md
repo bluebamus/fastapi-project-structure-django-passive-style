@@ -27,3 +27,10 @@
 - **트리거:** main `fc8ae20` 병합 뒤 가로 대조에서 "모든 요청에서 수집·저장" 문구가 `_should_skip`(활성·제외 경로·제외 확장자)과 어긋남
 - **변경:** `329ad95` (docstring·API 소개 문자열·.env.example 주석·문서만, 코드 동작 무변경)
 - **상태:** 수정됨 — 검수 대기
+
+### 후속 P-F2 — 2026-10-22 · `_should_skip` 회귀 테스트
+- **트리거:** P-F1 Codex 검수의 잔여 위험 — 문서가 말하는 저장 범위를 직접 고정하는 테스트가 없음. 사용자 요청으로 추가
+- **변경:** `c91b64e` (테스트만, 코드 무변경)
+- **red→green:** 저장소 밖 복사본에서 `_should_skip` 의 비활성 검사 제거·정확 일치→접두사·접미사 무시 → 각각 1 failed(케이스가 서로 다름), 원본 5 passed
+- **검사:** 파일 19 passed, ruff check·format 통과, .env 없는 복사본 전체 1514 passed · 27 skipped · 10 errors(모두 `tests/browser/` — 실서버용 `REDIS_HOST`·`REDIS_PORT` 미설정, 무관)
+- **상태:** 수정됨 — 검수 대기
