@@ -10,6 +10,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
+from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings
 
 import config
@@ -64,15 +65,20 @@ def _parse(path: Path) -> _Page:
     return page
 
 
-def test_api_reference_matches_openapi_and_access_guard():
-    """API 표의 (메서드, 경로, 접근 수준) == OpenAPI operation × ``AccessPolicyGuard`` 판정."""
+def _api_operations() -> set[tuple[str, str, str]]:
+    """OpenAPI operation × ``AccessPolicyGuard`` 판정 — (메서드, 경로, 접근 수준)."""
     levels = AccessPolicyGuard().levels(app)
     expected = set()
     for path, item in app.openapi()["paths"].items():
         for method in item:
             (level,) = levels[(method.upper(), path)]
             expected.add((method.upper(), path, str(level)))
+    return expected
 
+
+def test_api_reference_matches_openapi_and_access_guard():
+    """API 표의 (메서드, 경로, 접근 수준) == OpenAPI operation × ``AccessPolicyGuard`` 판정."""
+    expected = _api_operations()
     rows = _parse(GUIDES / "reference" / "api.html").rows
     documented = {(row[0], row[1], row[2]) for row in rows if len(row) >= 3}
     assert documented == expected, (
@@ -92,6 +98,51 @@ def test_configuration_reference_lists_every_setting():
     assert len(fields) > 50, "설정 필드를 못 찾았다 — 검사가 헛통과한다"
     documented = {row[0] for row in _parse(GUIDES / "reference" / "configuration.html").rows if row}
     assert not fields - documented, f"설정 표에 없는 설정: {sorted(fields - documented)}"
+
+
+def test_feature_api_tables_are_subset_of_openapi_and_access_guard():
+    """기능별 API 표(``features/*.html``)의 행도 OpenAPI × 가드 판정에 있는 그대로다."""
+    expected = _api_operations()
+    documented = {
+        (page.name, (row[0], row[1], row[2]))
+        for page in sorted((GUIDES / "features").glob("*.html"))
+        for row in _parse(page).rows
+        if len(row) >= 3 and row[1].startswith("/api/")
+    }
+    assert len(documented) > 10, "기능별 API 행을 못 찾았다 — 검사가 헛통과한다"
+    wrong = sorted(item for item in documented if item[1] not in expected)
+    assert not wrong, f"코드와 다른 기능별 API 행: {wrong}"
+
+
+def _render_default(field: FieldInfo) -> str:
+    """설정 표의 "코드 기본값" 표기 — bool 은 소문자, None 은 ``(없음)``, 나머지는 ``repr``."""
+    value = field.get_default(call_default_factory=True)
+    if isinstance(value, bool):
+        return str(value).lower()
+    return "(없음)" if value is None else repr(value)
+
+
+#: 기본값을 줄여 적은 행 — 여러 줄 Markdown 이라 표에 그대로 싣지 않는다.
+ABBREVIATED_DEFAULTS = frozenset({"DESCRIPTION"})
+
+
+def test_configuration_reference_defaults_match_code():
+    """설정 표의 "코드 기본값" 열이 Settings 필드 기본값과 같다."""
+    defaults = {
+        name: _render_default(field)
+        for obj in vars(config).values()
+        if isinstance(obj, type) and issubclass(obj, BaseSettings) and obj is not BaseSettings
+        for name, field in obj.model_fields.items()
+    }
+    rows = _parse(GUIDES / "reference" / "configuration.html").rows
+    documented = {row[0]: row[1] for row in rows if len(row) >= 2 and row[0] in defaults}
+    assert len(documented) > 50, "설정 행을 못 찾았다 — 검사가 헛통과한다"
+    wrong = sorted(
+        f"{name}: 표 {shown!r} ≠ 코드 {defaults[name]!r}"
+        for name, shown in documented.items()
+        if name not in ABBREVIATED_DEFAULTS and shown != defaults[name]
+    )
+    assert not wrong, wrong
 
 
 def test_mermaid_is_pinned_to_one_version():
