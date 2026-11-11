@@ -1,8 +1,8 @@
-"""중앙 Celery 앱 (service-hardening ADR-012).
+"""중앙 Celery 앱.
 
 태스크는 각 기능의 ``tasks`` module(``app/features/<앱>/tasks.py``, 선택)에 둔다. 워커의
 ``include`` 는 ``config.INSTALLED_APPS`` 로 채운 App Registry 가 만든다 — 이 패키지는
-어떤 기능도 직접 import 하지 않는다(C-14). ``INSTALLED_APPS`` 에서 앱을 빼면 그 앱의
+어떤 기능도 직접 import 하지 않는다. ``INSTALLED_APPS`` 에서 앱을 빼면 그 앱의
 태스크와 모델도 워커에서 빠진다(Django ``autodiscover_tasks`` 와 같은 방식).
 """
 
@@ -64,8 +64,8 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-    # 내부 시각(ETA·만료·결과 메타데이터)은 UTC 로 다룬다 — DB 저장과 같은 기준이다
-    # (service-hardening ADR-010). ``timezone`` 은 crontab 같은 일정을 해석하는 지역
+    # 내부 시각(ETA·만료·결과 메타데이터)은 UTC 로 다룬다 — DB 저장과 같은 기준이다.
+    # ``timezone`` 은 crontab 같은 일정을 해석하는 지역
     # 시간대로만 쓰인다(하드코딩 대신 설정 TIME_ZONE 일원화).
     timezone=timezone_settings.TIME_ZONE,
     enable_utc=True,

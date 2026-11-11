@@ -8,7 +8,7 @@
 # 드리프트(로컬에서는 마이그레이션 테스트가 본다).
 #
 # 배포·빌드는 다루지 않는다. 이미지 빌드·푸시·릴리스는 별도 인프라 저장소 소관이다
-# (design-baseline C-5: 이 저장소는 FastAPI 코드/설정만 담는다).
+# (이 저장소는 FastAPI 코드/설정만 담는다).
 
 name: CI
 
@@ -25,7 +25,7 @@ on:
 permissions:
   contents: read
 
-# 검수 도구의 stdio 를 UTF-8 로 고정한다 (design-baseline C-7).
+# 검수 도구의 stdio 를 UTF-8 로 고정한다.
 #
 # 한글 메시지를 담은 리포트를 출력하는 순간 게이트 도구 자체가 인코딩 오류로 죽는
 # 일이 실제로 있었다(bandit 이 cp949 콘솔에서 UnicodeEncodeError). 그러면 검사 결과가
@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   gate:
-    name: GATE 3 (charter §3)
+    name: 품질 게이트
     runs-on: ubuntu-24.04  # ubuntu-latest 는 2026-10-19 부터 Ubuntu 26 으로 바뀐다 — 검증 전까지 고정
     timeout-minutes: 15
 
@@ -90,7 +90,7 @@ jobs:
       # (LOW 는 전수 검토 결과 실질 이슈가 0건이었다).
       #
       # JSON reporter 를 쓰는 이유: txt reporter 는 리포트를 콘솔 인코딩으로 쓰다가
-      # 한글 결과에서 UnicodeEncodeError 로 **죽는다**(F-008). 그러면 "검사 실패"가
+      # 한글 결과에서 UnicodeEncodeError 로 **죽는다**. 그러면 "검사 실패"가
       # 아니라 "도구 크래시"가 보이고 진짜 결과가 사라진다. JSON 은 항상 UTF-8 이다.
       #
       # 종료 코드를 직접 판정한다 — reporter 가 죽어도(=결과 파일이 없어도) 게이트가
@@ -107,10 +107,10 @@ jobs:
 
       # ── 테스트 ──────────────────────────────────────────────────────────
       # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
-      # charter §3 은 "조용한 SKIP·xfail 0" 을 인수 기준으로 둔다 — 통과 개수만 보고
+      # "조용한 SKIP·xfail 0" 이 인수 기준이다 — 통과 개수만 보고
       # 넘어가면 비활성화된 테스트가 초록불 뒤에 숨는다. 그래서 요약을 직접 판정한다.
       # 커버리지는 항상 측정·출력한다. 하한은 pyproject `fail_under` 하나가 정본이고 기본값은
-      # 0(하한 없음 — 사용자 결정, log-redaction-fixes ADR-005). 필요해지면 그 값만 올린다.
+      # 0(하한 없음 — 사용자 결정). 필요해지면 그 값만 올린다.
       # 커버리지 데이터·pytest tmp·로그를 실행별 경로로 보낸다. 저장소 루트의
       # `.coverage` 를 쓰면 앞선 실행의 병렬 데이터가 남아 combine 이 형식 충돌로
       # 터진다 — 경로를 격리하면 `rm -f` 로 지우는 습관 자체가 필요 없다.
@@ -127,10 +127,10 @@ jobs:
             -q -rsxX \
             --basetemp="${GATE_TMP}/pytest" | tee "${GATE_TMP}/pytest.log"
 
-      - name: SKIP·xfail 0건 확인 (charter §3)
+      - name: SKIP·xfail 0건 확인
         run: |
           if grep -qE '[1-9][0-9]* (skipped|xfailed|xpassed)' "${GATE_TMP}/pytest.log"; then
-            echo "::error::charter §3 위반 — 조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
+            echo "::error::조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
             grep -E '(skipped|xfailed|xpassed)' "${GATE_TMP}/pytest.log" || true
             exit 1
           fi

@@ -15,7 +15,7 @@ class PostBase(BaseModel):
 
 
 class PostCreate(PostBase):
-    """게시글 생성 요청. 작성자는 받지 않는다 — 서버가 인증 주체로 채운다(ADR-018)."""
+    """게시글 생성 요청. 작성자는 받지 않는다 — 서버가 인증 주체로 채운다."""
 
 
 class PostUpdate(PatchSchema):

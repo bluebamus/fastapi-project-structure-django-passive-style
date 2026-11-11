@@ -1,4 +1,4 @@
-"""AC-07 — ``ADMIN_DISABLED=true`` 면 관리 계층이 **로드조차 되지 않는다** (SEC-01).
+"""``ADMIN_DISABLED=true`` 면 관리 계층이 **로드조차 되지 않는다**.
 
 ``ADMIN_DISABLED=true`` 가 "라우트만 안 붙임" 이면 설정의 의미가 실제와 어긋난다. sqladmin 과
 앱별 ModelView 가 전부 메모리에 올라온 채로 라우트만 없는 상태라면, sqladmin 을
@@ -60,7 +60,7 @@ def _boot(disabled: str) -> dict:
 
 
 def test_admin_layer_is_not_loaded_when_disabled():
-    """SEC-01: sqladmin 과 앱별 admin 모듈이 sys.modules 에 없다."""
+    """sqladmin 과 앱별 admin 모듈이 sys.modules 에 없다."""
     result = _boot("true")
 
     assert result["sqladmin"] is False, (

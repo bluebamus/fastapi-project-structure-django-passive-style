@@ -26,7 +26,7 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from config import TimezoneSettings, timezone_settings
 
-#: 문자열 컬럼의 최대 길이 — 모델 선언에서 읽는다(숫자를 두 번 적지 않는다, ADR-006).
+#: 문자열 컬럼의 최대 길이 — 모델 선언에서 읽는다(숫자를 두 번 적지 않는다).
 #: 길이가 없는 ``Text`` 는 빠진다.
 _COLUMN_MAX_LENGTHS: dict[str, int] = {
     column.name: column.type.length

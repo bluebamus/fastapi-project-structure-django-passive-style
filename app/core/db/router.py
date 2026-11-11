@@ -308,7 +308,7 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
 
     @event.listens_for(RoutingSession, "do_orm_execute")
     def _fall_back_to_writer(state: ORMExecuteState) -> Any:
-        """읽기 전용 세션의 replica 읽기가 **연결 계열 오류**로 실패하면 primary 로 한 번 다시 읽는다(ADR-010).
+        """읽기 전용 세션의 replica 읽기가 **연결 계열 오류**로 실패하면 primary 로 한 번 다시 읽는다.
 
         읽기 전용 세션만이다 — 쓰기와 섞일 수 있는 세션에서 일부 구문만 서버를 바꾸면 트랜잭션의 의미가 깨진다.
         재시도 뒤에는 세션을 writer 에 고정한다(같은 세션이 죽은 replica 를 다시 두드리지 않게, 스냅샷도 한 서버).

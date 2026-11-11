@@ -375,7 +375,7 @@ def test_deployed_admin_boots_with_login_backend_and_ignores_the_removed_ack():
     """배포 환경에서 관리 화면을 켜도(``ADMIN_DISABLED=false``) 배포 안전 검사를 통과하고 로그인 백엔드를 단다.
 
     예전 승인 플래그(``ADMIN_UNAUTHENTICATED_ACK``)가 `.env`·환경에 남아 있어도 기동이 깨지지
-    않는다 — 설정 클래스는 ``extra="ignore"`` 다(admin-login ADR-004). "인증 없이 열려 있다" 는
+    않는다 — 설정 클래스는 ``extra="ignore"`` 다. "인증 없이 열려 있다" 는
     경고도 더는 나오지 않는다.
     """
     env = dict(

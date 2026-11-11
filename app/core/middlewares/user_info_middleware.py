@@ -86,7 +86,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         """
         민감 키의 값을 ``***`` 로 바꾼 query string 을 돌려줍니다.
 
-        토큰·비밀번호가 query 로 들어와도 접속 로그에 원문이 남지 않게 한다(C-12).
+        토큰·비밀번호가 query 로 들어와도 접속 로그에 원문이 남지 않게 한다.
 
         Args:
             request: FastAPI Request 객체
@@ -227,7 +227,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         request_info = self._collect_request_info(request)
 
         # 요청 처리 — 처리되지 않은 예외로 끝난 요청도 500 으로 기록한 뒤 그대로 다시 던진다.
-        # 가장 기록이 필요한 장애 요청이 접속 로그에서 빠지지 않게 한다(ADR-006).
+        # 가장 기록이 필요한 장애 요청이 접속 로그에서 빠지지 않게 한다.
         try:
             response: Response = await call_next(request)
         except Exception:
@@ -247,13 +247,13 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         """응답 정보를 채우고 백그라운드 저장을 예약한다.
 
         ``user_id`` 는 여기서 읽는다 — ``get_current_principal`` 이 핸들러 실행 중에
-        ``request.state.user_id`` 를 채운다(``request.state`` 는 scope 를 공유한다, ledger F-024).
+        ``request.state.user_id`` 를 채운다(``request.state`` 는 scope 를 공유한다).
         """
         request_info["user_id"] = getattr(request.state, "user_id", None)
         request_info["response_status"] = status_code
         request_info["response_time_ms"] = int((time.perf_counter() - start_time) * 1000)
         # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음).
-        # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다(W1).
+        # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다.
         access_log_tasks.spawn(self._save_access_log(request_info))
 
 

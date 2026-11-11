@@ -1,4 +1,4 @@
-"""AC-08 — 설치 앱의 Admin view 만, 선언 순서대로, 한 번씩 등록된다 (FR-04·NFR-01).
+"""설치 앱의 Admin view 만, 선언 순서대로, 한 번씩 등록된다.
 
 과거 이 프로젝트에는 중앙 취합 파일(``app/features/admin.py``)이 있었고, 새 기능의
 관리 화면을 만들고 거기 한 줄 추가하는 것을 잊으면 조용히 빠졌다. 취합을 registry 로
@@ -26,7 +26,7 @@ EXPECTED_MANAGED_MODELS = {
     "SnsPost",
     "User",
     "UserAccessLog",
-    # ORM/Raw 예제 (Phase 5). SalesOrder 는 읽기 전용 뷰다 — 원본을 화면에서
+    # ORM/Raw 예제. SalesOrder 는 읽기 전용 뷰다 — 원본을 화면에서
     # 고치면 리포트 숫자가 근거 없이 움직인다.
     "Product",
     "SalesOrder",
@@ -70,7 +70,7 @@ def test_installed_apps_admin_views_cover_expected_models(registry: Apps):
 
 
 def test_views_are_registered_in_installed_apps_order(registry: Apps):
-    """NFR-01: 등록 순서가 ``INSTALLED_APPS`` 순서를 그대로 따른다."""
+    """등록 순서가 ``INSTALLED_APPS`` 순서를 그대로 따른다."""
     admin = Admin(FastAPI(), _ENGINE)
     install_admin(admin, registry)
 
@@ -91,7 +91,7 @@ def test_each_view_is_registered_exactly_once(registry: Apps):
 
 
 def test_unregistered_app_views_are_not_installed(registry: Apps):
-    """FR-01: 앱을 목록에서 빼면 그 관리 화면도 사라진다."""
+    """앱을 목록에서 빼면 그 관리 화면도 사라진다."""
     subset = [entry for entry in INSTALLED_APPS if "blog" not in entry]
     partial = Apps()
     partial.populate(subset, run_ready=False)
@@ -112,7 +112,7 @@ def test_admin_page_is_mounted_when_enabled():
 
 
 # =============================================================================
-# 인증 백엔드 조립 (admin-login ADR-001~ADR-003)
+# 인증 백엔드 조립
 # =============================================================================
 def _create():
     from app.core.apps.wiring import create_admin

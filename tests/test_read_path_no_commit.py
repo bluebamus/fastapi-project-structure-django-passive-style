@@ -1,4 +1,4 @@
-"""트랜잭션 배선을 라우트 단위로 대조한다 (계획서 P4-1 / P4-3 / P1-3).
+"""트랜잭션 배선을 라우트 단위로 대조한다.
 
 도메인마다 in-memory DB 픽스처로 커밋 횟수를 세는 방식은 도메인 수만큼 픽스처가
 복제된다. 여기서는 대신 **라우트의 의존성 트리와 핸들러 본문을 직접 검사**해서
@@ -53,7 +53,7 @@ _WRITER_SESSION_BY_DESIGN: dict[str, str] = {}
 
 # 쓰기 메서드지만 실제로 DB에 쓰지 않는 라우트. 커밋할 것이 없다.
 _WRITE_METHOD_BUT_READ_ONLY: dict[str, str] = {
-    # login 은 bcrypt → Argon2 재해시를 저장하므로 커밋한다 — 목록에서 뺐다(service-hardening F1).
+    # login 은 bcrypt → Argon2 재해시를 저장하므로 커밋한다 — 목록에서 뺐다.
     "refresh": "refresh 회전 기록은 Redis 에 있다 — DB 변경 없음",
     "logout": "refresh family 폐기는 Redis 에 있다 — DB 변경 없음",
 }

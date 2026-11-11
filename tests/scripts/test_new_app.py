@@ -1,4 +1,4 @@
-"""AC-10·AC-11 — 앱 생성기 (FR-09·FR-10·SEC-03·SEC-04).
+"""앱 생성기.
 
 두 가지를 검증한다.
 
@@ -45,10 +45,10 @@ def _snapshot(root: Path) -> set[str]:
 
 
 # =============================================================================
-# AC-10 — 생성 결과
+# 생성 결과
 # =============================================================================
 def test_scaffold_creates_apps_module_and_config_class(features: Path):
-    """FR-09: ``apps.py`` 와 ``<PascalName>Config`` 를 만든다."""
+    """``apps.py`` 와 ``<PascalName>Config`` 를 만든다."""
     target = create_app_scaffold("orders", features_dir=features)
 
     apps_py = (target / "apps.py").read_text(encoding="utf-8")
@@ -80,7 +80,7 @@ def test_models_and_admin_are_optional(features: Path):
 
 
 def test_generator_does_not_touch_config(features: Path):
-    """FR-10: 설정 파일을 자동 수정하지 않는다."""
+    """설정 파일을 자동 수정하지 않는다."""
     before = (PROJECT_ROOT / "config.py").read_bytes()
 
     create_app_scaffold("silentapp", features_dir=features)
@@ -89,7 +89,7 @@ def test_generator_does_not_touch_config(features: Path):
 
 
 def test_next_steps_prints_the_exact_registration_line():
-    """FR-10: 붙여 넣을 config class 경로를 정확히 출력한다."""
+    """붙여 넣을 config class 경로를 정확히 출력한다."""
     message = next_steps("orders")
 
     assert config_entry("orders") in message
@@ -102,7 +102,7 @@ def test_next_steps_prints_the_exact_registration_line():
 
 
 def test_generated_output_claims_no_auto_discovery(features: Path):
-    """Phase 6 완료 조건: '자동 발견'·'중앙 등록 불필요' 표현이 없어야 한다."""
+    """'자동 발견'·'중앙 등록 불필요' 표현이 없어야 한다."""
     target = create_app_scaffold("claimsapp", with_admin=True, features_dir=features)
 
     banned = ("자동 발견", "자동 등록", "중앙 등록 불필요", "자동으로 활성화")
@@ -115,7 +115,7 @@ def test_generated_output_claims_no_auto_discovery(features: Path):
 
 
 def test_generated_app_is_inactive_until_registered():
-    """AC-10 end-to-end: 등록 전에는 비활성, 등록 후 활성화된다.
+    """등록 전에는 비활성, 등록 후 활성화된다.
 
     생성물이 ``app.features.<name>`` 을 절대 경로로 참조하므로 임시 디렉터리에서는
     import 되지 않는다. 그래서 실제 ``app/features/`` 아래에 만들고 끝나면 지운다 —
@@ -165,7 +165,7 @@ def test_generated_app_is_inactive_until_registered():
         operation = app.openapi()["paths"][f"/api/v1/{name}/ping"]["get"]
         assert operation["operationId"] == f"ping{name.capitalize()}"
 
-        # 생성한 뷰는 접근 수준을 선언한다 — 아니면 설치하자마자 기동이 거부된다(access-policy).
+        # 생성한 뷰는 접근 수준을 선언한다 — 아니면 설치하자마자 기동이 거부된다.
         from app.core.security.access import AccessLevel, AccessPolicyGuard
 
         AccessPolicyGuard().verify(app)
@@ -178,7 +178,7 @@ def test_generated_app_is_inactive_until_registered():
 
 
 # =============================================================================
-# AC-11 — 경로 안전성
+# 경로 안전성
 # =============================================================================
 @pytest.mark.parametrize(
     "name",
@@ -197,7 +197,7 @@ def test_generated_app_is_inactive_until_registered():
     ],
 )
 def test_dangerous_names_are_rejected(name: str, features: Path):
-    """SEC-03: 경로 이탈·비identifier 입력을 거부한다."""
+    """경로 이탈·비identifier 입력을 거부한다."""
     before = _snapshot(features)
 
     with pytest.raises(AppScaffoldError):
@@ -228,7 +228,7 @@ def _link_dir(link: Path, target: Path) -> None:
 
 
 def test_symlink_escape_is_rejected(tmp_path: Path):
-    """SEC-03: 링크를 통과한 resolve 결과가 경계를 벗어나면 거부한다."""
+    """링크를 통과한 resolve 결과가 경계를 벗어나면 거부한다."""
     outside = tmp_path / "outside"
     outside.mkdir()
     features = tmp_path / "features"
@@ -240,7 +240,7 @@ def test_symlink_escape_is_rejected(tmp_path: Path):
 
 
 def test_existing_target_is_not_partially_overwritten(features: Path):
-    """SEC-04: 기존 경로가 있으면 아무것도 바꾸지 않고 실패한다."""
+    """기존 경로가 있으면 아무것도 바꾸지 않고 실패한다."""
     existing = features / "orders"
     existing.mkdir()
     (existing / "keep.py").write_text("SENTINEL = 1\n", encoding="utf-8")
@@ -254,7 +254,7 @@ def test_existing_target_is_not_partially_overwritten(features: Path):
 
 
 def test_failure_midway_leaves_no_partial_app(features: Path, monkeypatch):
-    """SEC-04: 생성 도중 실패하면 대상 경로에 잔해가 없다."""
+    """생성 도중 실패하면 대상 경로에 잔해가 없다."""
     import scripts.new_app as module
 
     def boom(*args, **kwargs):

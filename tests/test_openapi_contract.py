@@ -1,4 +1,4 @@
-"""OpenAPI 스키마 정합성 (DOC-004 · DOC-005).
+"""OpenAPI 스키마 정합성.
 
 Scalar 문서는 코드에서 자동으로 나오기 때문에 "잘 나오고 있겠지"라고 믿기 쉽다.
 실제로는 조용히 어긋난다 — 태그를 선언만 하고 안 쓰거나, 서로 다른 모듈에 같은
@@ -26,7 +26,7 @@ HTTP_METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 NO_CONTENT = "204"
 
 #: ORM/Raw 예제가 OpenAPI 에 반드시 내보내야 하는 DTO. 예제가 문서에서 사라지면
-#: "나란히 비교"가 성립하지 않는다(Phase 5 완료 조건).
+#: "나란히 비교"가 성립하지 않는다.
 REQUIRED_EXAMPLE_SCHEMAS = frozenset(
     {
         # ORM 예제
@@ -122,7 +122,7 @@ def test_schema_set_is_not_empty(schemas):
 
 
 def test_example_dtos_reach_the_documentation(schemas):
-    """ORM/Raw 예제 DTO 가 실제로 문서에 나온다 (DOC-005)."""
+    """ORM/Raw 예제 DTO 가 실제로 문서에 나온다."""
     missing = sorted(REQUIRED_EXAMPLE_SCHEMAS - set(schemas))
 
     assert not missing, f"예제 DTO 가 OpenAPI 에 없다: {missing}"
@@ -159,7 +159,7 @@ def test_operation_ids_are_unique(operations):
 
 
 # =============================================================================
-# 2. tag metadata — 선언과 사용이 정확히 일치해야 한다 (DOC-004)
+# 2. tag metadata — 선언과 사용이 정확히 일치해야 한다
 # =============================================================================
 def _declared_tags() -> list[str]:
     from app.core.tags_metadata import tags_metadata
@@ -199,7 +199,7 @@ def test_every_operation_carries_a_tag(operations):
 
 
 def test_no_tag_claims_to_be_unimplemented():
-    """구현된 기능에 '미구현/예정' 설명이 남아 있지 않다 (DOC-004).
+    """구현된 기능에 '미구현/예정' 설명이 남아 있지 않다.
 
     문서가 "예정"이라고 말하는 기능을 사용자가 이미 호출할 수 있는 상태는, 문서를
     믿지 않게 만든다는 점에서 문서가 없는 것보다 나쁘다.
@@ -264,7 +264,7 @@ def test_documented_error_responses_reference_the_shared_model(operations, spec)
                 continue
             content = response.get("content", {}).get("application/json", {})
             ref = content.get("schema", {}).get("$ref", "")
-            # 422 도 대상이다 — 기본 HTTPValidationError 광고를 ErrorResponse 로 바꿨다(integration-e2e ADR-012 결정 1).
+            # 422 도 대상이다 — 기본 HTTPValidationError 광고를 ErrorResponse 로 바꿨다.
             if not ref:
                 continue
             if not ref.endswith("/ErrorResponse"):
@@ -322,7 +322,7 @@ def test_every_query_parameter_is_described(operations):
 
 
 # =============================================================================
-# 5. schema 이름 — 모듈 경로가 새어 나오지 않아야 한다 (DOC-005)
+# 5. schema 이름 — 모듈 경로가 새어 나오지 않아야 한다
 # =============================================================================
 def test_schema_names_do_not_leak_module_paths(schemas):
     """schema key 에 ``__`` 가 있으면 이름 충돌이 났다는 뜻이다.
@@ -466,7 +466,7 @@ def test_core_schema_snapshot_is_unchanged(schemas):
 
 
 # =============================================================================
-# 5. 422 문서 = 실제 응답 (integration-e2e ADR-012 결정 1 · F-010)
+# 5. 422 문서 = 실제 응답
 # =============================================================================
 def _real_422_body() -> dict[str, Any]:
     """앱의 검증 핸들러가 실제로 내는 422 본문 — 같은 ``create_app()`` 조립으로 만든다."""

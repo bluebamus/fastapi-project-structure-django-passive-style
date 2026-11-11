@@ -1,4 +1,4 @@
-"""``PatchSchema`` — PATCH 의 명시적 null 거부 (service-hardening ADR-007 · F-009).
+"""``PatchSchema`` — PATCH 의 명시적 null 거부.
 
 ``X | None = None`` 로 선언한 PATCH 필드는 ``{"title": null}`` 도 통과시킨다. NOT NULL 컬럼이면
 MySQL 이 1048 로 거부하고 그것이 500 이 됐다(SQLite 단위 테스트는 409 로 가렸다). 공통 기반
@@ -44,7 +44,7 @@ def test_omitted_fields_are_not_checked():
 
 
 def test_blog_update_rejects_null_title():
-    """작성자는 서버가 채우므로(service-hardening ADR-018) 수정 스키마에 nullable 필드가 없다."""
+    """작성자는 서버가 채우므로 수정 스키마에 nullable 필드가 없다."""
     with pytest.raises(ValidationError):
         PostUpdate.model_validate({"title": None})
     assert "author" not in PostUpdate.model_fields

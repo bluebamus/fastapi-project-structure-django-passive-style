@@ -1,4 +1,4 @@
-"""관리 세션 — ``AdminSessionStore`` + ``RedisSessionMiddleware`` (admin-session-hardening ADR-001).
+"""관리 세션 — ``AdminSessionStore`` + ``RedisSessionMiddleware``.
 
 미들웨어를 작은 Starlette 앱에 걸고 fakeredis 위에서 HTTP 로 시험한다. 로그인 백엔드와의 결합은
 ``test_admin_auth.py``, 실제 조립(``create_app``)은 ``tests/core/test_admin_csrf.py`` 가 본다.
@@ -266,7 +266,7 @@ async def test_redis_failure_is_503_and_never_reaches_the_app():
 
 async def test_redis_failure_while_saving_before_the_response_is_503_too():
     """쿠키 없는 첫 요청이 세션에 값을 넣으면 응답 직전 저장이 Redis 장애로 실패한다 — 그것도 503 이다
-    (integration-e2e ADR-012 결정 6, F-009). 500·연결 끊김도, 세션 쿠키 발급도 없다.
+    500·연결 끊김도, 세션 쿠키 발급도 없다.
     """
     from redis.asyncio import Redis
 

@@ -1,4 +1,4 @@
-"""실제 ``config.INSTALLED_APPS`` 가 registry 계약을 만족하는지 (FR-01·FR-08·SEC-05).
+"""실제 ``config.INSTALLED_APPS`` 가 registry 계약을 만족하는지.
 
 앞의 파일들이 fixture 로 registry **자체** 를 검증했다면, 여기서는 이 프로젝트의
 실제 앱 6개가 그 계약 위에서 실제로 조립되는지를 본다. fixture 는 통과하는데 실제
@@ -26,7 +26,7 @@ def installed() -> Apps:
 
 
 def test_installed_apps_are_explicit_config_class_paths():
-    """§6.1: 짧은 이름 축약은 공개 계약에서 제거했다."""
+    """짧은 이름 축약은 공개 계약에서 제거했다."""
     assert INSTALLED_APPS
     for entry in INSTALLED_APPS:
         assert entry.startswith("app.features."), entry
@@ -39,7 +39,7 @@ def test_registry_populates_every_installed_app(installed: Apps):
 
 
 def test_every_app_has_an_apps_module():
-    """FR-01: 모든 기본 앱이 자기 ``apps.py`` 를 갖는다."""
+    """모든 기본 앱이 자기 ``apps.py`` 를 갖는다."""
     packages = sorted(p.name for p in FEATURES_DIR.iterdir() if (p / "__init__.py").is_file())
     for name in packages:
         assert (FEATURES_DIR / name / "apps.py").is_file(), f"{name} 에 apps.py 가 없다"
@@ -51,7 +51,7 @@ def test_auth_app_has_no_models(installed: Apps):
 
 
 def test_model_lookup_works_for_real_apps(installed: Apps):
-    """FR-05: 실제 model 을 label + 이름으로 찾는다."""
+    """실제 model 을 label + 이름으로 찾는다."""
     assert installed.get_model("user", "user").__tablename__ == "users"
     assert installed.get_model("blog", "Post").__tablename__ == "blog_posts"
     with pytest.raises(AppLookupError):
@@ -59,7 +59,7 @@ def test_model_lookup_works_for_real_apps(installed: Apps):
 
 
 def test_home_ready_registers_access_log_sink():
-    """FR-08: sink 등록이 import 부수효과가 아니라 ``ready()`` hook 이다."""
+    """sink 등록이 import 부수효과가 아니라 ``ready()`` hook 이다."""
     from app.core.middlewares.access_log_sink import (
         get_access_log_sink,
         set_access_log_sink,
@@ -77,7 +77,7 @@ def test_home_ready_registers_access_log_sink():
 
 
 def test_ready_hooks_perform_no_io():
-    """SEC-05: ``ready()`` 본문에 DB·network·subprocess 호출이 없다.
+    """``ready()`` 본문에 DB·network·subprocess 호출이 없다.
 
     구현을 읽어 판정한다 — 실행으로는 "이번엔 안 했다" 만 알 수 있고 "절대 안 한다"
     는 알 수 없기 때문이다. hook 은 프로세스 로컬 결선만 해야 한다.
@@ -112,7 +112,7 @@ def test_ready_hooks_perform_no_io():
 
 
 def test_ready_is_called_once_per_app_on_repeated_populate():
-    """CR-07: 같은 registry 를 두 번 populate 해도 hook 은 앱당 한 번이다."""
+    """같은 registry 를 두 번 populate 해도 hook 은 앱당 한 번이다."""
     calls: list[str] = []
 
     class Counting(Apps):

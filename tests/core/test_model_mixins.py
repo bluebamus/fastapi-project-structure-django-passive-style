@@ -1,4 +1,4 @@
-"""Phase 2 — 공통 필드 Mixin 계약 (development-plan Phase 2).
+"""공통 필드 Mixin 계약.
 
 이 단계의 완료 조건은 **"겉으로는 아무것도 바뀌지 않는다"** 다. 그래서 여기서 보는
 것은 Mixin 이 예쁘게 쪼개졌는가가 아니라, 쪼갠 결과가 **원래와 같은 스키마**를
@@ -23,7 +23,7 @@ from app.core.models.models_base import (
     UUIDPrimaryKeyMixin,
 )
 
-#: Phase 2 이전의 실제 컬럼 배치. MySQL 8.4 에 ``create_all`` 로 만든 테이블의
+#: Mixin 도입 전의 실제 컬럼 배치. MySQL 8.4 에 ``create_all`` 로 만든 테이블의
 #: ``SHOW CREATE TABLE`` 에서 그대로 옮겼다(2026-08-19 측정).
 EXPECTED_COLUMN_ORDER = {
     "blog_posts": ["id", "title", "content", "author", "author_id", "created_at", "updated_at"],
@@ -99,7 +99,7 @@ def test_every_managed_model_uses_the_uuid_mixin():
 def test_mixins_are_composable_independently():
     """세 Mixin 을 따로 조합할 수 있다 — 이게 쪼갠 이유다.
 
-    application metadata 를 더럽히지 않도록 **별도 Base** 로 만든다(Phase 2 규칙).
+    application metadata 를 더럽히지 않도록 **별도 Base** 로 만든다.
     """
 
     class _IsolatedBase(DeclarativeBase):

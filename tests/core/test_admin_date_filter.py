@@ -1,6 +1,6 @@
 """관리 목록 날짜 필터 ``LocalDateFilter`` — 지역 날짜 경계·연산 4종·잘못된 입력.
 
-security-ops-hardening ADR-005(같은 날·이후·이전) + admin-session-hardening ADR-004(기간 ``S~E``, 양 끝 포함).
+같은 날·이후·이전 + 기간(``S~E``, 양 끝 포함).
 
 실제 SQLite 에 ``UTCDateTime`` 컬럼(접속 로그 ``created_at``)을 두고 필터가 만든 질의를 돌린다.
 시간대는 Asia/Seoul(UTC+9)로 고정한다 — 2026-10-12 의 지역 0시는 2026-10-11T15:00Z 다.
@@ -109,7 +109,7 @@ def test_quick_ranges_are_counted_in_local_days():
 
 
 # ---------------------------------------------------------------------------
-# 기간 (admin-session-hardening ADR-004)
+# 기간
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
     ("value", "expected"),

@@ -1,4 +1,4 @@
-"""비밀번호 해시 — Argon2 + 기존 bcrypt 해시의 점진 이전 (service-hardening ADR-013).
+"""비밀번호 해시 — Argon2 + 기존 bcrypt 해시의 점진 이전.
 
 새 해시는 pwdlib 의 Argon2 다(FastAPI 공식 문서가 권하는 현행 방식). 이전 코드가 저장한
 bcrypt 해시(``$2`` 접두사)는 **이전 규칙 그대로** 72바이트로 잘라 검증한다 — 그래야 기존

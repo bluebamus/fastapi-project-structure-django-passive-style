@@ -1,7 +1,7 @@
 """Catalog Service — 상품 비즈니스 규칙.
 
 세션을 주입받아 Repository 를 구성한다. **커밋하지 않는다** — 트랜잭션 경계는
-쓰기 View 본문이 소유한다(ADR-008). Raw 예제의 Service 와 이 점이 동일하다.
+쓰기 View 본문이 소유한다. Raw 예제의 Service 와 이 점이 동일하다.
 """
 
 from collections.abc import Sequence

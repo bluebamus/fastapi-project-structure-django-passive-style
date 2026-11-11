@@ -1,4 +1,4 @@
-"""DB 시각 타입 — UTC·마이크로초 저장 (service-hardening ADR-010 · C-9).
+"""DB 시각 타입 — UTC·마이크로초 저장.
 
 ``DateTime(timezone=True)`` 는 MySQL 에서 아무 일도 하지 않는다 — ``DATETIME`` 은 tz 를
 저장하지 않고, 드라이버는 aware 값의 tzinfo 를 떼어 **벽시계만** 보낸다. 그래서 KST 로 쓴

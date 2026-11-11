@@ -3,7 +3,7 @@
 **조회 전용 기능이라 read-only 세션만 노출한다.** Raw SQL 이라는 이유로 쓰기 세션을
 쓰지 않는다 — 세션 선택은 데이터 접근 방식이 아니라 **하는 일**이 결정한다.
 
-read-only 세션에서 Raw DML 을 시도하면 실행 전에 거부된다(ADR-017). 그 동작은
+read-only 세션에서 Raw DML 을 시도하면 실행 전에 거부된다. 그 동작은
 `app/features/reports/tests/test_raw_dml_workflow.py` 가 고정한다.
 """
 

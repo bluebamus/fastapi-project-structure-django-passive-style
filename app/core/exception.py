@@ -21,7 +21,7 @@ class ErrorResponse(BaseModel):
     고정해 두면 오류 처리를 한 곳에 둘 수 있다.
 
     ``detail`` 에는 **식별자만** 담는다 — 원본 DB 메시지나 bind 값은 담지 않는다.
-    그건 응답으로 나가는 순간 그대로 유출이다(C-12).
+    그건 응답으로 나가는 순간 그대로 유출이다.
     """
 
     error_code: str = Field(

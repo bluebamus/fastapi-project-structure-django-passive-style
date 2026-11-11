@@ -66,7 +66,7 @@ def _build(service_cls, repo):
 @pytest.mark.parametrize("service_cls,method,payload", _CASES)
 async def test_noop_update_returns_existing_not_404(service_cls, method, payload):
     """update 가 None(no-op)이어도 존재하는 엔티티는 404 없이 그대로 반환된다."""
-    # 사용자 수정은 변경 전 권한·비밀번호와 비교해 폐기를 판정한다(admin-session-hardening ADR-009).
+    # 사용자 수정은 변경 전 권한·비밀번호와 비교해 폐기를 판정한다.
     sentinel = SimpleNamespace(
         id="x1", author_id=None, is_active=True, is_superuser=False, hashed_password=None
     )

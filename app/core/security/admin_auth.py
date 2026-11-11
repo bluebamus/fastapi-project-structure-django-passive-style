@@ -1,16 +1,16 @@
-"""SQLAdmin(``/admin``) 로그인 — 슈퍼유저 세션 인증 (admin-login ADR-001·ADR-002).
+"""SQLAdmin(``/admin``) 로그인 — 슈퍼유저 세션 인증.
 
 ``/admin`` 의 모든 화면은 활성 슈퍼유저로 로그인해야 열린다. 세션은 Redis 서버 세션이다
-(``app.core.security.admin_session`` — 쿠키에는 무작위 세션 ID 만, admin-session-hardening ADR-001).
+(``app.core.security.admin_session`` — 쿠키에는 무작위 세션 ID 만).
 권한은 세션을 믿지 않고 **매 요청 DB 로 다시 확인**한다 — 강등·비활성화가 다음 요청부터 바로
 반영된다(세션 즉시 폐기와 이중 방어).
 
 상태를 바꾸는 모든 관리 요청(POST·PUT·PATCH·DELETE — 로그인·생성·수정·삭제·일괄 삭제·가져오기·
-로그아웃)은 ``AdminCsrfMiddleware`` 가 세션의 CSRF 토큰과 대조한다(admin-session-hardening ADR-002).
-로그아웃은 POST 전용이다(``require_post_logout``, ADR-003).
+로그아웃)은 ``AdminCsrfMiddleware`` 가 세션의 CSRF 토큰과 대조한다.
+로그아웃은 POST 전용이다(``require_post_logout``).
 
 이 모듈은 sqladmin 을 import 한다. 그래서 ``app.core.security`` 패키지가 다시 내보내지 않고,
-``app.core.apps.wiring.create_admin`` 이 관리 화면이 켜져 있을 때만(``ADMIN_DISABLED=false``) 함수 안에서 import 한다(SEC-01).
+``app.core.apps.wiring.create_admin`` 이 관리 화면이 켜져 있을 때만(``ADMIN_DISABLED=false``) 함수 안에서 import 한다.
 """
 
 from __future__ import annotations
@@ -68,12 +68,12 @@ RATE_LIMITED_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다�
 CSRF_FAILED_MESSAGE = "요청이 만료되었습니다. 다시 시도하세요."
 
 #: 토큰을 보지 않는 메서드 — 조회는 상태를 바꾸지 않는다. sqladmin 0.32 의 GET 라우트는 모두
-#: 조회다(단, ``@action`` 사용자 정의 작업은 GET 이다 — 이 저장소는 쓰지 않는다, ADR-002).
+#: 조회다(단, ``@action`` 사용자 정의 작업은 GET 이다 — 이 저장소는 쓰지 않는다).
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 _FORM_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
 
-#: 토큰을 보려고 버퍼링하는 폼 본문의 상한 — 넘으면 413(integration-e2e ADR-012 결정 7). 관리 폼은 수 KiB 다
+#: 토큰을 보려고 버퍼링하는 폼 본문의 상한 — 넘으면 413. 관리 폼은 수 KiB 다
 #: (CSV 가져오기는 헤더 토큰이라 이 경로를 타지 않는다). 설정이 아니라 상수다 — 바꿀 운영 이유가 없다.
 MAX_FORM_BODY_BYTES = 10 * 1024 * 1024
 #: 폼 필드 하나의 상한 — 넘으면 400. Starlette 폼 파서의 기본값과 같다.
@@ -89,8 +89,7 @@ class _BodyTooLarge(Exception):
 class AdminCsrf:
     """관리 화면 CSRF 토큰 — synchronizer token 패턴.
 
-    security-ops-hardening ADR-004(로그인 폼)를 admin-session-hardening ADR-002 가 로그인 이후
-    화면 전체로 넓혔다. 토큰은 관리 세션(Redis)에 하나 두고, 로그인 화면은 hidden 입력으로,
+    로그인 폼과 로그인 이후 화면 전체가 같은 토큰을 쓴다. 토큰은 관리 세션(Redis)에 하나 두고, 로그인 화면은 hidden 입력으로,
     로그인 이후 화면은 ``<meta name="csrf-token">`` 으로 싣는다 — 덮어쓴 ``sqladmin/base.html`` 의
     스크립트가 POST 폼에는 hidden ``csrf_token`` 을, 같은 출처 ``fetch``·XHR 에는 ``X-CSRF-Token``
     헤더를 붙인다. 다른 사이트는 이 화면을 읽을 수 없으므로 토큰을 모른다. 로그인에 성공하면
@@ -208,7 +207,7 @@ def _replay(body: bytes, receive: Receive) -> Receive:
 
 
 def require_post_logout(admin: Admin) -> None:
-    """sqladmin 의 GET 로그아웃 라우트를 POST 전용으로 바꾼다(ADR-003).
+    """sqladmin 의 GET 로그아웃 라우트를 POST 전용으로 바꾼다.
 
     GET 로그아웃은 다른 사이트가 ``<img src>`` 로 강제 로그아웃시킬 수 있다. POST 로 바꾸면
     ``AdminCsrfMiddleware`` 가 토큰을 요구하고, GET 은 405 다. 화면의 로그아웃 링크는 덮어쓴

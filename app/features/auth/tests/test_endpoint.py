@@ -1,7 +1,7 @@
 """Auth 엔드포인트 테스트 — register/login/me/refresh/logout 전체 경로.
 
 DB 는 in-memory SQLite(``tests/session_overrides.py``), Redis 는 ``get_redis`` 를 오버라이드한
-fakeredis 다 — 레이트 리밋·refresh 회전이 실물 클래스로 돈다(service-hardening ADR-022).
+fakeredis 다 — 레이트 리밋·refresh 회전이 실물 클래스로 돈다.
 """
 
 import bcrypt
@@ -369,7 +369,7 @@ async def test_register_rate_limit_per_ip(client):
 
 
 # ---------------------------------------------------------------------------
-# 인가 연동 (service-hardening F2)
+# 인가 연동
 # ---------------------------------------------------------------------------
 async def test_admin_deactivation_revokes_refresh_even_after_reactivation(env):
     """관리자가 API 로 비활성화하면 ``revoke_user`` 가 family 를 폐기한다.
@@ -410,7 +410,7 @@ async def test_access_token_carries_the_superuser_flag(env):
 async def test_every_auth_401_carries_the_bearer_challenge(env):
     """로그인·refresh·logout 의 자격 오류와 비활성 사용자의 ``/me`` 도 ``WWW-Authenticate: Bearer`` 를 싣는다.
 
-    보호 라우트(토큰 검사)만이 아니라 이 앱이 내는 401 은 모두 같다(integration-e2e ADR-012 결정 3, F-012).
+    보호 라우트(토큰 검사)만이 아니라 이 앱이 내는 401 은 모두 같다.
     """
     client, maker, _ = env
     await _register(client)
@@ -442,7 +442,7 @@ async def test_every_auth_401_carries_the_bearer_challenge(env):
 async def test_me_reads_the_user_from_primary(
     monkeypatch, primary_active, replica_active, expected
 ):
-    """인증 사용자 조회는 replica 가 아니라 primary 에서 읽는다(integration-e2e ADR-012 결정 5, F-008).
+    """인증 사용자 조회는 replica 가 아니라 primary 에서 읽는다.
 
     복제가 밀려도 유효한 토큰이 401 이 되지 않고, 비활성화는 즉시 반영된다. 라우팅 세션 팩토리를
     writer·reader 두 SQLite 로 바꿔 끼워 운영 의존성(``get_read_only_db_session``)을 그대로 탄다.

@@ -1,4 +1,4 @@
-"""로그 비밀값 가리기 (log-redaction-fixes ADR-001·ADR-002).
+"""로그 비밀값 가리기.
 
 각 핸들러 경로를 **실제 구성**(``build_dictconfig()``·``setup_uvicorn_logging()``·uvicorn CLI 의
 ``LOGGING_CONFIG``·Celery 포매터)으로 적용해 ``logger.exception`` 을 남기고 출력을 본다.
@@ -178,7 +178,7 @@ def test_uvicorn_access_args_stay_a_tuple(restore_logging):
         ("/x?token=abc.def&page=2", f"GET /x?token={MASK}&page=2 HTTP/1.1", "abc.def"),
         (f"/cb?access_token={SECRETS[2]}", f"GET /cb?access_token={MASK} HTTP/1.1", SECRETS[2]),
         # 값이 빈 키·경로 끝의 bearer — 인자 하나만 보면 깨끗한데 템플릿의 " HTTP/1.1" 과 이어 붙이면
-        # 규칙에 걸린다. 예전에는 args 를 None 으로 접어 AccessFormatter 가 줄마다 오류를 냈다(F-007).
+        # 규칙에 걸린다. 예전에는 args 를 None 으로 접어 AccessFormatter 가 줄마다 오류를 냈다.
         ("/x?password=", f"GET {MASK} HTTP/1.1", None),
         ("/x?token=", f"GET {MASK} HTTP/1.1", None),
         ("/auth/bearer", f"GET {MASK} HTTP/1.1", None),

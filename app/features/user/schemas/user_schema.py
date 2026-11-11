@@ -19,7 +19,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """사용자 생성 요청(슈퍼유저 전용).
 
-    비밀번호는 필수다 — 로그인할 수 없는 계정이 이름만 선점하지 못하게 한다(ledger F-023).
+    비밀번호는 필수다 — 로그인할 수 없는 계정이 이름만 선점하지 못하게 한다.
     """
 
     password: str = Field(..., min_length=8, max_length=128, description="비밀번호(8자 이상)")

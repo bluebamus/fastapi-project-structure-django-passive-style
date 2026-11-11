@@ -1,7 +1,7 @@
-"""JWT 발급·검증 (service-hardening ADR-014).
+"""JWT 발급·검증.
 
 claims 는 ``sub, type, iat, nbf, exp, jti, iss, aud`` 가 기본이고 access 는 ``username``·
-``su``(슈퍼유저 여부, bool — 단계 F2, ADR-030), refresh 는 ``fam``(회전 family id)을 더한다.
+``su``(슈퍼유저 여부, bool), refresh 는 ``fam``(회전 family id)을 더한다.
 검증은 설정 알고리즘 하나만 받고(``alg`` 혼동 차단), 발급자·대상·필수 claim·토큰 종류를 모두 본다. 실패는 원인과 무관하게
 ``InvalidTokenException``(401) 하나다 — 원인을 나눠 알려 주면 위조 시도의 오라클이 된다.
 
@@ -61,7 +61,7 @@ class TokenService:
         }
 
     def issue_access(self, sub: str, username: str, is_superuser: bool) -> IssuedToken:
-        """access 토큰을 발급한다. ``su`` 는 인가 의존성이 DB 조회 없이 읽는다(ADR-017)."""
+        """access 토큰을 발급한다. ``su`` 는 인가 의존성이 DB 조회 없이 읽는다."""
         return self._issue(ACCESS, sub, {"username": username, "su": is_superuser})
 
     def issue_refresh(self, sub: str, family: str) -> IssuedToken:

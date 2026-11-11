@@ -1,4 +1,4 @@
-"""``BaseRepository`` 의 공용 CRUD 계약 (NFR-08 커버리지 포함).
+"""``BaseRepository`` 의 공용 CRUD 계약 (커버리지 포함).
 
 이 class 는 템플릿 사용자가 새 기능마다 상속하는 코드다 — 여기서 조용히 깨지면
 모든 앱이 함께 깨진다. 그런데 기존 테스트는 기능별 Repository 의 얇은 wrapper 만
@@ -115,7 +115,7 @@ async def test_get_all_without_created_at_orders_by_pk_desc(
 async def test_get_all_orders_by_created_at_then_pk_and_pages_do_not_overlap(
     session: AsyncSession,
 ):
-    """기본 정렬은 ``created_at DESC, PK DESC`` 다(service-hardening F-002).
+    """기본 정렬은 ``created_at DESC, PK DESC`` 다.
 
     정렬 없는 ``OFFSET/LIMIT`` 은 페이지 사이 중복·누락을 만든다. ``created_at`` 이 같은 행은
     PK 로 순서가 정해져야 offset 페이지가 겹치지 않는다. 삽입 순서를 기대 순서와 다르게 둔다.
@@ -161,7 +161,7 @@ async def test_delete_paths(repo: WidgetRepository, seeded: list[Widget]):
 
 
 # =============================================================================
-# rowcount 의미 분리 (Phase 3a · ledger F-021)
+# rowcount 의미 분리
 # =============================================================================
 async def test_update_with_unchanged_values_still_returns_the_row(session: AsyncSession):
     """값이 그대로인 PATCH 도 리소스를 돌려준다 — 404 가 아니다.
@@ -188,10 +188,10 @@ async def test_update_of_a_missing_row_returns_none(session: AsyncSession):
 
 
 # =============================================================================
-# 공개 계약 (Phase 3b · ADR-016)
+# 공개 계약
 # =============================================================================
 #: BaseRepository 가 공개하는 **전부**. 기능 코드가 실제로 쓰던 7개에 ``exists`` 를
-#: 더한 8개다(Phase 0 기준선 `baseline/repository-public-api.md` 근거).
+#: 더한 8개다.
 PUBLIC_CONTRACT = frozenset(
     {"create", "get_by_id", "get_one", "get_all", "count", "exists", "update", "delete"}
 )
@@ -200,12 +200,11 @@ PUBLIC_CONTRACT = frozenset(
 def test_public_contract_is_exactly_these_eight():
     """계약이 넓어지지 않았는지 본다.
 
-    넓은 계약은 두 배로 비싸다 — ORM/Raw 가 "Repository 구현만 다르다"(ADR-002)를
+    넓은 계약은 두 배로 비싸다 — ORM/Raw 가 "Repository 구현만 다르다"를
     지키려면 여기 있는 것을 **Raw 에서도 전부** 구현해야 한다. 편의 메서드를 하나씩
     더하다 보면 그 비용이 조용히 늘어난다.
 
-    새 메서드가 필요하면 기능별 Repository 에 둔다. 정말 공통이면 이 목록과
-    charter §2-3 을 함께 고친다.
+    새 메서드가 필요하면 기능별 Repository 에 둔다. 정말 공통이면 이 목록을 고친다.
     """
     import ast
     from pathlib import Path
@@ -261,7 +260,7 @@ def test_removed_methods_do_not_come_back(removed: str):
     """지운 메서드가 되살아나지 않았는지 — "같은 객체인가"가 아니라 "없는가"를 본다."""
     assert not hasattr(BaseRepository, removed), (
         f"{removed} 이 다시 생겼다. 정말 필요하면 기능별 Repository 에 두고, "
-        "공통이어야 한다면 PUBLIC_CONTRACT 와 charter 를 함께 고쳐라"
+        "공통이어야 한다면 PUBLIC_CONTRACT 를 고쳐라"
     )
 
 

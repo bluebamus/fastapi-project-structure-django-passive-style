@@ -5,13 +5,12 @@ User Service
 트랜잭션 경계: 요청 경로는 쓰기 핸들러 본문이 응답 DTO 검증 뒤 `await service.commit()` 으로,
 요청 밖은 background_session() 이 커밋한다. 서비스는 커밋하지 않는다(세션은 의존성이 연다).
 
-인가(service-hardening F2): 목록·생성·삭제는 라우트가 슈퍼유저로 막고, 단건 조회·수정은
+인가: 목록·생성·삭제는 라우트가 슈퍼유저로 막고, 단건 조회·수정은
 여기서 ``OwnershipPolicy`` 로 "본인 또는 슈퍼유저" 를 판정한다 — **존재 확인보다 먼저**
 판정해 남의 ID 를 넣어 404/403 차이로 존재 여부를 알아내지 못하게 한다. 권한 필드
 (``is_active``·``is_superuser``) 변경은 슈퍼유저만 한다. 비활성화·강등·삭제는 그 사용자의
 관리 세션·refresh family 를 폐기한다 — 무엇을 지울지는 ``revocation_for_change``·``REVOKE_ON_DELETE`` 가 정하고
-(비활성화·강등·삭제는 둘 다), 관리 화면의 ``UserAdmin`` 훅과 같은 판정이다(admin-session-hardening
-ADR-010). 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
+(비활성화·강등·삭제는 둘 다), 관리 화면의 ``UserAdmin`` 훅과 같은 판정이다. 폐기는 커밋 전이다 — 실패하면 커밋되지 않는다.
 """
 
 import asyncio

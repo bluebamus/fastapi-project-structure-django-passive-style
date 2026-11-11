@@ -1,4 +1,4 @@
-"""Celery 태스크 module 발견 (service-hardening ADR-012·C-14).
+"""Celery 태스크 module 발견.
 
 워커의 ``include`` 는 ``INSTALLED_APPS`` 로 채운 registry 가 만든다. 여기서 고정하는 것:
 

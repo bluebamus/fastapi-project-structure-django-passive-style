@@ -1,4 +1,4 @@
-"""/admin 로그인 통합 흐름 · 로그인 화면 · 세션 사용 범위 (admin-login ADR-001~ADR-003·ADR-006).
+"""/admin 로그인 통합 흐름 · 로그인 화면 · 세션 사용 범위.
 
 조립은 운영과 같다 — ``create_app()`` 이 registry 로 SQLAdmin 을 만들고, ``AuthConfig.ready()``
 가 등록한 자격 확인(``UserAdminCredentials``)을 ``AdminAuthBackend`` 에 넣는다. 바꾸는 것은
@@ -151,7 +151,7 @@ async def test_login_page_is_the_bootstrap_screen(env):
         assert f'<label for="{field}"' in html, f"{field} 레이블이 입력에 연결되지 않았다"
     assert "autofocus" in re.search(r"<input[^>]*name=\"username\"[^>]*>", html, re.DOTALL).group(0)
     assert "Admin</h1>" in html, "제목(admin.title)이 없다"
-    # CSRF 토큰은 폼 안의 hidden 입력이다(security-ops-hardening ADR-004).
+    # CSRF 토큰은 폼 안의 hidden 입력이다.
     form = re.search(r"<form.*?</form>", html, re.DOTALL).group(0)
     assert re.search(r'<input type="hidden" name="csrf_token" value="[A-Za-z0-9_-]{43,}">', form)
 
@@ -176,7 +176,7 @@ async def test_login_page_escapes_the_error_message(env):
 
 
 # ---------------------------------------------------------------------------
-# 세션 사용 범위 — 세션은 /admin 전용이다 (admin-login ADR-006)
+# 세션 사용 범위 — 세션은 /admin 전용이다
 # ---------------------------------------------------------------------------
 async def test_session_middleware_lives_only_in_the_admin_sub_app(env):
     client, _ = env
@@ -190,9 +190,7 @@ async def test_session_middleware_lives_only_in_the_admin_sub_app(env):
         not {"SessionMiddleware", "RedisSessionMiddleware"} & names
     ), "메인 앱에 세션 미들웨어가 붙었다"
     assert admin_stack.count(RedisSessionMiddleware) == 1
-    assert "SessionMiddleware" not in [
-        c.__name__ for c in admin_stack
-    ], "서명 쿠키 세션이 남았다(admin-session-hardening ADR-001)"
+    assert "SessionMiddleware" not in [c.__name__ for c in admin_stack], "서명 쿠키 세션이 남았다"
 
 
 async def test_admin_session_cookie_does_not_authenticate_the_api(env):

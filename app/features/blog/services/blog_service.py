@@ -29,7 +29,7 @@ class BlogService(BaseService):
     async def create_post(self, data: PostCreate, principal: Principal) -> Post:
         """게시글을 생성한다(커밋은 호출자가 수행).
 
-        작성자(``author_id``·``author``)는 요청 본문이 아니라 인증 주체로 채운다(ADR-018).
+        작성자(``author_id``·``author``)는 요청 본문이 아니라 인증 주체로 채운다.
         """
         self.log.debug("게시글 생성: title=%s", data.title)
         return await self.repository.create(

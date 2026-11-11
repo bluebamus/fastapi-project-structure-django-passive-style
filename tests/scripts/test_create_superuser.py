@@ -1,4 +1,4 @@
-"""``scripts/create_superuser.py`` — 생성·승격·비밀번호 규칙·종료 코드 (service-hardening ADR-019).
+"""``scripts/create_superuser.py`` — 생성·승격·비밀번호 규칙·종료 코드.
 
 ``main()`` 을 그대로 부르고 세션 팩토리만 SQLite 파일 DB 로 바꾼다. 스크립트가
 ``asyncio.run`` 으로 새 루프를 만들므로 엔진도 그 루프 안(팩토리 호출 시점)에서 만든다.
@@ -161,7 +161,7 @@ async def test_production_revoker_deletes_that_users_sessions_in_redis(monkeypat
 
 
 def test_cli_set_password_revokes_refresh_and_admin_sessions(db, monkeypatch):
-    """계약(integration-e2e ADR-012 결정 4): ``--set-password`` 는 API 비밀번호 변경과 같게 그 사용자의 refresh family 와
+    """계약: ``--set-password`` 는 API 비밀번호 변경과 같게 그 사용자의 refresh family 와
     관리 세션을 지운다 — ``main()`` 의 기본 조립(``revoke_sessions_in_redis``)으로, 다른 사용자는 건드리지 않는다.
     """
     import asyncio

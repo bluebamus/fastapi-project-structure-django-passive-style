@@ -1,4 +1,4 @@
-"""TokenService — claims·검증 거부 사례 (service-hardening ADR-014).
+"""TokenService — claims·검증 거부 사례.
 
 거부 사례는 서명 키로 직접 만든 토큰으로 시험한다 — 서명이 맞아도 claim 하나가
 어긋나면 거부돼야 한다는 것이 요점이다.
@@ -77,7 +77,7 @@ def test_access_token_carries_all_claims(service):
 
 
 def test_access_token_carries_the_superuser_flag(service):
-    """``su`` 는 인가 의존성이 DB 조회 없이 읽는 슈퍼유저 여부다 (service-hardening ADR-030)."""
+    """``su`` 는 인가 의존성이 DB 조회 없이 읽는 슈퍼유저 여부다."""
     issued = service.issue_access("admin-1", "root", True)
 
     assert service.decode(issued.token, ACCESS)["su"] is True

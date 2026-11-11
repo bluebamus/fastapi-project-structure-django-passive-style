@@ -52,7 +52,7 @@ __all__ = [
     "mark_read_only",
     "AsyncSessionLocal",
     "BackgroundSessionLocal",
-    # 정식 이름 (ADR-009)
+    # 정식 이름
     "get_routed_db_session",
     "get_read_only_db_session",
     "get_writer_db_session",

@@ -1,6 +1,6 @@
 """Registry 계약 테스트 공통 fixture.
 
-전역 registry 를 쓰지 않는다 — 테스트마다 격리된 ``Apps()`` 를 만든다(NFR-05).
+전역 registry 를 쓰지 않는다 — 테스트마다 격리된 ``Apps()`` 를 만든다.
 fixture 앱은 import 부수효과로 이벤트를 남기므로, 매 테스트 전에 이벤트 로그를
 비우고 fixture 모듈을 ``sys.modules`` 에서 걷어내 "이번 population 이 무엇을
 import 했는가" 만 관찰되게 한다.

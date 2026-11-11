@@ -4,7 +4,7 @@ Django ``django.apps.AppConfig`` 의 공개 의미(``name``·``label``·``verbos
 ``path``·``ready()``)를 보존하되, ORM 과 웹 프레임워크는 이 프로젝트의 것을 쓴다.
 
 **framework-neutral 이다** — 이 모듈은 FastAPI 도 SQLAdmin 도 SQLAlchemy 도 import
-하지 않는다(NFR-06). Router 와 admin_views 는 "그 이름의 속성을 가져온다" 수준으로만
+하지 않는다. Router 와 admin_views 는 "그 이름의 속성을 가져온다" 수준으로만
 다루고, 그것으로 무엇을 하는지는 ``app/core/apps/wiring.py`` 의 adapter 가 정한다.
 
 등록 항목 해석(``create()``)은 Django 규칙 그대로다.
@@ -45,7 +45,7 @@ def module_is_absent(exc: ModuleNotFoundError, target: str) -> bool:
 def import_optional(dotted: str) -> ModuleType | None:
     """선택 module 을 import 한다 — 없으면 ``None``, 내부 오류면 전파.
 
-    이 한 줄의 구분이 passive 등록의 핵심 안전장치다(NFR-03·SEC-07).
+    이 한 줄의 구분이 passive 등록의 핵심 안전장치다.
     """
     try:
         return importlib.import_module(dotted)
@@ -59,7 +59,7 @@ def _is_mapped_class(obj: object) -> bool:
     """SQLAlchemy declarative 매핑이 끝난 class 인지 본다.
 
     ``sqlalchemy`` 를 import 하지 않으려고 mapper 속성 존재로 판정한다 — registry
-    core 를 ORM 에 묶지 않기 위해서다(NFR-06).
+    core 를 ORM 에 묶지 않기 위해서다.
     """
     return isinstance(obj, type) and hasattr(obj, "__mapper__")
 
@@ -87,7 +87,7 @@ class AppConfig:
     router_attribute: str | None = None
     models_module: str = "models"
     admin_module: str = "admin"
-    #: Celery 태스크 module. 있으면 워커가 include 한다(service-hardening ADR-012).
+    #: Celery 태스크 module. 있으면 워커가 include 한다.
     tasks_module: str = "tasks"
     #: 이 앱 router 를 붙일 prefix. 앱별로 바꿀 수 있다.
     router_prefix: str = "/api"
@@ -153,7 +153,7 @@ class AppConfig:
 
     @classmethod
     def _select_config_class(cls, package: str) -> type[AppConfig] | None:
-        """``<package>.apps`` 에서 기본 config 를 고른다 (CR-01).
+        """``<package>.apps`` 에서 기본 config 를 고른다.
 
         Returns:
             선택된 subclass. ``apps`` module 이 없거나 후보가 0개면 ``None``.
@@ -164,7 +164,7 @@ class AppConfig:
             return None
 
         # 다른 module 에서 import 해 온 config 는 후보가 아니다 — 이 앱이 선언한 것만
-        # 본다. (열거 순서는 dict 삽입 순서라 실행마다 동일하다 — NFR-01)
+        # 본다. (열거 순서는 dict 삽입 순서라 실행마다 동일하다)
         candidates = [
             obj
             for obj in vars(module).values()
@@ -191,7 +191,7 @@ class AppConfig:
 
     @classmethod
     def _load_config_class(cls, entry: str) -> type[AppConfig]:
-        """entry 를 explicit config class 경로로 해석한다 (CR-02)."""
+        """entry 를 explicit config class 경로로 해석한다."""
         module_path, _, class_name = entry.rpartition(".")
         unresolved = (
             f"config.INSTALLED_APPS 의 항목 '{entry}' 를 해석할 수 없습니다. "
@@ -247,7 +247,7 @@ class AppConfig:
         """models 준비 후 실행할 앱별 초기화 hook.
 
         기본 구현은 아무것도 하지 않는다. 재정의할 때는 **process-local wiring 만**
-        허용한다 — DB query, network call, subprocess 실행, secret 출력 금지(SEC-05).
+        허용한다 — DB query, network call, subprocess 실행, secret 출력 금지.
         migration 과 CLI 도 이 hook 을 실행할 수 있기 때문이다.
         """
 

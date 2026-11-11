@@ -1,16 +1,16 @@
-"""첫 관리자 만들기 — Django ``createsuperuser`` 대응 (service-hardening ADR-019).
+"""첫 관리자 만들기 — Django ``createsuperuser`` 대응.
 
     uv run python -m scripts.create_superuser --username admin --email admin@example.com
     printf '%s\\n' "$ADMIN_PASSWORD" | uv run python -m scripts.create_superuser \\
         --username admin --email admin@example.com --password-stdin
 
 배포 전 할 일의 하나다 — 이렇게 만든 계정이 ``/admin`` 로그인 계정이기도 하다(활성 슈퍼유저만
-관리 화면에 들어간다, admin-login ADR-001). 마이그레이션은 아무도 슈퍼유저로 만들지 않는다.
+관리 화면에 들어간다). 마이그레이션은 아무도 슈퍼유저로 만들지 않는다.
 
 * 사용자가 없으면 슈퍼유저로 **만든다**(이메일·비밀번호 필수).
 * 이미 있으면 슈퍼유저로 **승격**한다. 비밀번호는 ``--set-password`` 를 줄 때만 바꾼다 —
   승격하려다 기존 비밀번호를 덮어쓰는 사고를 막는다. 비밀번호를 바꾸면 커밋 뒤 그 사용자의
-  ``/admin`` 세션과 API refresh family 를 모두 지운다(Redis, admin-session-hardening ADR-010 — 판정
+  ``/admin`` 세션과 API refresh family 를 모두 지운다(Redis — 판정
   ``REVOKE_ON_PASSWORD_CHANGE``) — 옛 비밀번호로 연 세션·토큰이 남지 않는다. Redis 에 닿지 못하면
   종료 코드 1 이다(비밀번호는 이미 바뀌었다 — 이 스크립트는 API 와 다른 프로세스라 커밋 전 폐기를 쓰지 않는다).
 

@@ -9,10 +9,10 @@ module(``tasks.py``)은 선택이라 만들지 않는다 — 필요할 때 기�
 
 **설정 파일은 건드리지 않는다.** 생성 직후 앱은 *미설치* 상태이고, 사용자가
 ``config.INSTALLED_APPS`` 에 출력된 config class 경로를 붙여 넣어야 Router·Models·
-Admin·``ready()`` 가 활성화된다(FR-10). 생성기가 설정을 몰래 고치면 "무엇이 설치돼
+Admin·``ready()`` 가 활성화된다. 생성기가 설정을 몰래 고치면 "무엇이 설치돼
 있는가" 의 답이 두 곳으로 갈라진다 — 그러면 이 프로젝트의 존재 이유가 사라진다.
 
-안전장치 두 가지(SEC-03·SEC-04):
+안전장치 두 가지:
 
 * 경로 이탈 차단 — ``..``, 절대 경로, separator 를 거부하고, 최종 대상의 resolve
   결과가 resolve 된 ``app/features`` 하위인지 확인한다(symlink 통과 후 기준).
@@ -67,7 +67,7 @@ def resolve_target(name: str, features_dir: Path = FEATURES_DIR) -> Path:
 
     이름 검사만으로는 부족하다 — ``app/features`` 자체가 symlink 이거나 그 아래에
     symlink 가 있으면 이름이 멀쩡해도 resolve 결과가 경계를 벗어날 수 있다. 그래서
-    **resolve 한 뒤에** 다시 확인한다(SEC-03).
+    **resolve 한 뒤에** 다시 확인한다.
     """
     validate_name(name)
     root = features_dir.resolve()
@@ -275,7 +275,7 @@ def create_app_scaffold(
     """앱 골격을 만들고 최종 경로를 돌려준다.
 
     임시 디렉터리에서 전체를 만든 뒤 통째로 옮긴다 — 중간에 실패해도 ``app/features``
-    아래에 반쯤 만들어진 앱이 남지 않는다(SEC-04).
+    아래에 반쯤 만들어진 앱이 남지 않는다.
 
     Raises:
         AppScaffoldError: 이름이 잘못됐거나 대상이 이미 존재한다.

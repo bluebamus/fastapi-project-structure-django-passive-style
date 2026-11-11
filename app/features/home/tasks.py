@@ -1,12 +1,11 @@
 """Home 기능의 Celery 태스크.
 
 워커는 ``AppConfig.tasks_module``(기본 ``"tasks"``)로 이 module 을 찾아 include 한다
-(service-hardening ADR-012). 요청 밖이므로 세션은 ``background_session()`` 이 열고,
+요청 밖이므로 세션은 ``background_session()`` 이 열고,
 서비스 조립은 HTTP 경로와 같은 provider 함수에 맡긴다 — 조립 규칙이 한 곳에 있다.
 
 주기 실행(Celery beat)도 여기서 등록한다. 중앙 Celery 앱은 기능을 import 하지 않고, beat 는
-기동 때 워커와 같은 ``include`` 로 이 module 을 불러온 뒤 일정을 읽는다(security-ops-hardening
-ADR-003). 앱을 ``INSTALLED_APPS`` 에서 빼면 태스크와 일정이 함께 빠진다.
+기동 때 워커와 같은 ``include`` 로 이 module 을 불러온 뒤 일정을 읽는다. 앱을 ``INSTALLED_APPS`` 에서 빼면 태스크와 일정이 함께 빠진다.
 """
 
 from typing import Any

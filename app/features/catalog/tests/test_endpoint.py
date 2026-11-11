@@ -1,4 +1,4 @@
-"""Catalog 상품 CRUD 엔드포인트 (SCN-ORM-001).
+"""Catalog 상품 CRUD 엔드포인트.
 
 registry 등록 → 라우터 마운트 → View → Dependency → Service → Repository → DB 의
 전체 경로를 in-memory SQLite 로 검증한다.
@@ -55,7 +55,7 @@ def test_catalog_routes_are_mounted_by_the_registry():
 
 
 def test_product_model_is_collected_by_the_registry():
-    """migration 과 runtime 이 같은 모델 집합을 본다(C-3)."""
+    """migration 과 runtime 이 같은 모델 집합을 본다."""
     from app.core.apps import apps
     from config import INSTALLED_APPS
 
@@ -82,7 +82,7 @@ async def test_create_and_get_product(client):
 
 
 async def test_timestamps_are_utc_with_an_offset(client):
-    """응답 시각은 오프셋을 가진 UTC 다(service-hardening ADR-010) — 생성 응답과 DB 에서 다시 읽은 값 모두."""
+    """응답 시각은 오프셋을 가진 UTC 다 — 생성 응답과 DB 에서 다시 읽은 값 모두."""
     created = await client.post("/api/v1/catalog/products", json=_NEW)
     fetched = await client.get(f"/api/v1/catalog/products/{created.json()['id']}")
 
@@ -117,7 +117,7 @@ async def test_list_is_paginated_and_stable(client):
 
 
 async def test_list_rejects_an_unbounded_limit(client):
-    """무제한 조회를 허용하지 않는다 (NFR-002)."""
+    """무제한 조회를 허용하지 않는다."""
     assert (await client.get("/api/v1/catalog/products?limit=1000")).status_code == 422
 
 
@@ -134,7 +134,7 @@ async def test_active_only_filter_uses_the_domain_query(client):
 
 
 async def test_active_only_total_counts_only_active_products(client):
-    """total 은 items 와 같은 조건으로 센다 — 전체 개수를 주면 페이지 수가 틀린다(F-005)."""
+    """total 은 items 와 같은 조건으로 센다 — 전체 개수를 주면 페이지 수가 틀린다."""
     await client.post("/api/v1/catalog/products", json={**_NEW, "sku": "SKU-ON"})
     await client.post(
         "/api/v1/catalog/products", json={**_NEW, "sku": "SKU-OFF", "is_active": False}
@@ -183,7 +183,7 @@ async def test_invalid_payload_is_422(client):
 
 
 async def test_explicit_null_on_a_not_null_column_is_422(client):
-    """PATCH 의 명시적 null 은 NOT NULL 컬럼이면 422 다 — MySQL 에서 1048 → 500 이던 경로(F-009)."""
+    """PATCH 의 명시적 null 은 NOT NULL 컬럼이면 422 다 — MySQL 에서 1048 → 500 이던 경로."""
     created = (await client.post("/api/v1/catalog/products", json=_NEW)).json()
 
     resp = await client.patch(f"/api/v1/catalog/products/{created['id']}", json={"name": None})
@@ -206,7 +206,7 @@ async def test_explicit_null_on_a_nullable_column_clears_it(client):
 
 
 async def test_error_response_carries_no_sql(client):
-    """오류 응답에 SQL 본문·bind 값이 실리지 않는다 (C-12)."""
+    """오류 응답에 SQL 본문·bind 값이 실리지 않는다."""
     await client.post("/api/v1/catalog/products", json=_NEW)
 
     conflict = await client.post("/api/v1/catalog/products", json=_NEW)

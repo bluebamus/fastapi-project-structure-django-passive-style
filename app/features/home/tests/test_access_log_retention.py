@@ -1,4 +1,4 @@
-"""접속 로그 보존 삭제 — 경계·배치·0·설정·beat 일정·조립 (security-ops-hardening ADR-002·ADR-003).
+"""접속 로그 보존 삭제 — 경계·배치·0·설정·beat 일정·조립.
 
 실제 SQLite(in-memory)로 service → repository → DELETE 를 돈다. 기준 시각은 ``now=`` 로 주입한다.
 """

@@ -1,9 +1,9 @@
-"""E 게이트 — 선행 구현 피드백 보안 하드닝 (development-plan §10.1 E).
+"""보안 하드닝 — SQL·비밀값 유출 차단과 배포 안전 설정.
 
 선행 참조 구현에서 실제로 터진 결함들을 이 저장소 착수 게이트로 이관한 것이다.
 네 가지를 기계로 고정한다.
 
-1. SQL 본문·바인딩 파라미터가 **어떤 handler 로도** 새지 않는다 (C-5).
+1. SQL 본문·바인딩 파라미터가 **어떤 handler 로도** 새지 않는다.
 2. alembic 실행이 앱 로거를 죽이지 않는다.
 3. `.env.example` 을 그대로 `.env` 로 써도 기동한다.
 4. `/admin` 은 로그인으로 막고, 예전 승인 플래그는 남지 않는다.
@@ -40,7 +40,7 @@ _VALID_SECRETS = {
 
 
 # =============================================================================
-# 1. SQL 유출 차단 (C-5)
+# 1. SQL 유출 차단
 # =============================================================================
 def _sql_record(logger_name: str, level: int, message: str) -> logging.LogRecord:
     return logging.LogRecord(
@@ -192,7 +192,7 @@ def test_env_example_only_asks_to_fill_secrets(monkeypatch: pytest.MonkeyPatch, 
 
 
 # =============================================================================
-# 4. /admin 은 로그인으로 막는다 — 배포 환경 승인 플래그는 제거됐다 (admin-login ADR-004)
+# 4. /admin 은 로그인으로 막는다 — 배포 환경 승인 플래그는 제거됐다
 # =============================================================================
 #: 제거된 설정 이름. 이 파일 자체가 검사 대상에 걸리지 않도록 조각으로 둔다.
 _REMOVED_ACK = "ADMIN_UNAUTHENTICATED" + "_ACK"
@@ -447,7 +447,7 @@ def test_ci_pipes_into_tee_only_with_pipefail():
     """`pytest | tee` 는 pipefail 없이는 tee 의 0 을 돌려준다 — 실패가 초록으로 보인다.
 
     GitHub 기본 셸(`bash -e {0}`)에는 pipefail 이 없다. 브라우저 단계가 실제로
-    7 errors 인 채 초록이었다(F-033).
+    7 errors 인 채 초록이었다.
     """
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     steps = workflow.split("- name:")
@@ -458,7 +458,7 @@ def test_ci_pipes_into_tee_only_with_pipefail():
 
 
 def test_ci_installs_dependencies_with_locked():
-    """CI 의 의존성 설치는 락이 `pyproject.toml` 과 어긋나면 실패해야 한다(service-hardening F-004).
+    """CI 의 의존성 설치는 락이 `pyproject.toml` 과 어긋나면 실패해야 한다.
 
     `uv sync --frozen` 은 락을 **검사하지 않고** 그대로 설치한다 — 의존성을 고치고 락 갱신을
     잊어도 CI 가 초록이다. 그 검사를 하는 플래그는 `--locked` 다.

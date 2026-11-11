@@ -1,4 +1,4 @@
-"""시각 정책 — UTC·마이크로초 저장 (service-hardening 단계 D · ADR-010 · C-9).
+"""시각 정책 — UTC·마이크로초 저장.
 
 ``UTCDateTime`` 의 bind/result 규칙, SQLite 왕복, 모델 기본값, Alembic 렌더 훅, 시각
 생성의 단일 출처(``TimezoneSettings.utc_now``)를 고정한다.
@@ -56,7 +56,7 @@ def test_none_passes_through_both_ways():
 
 
 def test_mysql_column_is_datetime_with_microseconds():
-    """MySQL 은 ``DATETIME(6)`` — fsp 0 이면 마이크로초가 잘린다(F-017)."""
+    """MySQL 은 ``DATETIME(6)`` — fsp 0 이면 마이크로초가 잘린다."""
     assert sa.Column("t", UTCDateTime()).type.compile(dialect=mysql.dialect()) == "DATETIME(6)"
     assert sa.Column("t", UTCDateTime()).type.compile(dialect=sqlite.dialect()) == "DATETIME"
 

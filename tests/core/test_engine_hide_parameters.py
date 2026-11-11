@@ -1,4 +1,4 @@
-"""DB 오류·로그에 바인드 값이 실리지 않는다 — ``hide_parameters=True`` (security-ops-hardening ADR-001).
+"""DB 오류·로그에 바인드 값이 실리지 않는다 — ``hide_parameters=True``.
 
 고유 제약 위반 하나로 ``IntegrityError`` 의 메시지에 INSERT 의 값(이메일·비밀번호 해시)이 그대로
 실린다. 그 예외는 traceback·``logger.exception`` 으로 로그 수집기까지 간다. 엔진 옵션 정본

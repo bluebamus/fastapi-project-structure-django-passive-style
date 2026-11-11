@@ -34,7 +34,7 @@ from sqlalchemy.engine import URL, make_url
 # =============================================================================
 # 설치된 앱 (INSTALLED_APPS)
 # =============================================================================
-# 이 목록이 **설치 앱의 유일한 진실 공급원**이다(FR-01). `app/features/` 아래에
+# 이 목록이 **설치 앱의 유일한 진실 공급원**이다. `app/features/` 아래에
 # 디렉터리를 만드는 것만으로는 앱이 설치되지 않는다 — 여기에 추가해야 Router·Model·
 # Admin·ready() 가 활성화된다. 자동 디렉터리 스캔은 의도적으로 하지 않는다: 설치
 # 범위와 순서가 파일 시스템 상태에 암묵적으로 끌려다니면, 실험용 디렉터리 하나가
@@ -99,8 +99,7 @@ class TimezoneSettings(BaseSettings):
     def utc_now(self) -> datetime:
         """현재 시각(aware UTC) — DB 에 저장하는 시각의 **단일 출처**.
 
-        모델 default/onupdate 가 이것을 쓴다. DB 는 UTC 로 저장하고(service-hardening
-        ADR-010), 지역 시각은 표시·집계 경계에서만 계산한다.
+        모델 default/onupdate 가 이것을 쓴다. DB 는 UTC 로 저장하고, 지역 시각은 표시·집계 경계에서만 계산한다.
         """
         return datetime.now(UTC)
 
@@ -203,13 +202,13 @@ class AppSettings(BaseSettings):
     )
 
     # 관리 화면(SQLAdmin) 끄기 (DEBUG 와 독립적으로 동작) — 예전 `ADMIN` 설정을 대체한다.
-    # False(기본): /admin 마운트 — **활성 슈퍼유저 로그인**이 필요하다(admin-login ADR-001).
+    # False(기본): /admin 마운트 — **활성 슈퍼유저 로그인**이 필요하다.
     #   계정은 `scripts/create_superuser.py` 로 만들고, 세션은 Redis 서버 세션이다(쿠키 `admin_session`
     #   에는 세션 ID 만, path=/admin, SameSite=Strict, HttpOnly — 만료는 ADMIN_SESSION_* 설정).
     #   권한은 매 요청 DB 로 다시 확인하므로 강등·비활성화가 바로 반영된다.
     # True: 관리 화면이 아예 없다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두
     #   생기지 않고, 앱의 어떤 응답(OpenAPI·/docs·오류 본문·헤더)에도 관리 화면 경로가 나오지
-    #   않는다(admin-login ADR-005). 관리 화면을 쓰지 않는 배포는 true 로 둔다.
+    #   않는다. 관리 화면을 쓰지 않는 배포는 true 로 둔다.
     #
     # 기본이 "켜짐" 인 것은 의도다 — 이 저장소는 개발을 우선 고려한 레퍼런스 구조라,
     # 받자마자 /admin 으로 DB 를 들여다볼 수 있어야 한다(결정: 2026-08-12).
@@ -250,7 +249,7 @@ class AppSettings(BaseSettings):
 def bare_host(host: str) -> str:
     """``URL.create()`` 에 넘길 호스트 — IPv6 의 대괄호를 벗긴다.
 
-    DSN 은 문자열로 잇지 않고 ``sqlalchemy.engine.URL`` 로 만든다(service-hardening ADR-002).
+    DSN 은 문자열로 잇지 않고 ``sqlalchemy.engine.URL`` 로 만든다.
     ``URL`` 이 렌더링할 때 IPv6 를 스스로 대괄호로 감싸므로, 여기서는 ``[::1]`` 과 ``::1``
     두 표기를 같은 맨 주소로 맞추기만 한다.
     """
@@ -1019,7 +1018,7 @@ class RedisSettings(BaseSettings):
         """Redis 연결 URL.
 
         비밀번호는 퍼센트 인코딩한다 — ``@ : / # ?`` 가 든 비밀번호가 호스트·포트로 읽히지
-        않게 한다(service-hardening ADR-002). redis-py·Celery 가 파싱할 때 되돌린다.
+        않게 한다. redis-py·Celery 가 파싱할 때 되돌린다.
         """
         if self.REDIS_PASSWORD:
             password = quote(self.REDIS_PASSWORD, safe="")
@@ -1054,7 +1053,7 @@ class JWTSettings(BaseSettings):
         default="change-this-refresh-token-secret-key",
         description="Refresh Token 서명 키",
     )
-    # Access Token 만료 (분) — access 는 즉시 폐기 수단이 없으므로 짧게 둔다(service-hardening ADR-014)
+    # Access Token 만료 (분) — access 는 즉시 폐기 수단이 없으므로 짧게 둔다
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=15,
         ge=1,
@@ -1127,7 +1126,7 @@ class SessionSettings(BaseSettings):
         ``SESSION_COOKIE_NAME`` 의 소비처는 접속 로그 미들웨어다 — 그 쿠키 값을 ``session_id`` 로
         기록한다. API 인증은 JWT(Bearer) 라 API 는 세션 쿠키를 발급하지 않는다.
         ``SESSION_SECRET_KEY`` 는 ``/admin`` 관리 세션의 Redis 키를 만드는 HMAC 키다(쿠키의 세션 ID →
-        ``admin:sess:{HMAC}``, admin-session-hardening ADR-001) — 바꾸면 모든 관리 세션이 무효가 된다.
+        ``admin:sess:{HMAC}``) — 바꾸면 모든 관리 세션이 무효가 된다.
         관리 세션 만료는 ``ADMIN_SESSION_*`` 가 정한다 — ``ADMIN_SESSION_MAX_AGE_SECONDS``(절대)·
         ``ADMIN_SESSION_IDLE_SECONDS``(미사용). 쿠키 이름은 ``admin_session`` 고정이며
         ``SESSION_COOKIE_NAME`` 이 ``admin_session`` 이면 기동이 멈춘다.
@@ -1152,7 +1151,7 @@ class SessionSettings(BaseSettings):
         description="세션 키 (/admin 관리 세션 ID → Redis 키 HMAC)",
     )
 
-    # /admin 관리 세션(Redis 서버 세션) 만료 — admin-session-hardening ADR-001.
+    # /admin 관리 세션(Redis 서버 세션) 만료.
     # 절대 만료: 로그인 시각부터, 요청이 있어도 연장되지 않는다(쿠키 Max-Age 도 이 값).
     ADMIN_SESSION_MAX_AGE_SECONDS: int = Field(
         default=28800,
@@ -1281,7 +1280,7 @@ def is_placeholder_secret(value: str) -> bool:
     return "change-this" in v or v.startswith("your-") or v == ""
 
 
-#: 이름이 바뀌어 뜻이 뒤집힌 설정 — 남아 있으면 조용히 무시하지 않고 기동을 멈춘다(admin-login ADR-005).
+#: 이름이 바뀌어 뜻이 뒤집힌 설정 — 남아 있으면 조용히 무시하지 않고 기동을 멈춘다.
 REMOVED_SETTINGS = {
     "ADMIN": (
         "ADMIN 은 ADMIN_DISABLED 로 바뀌었다 — ADMIN=false 였다면 ADMIN_DISABLED=true 로, "
@@ -1416,7 +1415,7 @@ def validate_deployment_safety() -> None:
 
 SECRET_KEYS = ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY")
 
-#: 값의 원문이 로그 어디에 나와도 ``***`` 로 가릴 설정 — 정본은 여기 한 곳이다(logging-overhaul L7).
+#: 값의 원문이 로그 어디에 나와도 ``***`` 로 가릴 설정 — 정본은 여기 한 곳이다.
 #: 새 비밀 설정(이름에 PASSWORD·SECRET, 끝이 _KEY·_USER)을 만들면 여기에 넣는다 — 계약 테스트가 강제한다.
 LOG_REDACTED_SETTINGS = (
     "MYSQL_USER",

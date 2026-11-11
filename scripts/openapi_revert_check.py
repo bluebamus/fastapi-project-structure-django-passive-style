@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 # Windows 콘솔 기본 인코딩(cp949)에서 한글 출력이 죽지 않도록 UTF-8 로 고정한다.
-# 게이트가 결함을 출력하다 인코딩 예외로 죽으면 실제 결함이 가려진다(C-7).
+# 게이트가 결함을 출력하다 인코딩 예외로 죽으면 실제 결함이 가려진다.
 if isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout.reconfigure(encoding="utf-8")
 

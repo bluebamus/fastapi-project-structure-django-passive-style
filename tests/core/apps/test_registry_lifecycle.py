@@ -1,4 +1,4 @@
-"""AC-04 — populate() 의 idempotency·재진입 금지·thread safety (NFR-02·NFR-05·CR-07).
+"""populate() 의 idempotency·재진입 금지·thread safety.
 
 전역 registry 를 여러 진입점(app factory, Alembic, 테스트)이 공유하므로 "두 번
 불러도 안전한가" 가 곧 정확성이다. ``ready()`` 가 두 번 돌면 sink 나 signal 이 중복
@@ -17,7 +17,7 @@ TWO_APPS = [f"{PKG}.alpha", f"{PKG}.beta"]
 
 
 def test_second_populate_is_a_noop(registry: Apps, events: list[str]):
-    """CR-07: 두 번째 정상 호출은 ``ready()`` 를 다시 부르지 않는다."""
+    """두 번째 정상 호출은 ``ready()`` 를 다시 부르지 않는다."""
     registry.populate(TWO_APPS)
     before = list(events)
 
@@ -35,7 +35,7 @@ def test_second_populate_is_a_noop(registry: Apps, events: list[str]):
 def test_populate_with_a_different_list_is_rejected(
     registry: Apps, events: list[str], other: list[str]
 ):
-    """다른 목록으로 다시 채우면 조용히 돌아가지 않는다(service-hardening F-012).
+    """다른 목록으로 다시 채우면 조용히 돌아가지 않는다.
 
     조용히 돌아가면 호출자는 자기가 준 목록이 설치됐다고 믿고, 실제로는 처음 목록이 쓰인다.
     """
@@ -52,7 +52,7 @@ def test_populate_with_a_different_list_is_rejected(
 
 
 def test_reentrant_populate_during_ready_is_rejected(events: list[str]):
-    """NFR-02: population 중 재진입은 즉시 명시적 오류다."""
+    """population 중 재진입은 즉시 명시적 오류다."""
     registry = Apps()
     captured: list[BaseException] = []
 
@@ -83,7 +83,7 @@ def test_reentrant_populate_during_ready_is_rejected(events: list[str]):
 
 
 def test_concurrent_populate_completes_once(events: list[str]):
-    """NFR-02: 동시 호출에서도 ``ready()`` 는 앱별로 한 번만 실행된다."""
+    """동시 호출에서도 ``ready()`` 는 앱별로 한 번만 실행된다."""
     registry = Apps()
     barrier = threading.Barrier(4)
     errors: list[BaseException] = []
@@ -108,7 +108,7 @@ def test_concurrent_populate_completes_once(events: list[str]):
 
 
 def test_isolated_registries_do_not_share_state(events: list[str]):
-    """NFR-05: 독립 인스턴스는 서로의 상태를 오염시키지 않는다."""
+    """독립 인스턴스는 서로의 상태를 오염시키지 않는다."""
     first = Apps()
     second = Apps()
 
@@ -120,7 +120,7 @@ def test_isolated_registries_do_not_share_state(events: list[str]):
 
 
 def test_models_only_population_skips_ready(events: list[str]):
-    """§6.7: Alembic adapter 용 ``run_ready=False`` 는 hook 을 실행하지 않는다."""
+    """Alembic adapter 용 ``run_ready=False`` 는 hook 을 실행하지 않는다."""
     registry = Apps()
 
     registry.populate(TWO_APPS, run_ready=False)

@@ -11,7 +11,7 @@ class HomeConfig(AppConfig):
     import)에서 이미 sink 가 붙어 3단계 lifecycle 이 무의미해진다. hook 으로 옮기면
     "models 가 준비된 뒤에 결선한다" 는 순서가 코드로 보장된다.
 
-    sink 등록은 process-local wiring 이라 SEC-05(ready 에서 DB·network·subprocess 금지)를
+    sink 등록은 process-local wiring 이라 ready 에서 DB·network·subprocess 를 쓰지 않는 규칙을
     지킨다 — ``set_access_log_sink()`` 는 모듈 전역 변수 하나를 바꿀 뿐이다.
     """
 

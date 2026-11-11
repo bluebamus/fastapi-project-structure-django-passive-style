@@ -8,10 +8,10 @@ def test_celery_app_configured():
 
 
 def test_worker_include_is_built_from_installed_apps():
-    """include 는 ``INSTALLED_APPS`` 의 앱별 ``tasks`` module 이다(service-hardening ADR-012).
+    """include 는 ``INSTALLED_APPS`` 의 앱별 ``tasks`` module 이다.
 
     중앙 태스크 module(``app.celery.tasks``)은 없다 — 중앙 파일이 기능을 import 하면
-    ``INSTALLED_APPS`` 에서 앱을 빼도 워커가 그 앱을 계속 끌어온다(F-018).
+    ``INSTALLED_APPS`` 에서 앱을 빼도 워커가 그 앱을 계속 끌어온다.
     """
     from app.celery.app import celery_app, discover_task_modules
     from config import INSTALLED_APPS
@@ -45,7 +45,7 @@ def test_including_the_task_modules_registers_the_tasks():
 
 
 def test_celery_keeps_internal_times_in_utc():
-    """내부 시각은 UTC — DB 저장 기준과 같다(service-hardening ADR-010). ``timezone`` 은 일정 해석용."""
+    """내부 시각은 UTC — DB 저장 기준과 같다. ``timezone`` 은 일정 해석용."""
     from app.celery.app import celery_app
     from config import timezone_settings
 

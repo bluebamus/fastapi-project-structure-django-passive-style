@@ -1,4 +1,4 @@
-"""FastAPI adapter 의 실패 계약 (FR-04·CR-08·SEC-07).
+"""FastAPI adapter 의 실패 계약.
 
 adapter 가 조용히 넘어가면 안 되는 두 상황을 고정한다.
 
@@ -60,7 +60,7 @@ def test_app_without_router_is_skipped(registry: Apps):
 
 
 def test_route_collision_fails_fast(registry: Apps):
-    """FR-04: 같은 method+path 를 두 앱이 등록하면 기동을 실패시킨다."""
+    """같은 method+path 를 두 앱이 등록하면 기동을 실패시킨다."""
     registry.populate([f"{PKG}.plain"])
     registry.app_configs["first"] = _config_serving("first")
     registry.app_configs["second"] = _config_serving("second")
@@ -75,7 +75,7 @@ def test_route_collision_fails_fast(registry: Apps):
 
 
 def test_missing_public_name_in_existing_module_fails(registry: Apps):
-    """SEC-07: module 은 있는데 기대한 이름이 없으면 실패한다."""
+    """module 은 있는데 기대한 이름이 없으면 실패한다."""
     registry.populate([f"{PKG}.alpha"])
     config = registry.get_app_config("alpha")
     config.router_module = "apps"  # 존재하는 module, 하지만 alpha_router 는 없다

@@ -29,7 +29,7 @@ class Post(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # 소유자 판정 키(service-hardening ADR-018). 서버가 인증 주체로 채운다. NULL = 소유자 기록
+    # 소유자 판정 키. 서버가 인증 주체로 채운다. NULL = 소유자 기록
     # 이전의 행 — 슈퍼유저만 수정·삭제할 수 있다.
     author_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 

@@ -3,8 +3,7 @@
 user 도메인의 `User` 모델·`UserRepository` 에 대해 인증한다(자격증명은 users.hashed_password).
 auth 는 횡단 관심사라 user 식별 모델에 의존하는 것을 허용한다.
 
-해시·토큰·refresh 기록은 core security 의 부품을 **생성자로 주입받는다**(service-hardening
-ADR-022) — 조립은 ``dependencies/auth_dependencies.py`` 의 provider 가 한다.
+해시·토큰·refresh 기록은 core security 의 부품을 **생성자로 주입받는다** — 조립은 ``dependencies/auth_dependencies.py`` 의 provider 가 한다.
 """
 
 import asyncio

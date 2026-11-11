@@ -1,6 +1,6 @@
 """Celery async 브릿지(run_async) 회귀 테스트.
 
-C1(검수 REQ-008): `run_async` 가 매 호출 `asyncio.run()` 으로 새 이벤트 루프를
+`run_async` 가 매 호출 `asyncio.run()` 으로 새 이벤트 루프를
 열고 닫으면, 커넥션 풀에 캐시된 async DB 커넥션(aiomysql)이 종료된 루프에
 바인딩되어 두 번째 태스크부터 'Event loop is closed' 로 실패한다.
 워커 프로세스당 단일 영속 루프를 재사용하면, 재사용되는 커넥션이 '살아있는
@@ -23,7 +23,7 @@ def test_run_async_reuses_a_single_live_loop() -> None:
 
     루프 바인딩 자원(aiomysql 커넥션 등)이 태스크 간 재사용돼도 살아남으려면
     이 성질이 필수다. 매 호출 asyncio.run() 이면 루프가 매번 새로 생성·종료되어
-    이 단언이 깨진다(= C1 재발).
+    이 단언이 깨진다.
     """
     seen: dict[str, asyncio.AbstractEventLoop] = {}
 

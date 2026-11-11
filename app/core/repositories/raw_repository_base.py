@@ -1,4 +1,4 @@
-"""Raw SQL Repository 의 공개 계약 (requirements RAW-REP-002).
+"""Raw SQL Repository 의 공개 계약.
 
 기능 Raw Repository 가 상속하는 클래스다. primitive 에 세 가지를 얹는다.
 
@@ -82,7 +82,7 @@ def validate_query_name(query_name: str) -> str:
 class RawRepositoryBase(RawCRUDBase):
     """Raw SQL Repository 의 공개 계약.
 
-    ORM 쪽 ``BaseRepository`` 와 **상속 관계가 없다**(AR-003). 대응은 이렇다.
+    ORM 쪽 ``BaseRepository`` 와 **상속 관계가 없다**. 대응은 이렇다.
 
     ==========================  ==============================
     ORM                         Raw

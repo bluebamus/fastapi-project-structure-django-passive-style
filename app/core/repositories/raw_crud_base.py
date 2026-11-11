@@ -1,6 +1,6 @@
-"""Raw SQL 실행 primitive (requirements RAW-REP-001).
+"""Raw SQL 실행 primitive.
 
-ORM Base 와 **상속으로 이어지지 않는** 별도 계층이다(AR-003). 하나의 Base 가 ORM 모델과
+ORM Base 와 **상속으로 이어지지 않는** 별도 계층이다. 하나의 Base 가 ORM 모델과
 Raw row 를 함께 돌려주면 호출부가 무엇을 받았는지 타입으로 알 수 없다.
 
 여기서 하는 일은 셋뿐이다.

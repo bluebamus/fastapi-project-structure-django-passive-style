@@ -2,15 +2,14 @@
 
 sqladmin 0.32 의 ``OperationColumnFilter`` 는 ``UTCDateTime``(TypeDecorator)을 날짜형으로 알아보지
 못해 입력 문자열을 그대로 바인딩하고, ``UTCDateTime`` 이 그것을 거부해 목록이 500 이 된다
-(admin-login ADR-009). 이 클래스는 같은 필터 프로토콜(``has_operator``·``template``·
+이 클래스는 같은 필터 프로토콜(``has_operator``·``template``·
 ``parameter_name``·``get_operation_options_for_model``·``get_filtered_query``)을 따르되, 값을
 ``TIME_ZONE`` 의 날짜로 읽어 지역 0시를 aware UTC 순간으로 바꾼 뒤 범위 조건으로 질의한다
-(security-ops-hardening ADR-005). 한 필터에서 기간(시작일~종료일)도 지정한다 — sqladmin 은 필터 값을
-하나만 넘기므로 ``YYYY-MM-DD~YYYY-MM-DD`` 로 합쳐 보낸다(전용 템플릿이 날짜 입력 두 개를 합친다,
-admin-session-hardening ADR-004).
+한 필터에서 기간(시작일~종료일)도 지정한다 — sqladmin 은 필터 값을
+하나만 넘기므로 ``YYYY-MM-DD~YYYY-MM-DD`` 로 합쳐 보낸다(전용 템플릿이 날짜 입력 두 개를 합친다).
 
 sqladmin 을 import 하지 않는다 — 프로토콜은 이름으로 맞춘다. 그래서 ``ADMIN_DISABLED=true`` 에서
-이 모듈이 로드돼도 sqladmin 이 딸려오지 않는다(SEC-01). 쓰는 곳은 각 앱의 ``admin.py`` 다.
+이 모듈이 로드돼도 sqladmin 이 딸려오지 않는다. 쓰는 곳은 각 앱의 ``admin.py`` 다.
 """
 
 from __future__ import annotations

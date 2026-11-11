@@ -106,7 +106,7 @@ async def test_dml_statement_is_served_by_writer():
 
 
 async def test_locking_select_is_served_by_writer():
-    """ORM 잠금 읽기(``with_for_update()``)는 writer 로 간다(service-hardening F-001).
+    """ORM 잠금 읽기(``with_for_update()``)는 writer 로 간다.
 
     replica 에서 잡은 잠금은 primary 의 행을 보호하지 못한다. 잠금 이후의 읽기도 같은
     트랜잭션이므로 writer 에 고정된다.

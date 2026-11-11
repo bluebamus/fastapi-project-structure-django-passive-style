@@ -1,4 +1,4 @@
-"""Phase 1 — 비동기 runtime 과 자원 수명 계약 (development-plan §9).
+"""비동기 runtime 과 자원 수명 계약.
 
 여기서 보는 것은 "기능이 동작하는가"가 아니라 **자원이 반드시 닫히는가**다.
 이 구간의 결함은 개발 중에는 보이지 않고 운영에서 커넥션 누수·좀비 프로세스로만
@@ -78,14 +78,14 @@ async def test_drain_budget_leaves_room_for_cancellation():
 
 
 # =============================================================================
-# 세션 Dependency 명명 (ADR-009)
+# 세션 Dependency 명명
 # =============================================================================
 @pytest.mark.parametrize(
     "removed",
     ["get_session", "get_read_session", "get_write_session"],
 )
 def test_deprecated_aliases_are_gone(removed: str):
-    """옛 이름은 Phase 7 에서 제거됐다 (ADR-009).
+    """옛 이름은 제거됐다.
 
     전환기에는 **같은 객체**로 둔 별칭이었다 — 이름만 바꾸면
     ``dependency_overrides[get_session]`` 을 쓰는 테스트가 조용히 어긋나기 때문이다
@@ -94,16 +94,14 @@ def test_deprecated_aliases_are_gone(removed: str):
 
     되살아나면 이름이 다시 둘이 되고, 어느 쪽으로 override 해야 하는지가 애매해진다.
     """
-    assert not hasattr(
-        db_session, removed
-    ), f"{removed} 가 되살아났다 — ADR-009 를 뒤집으려면 새 ADR 이 필요하다"
+    assert not hasattr(db_session, removed), f"{removed} 가 되살아났다"
     from app.core import db as db_package
 
     assert removed not in db_package.__all__, f"{removed} 가 패키지 __all__ 에 남아 있다"
 
 
 def test_new_names_carry_the_db_session_marker():
-    """이름만으로 HTTP 세션·사용자 세션과 구분돼야 한다 (development-plan §9.8)."""
+    """이름만으로 HTTP 세션·사용자 세션과 구분돼야 한다."""
     for name in ("get_routed_db_session", "get_read_only_db_session", "get_writer_db_session"):
         assert "db_session" in name
         assert hasattr(db_session, name)

@@ -1,4 +1,4 @@
-"""refresh 토큰 회전 기록 — Redis (service-hardening ADR-015).
+"""refresh 토큰 회전 기록 — Redis.
 
 키:
     - ``auth:rt:{jti}`` → ``{"sub", "fam"}``: 아직 쓰지 않은 refresh 토큰. TTL = refresh 수명.

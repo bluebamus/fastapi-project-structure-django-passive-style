@@ -1,4 +1,4 @@
-"""Phase 4 — Raw SQL 의 읽기/쓰기 라우팅 (requirements RAW-REP-007).
+"""Raw SQL 의 읽기/쓰기 라우팅.
 
 ``text()`` 는 문자열이라 라우터가 타입으로 성격을 알 수 없다. 첫 토큰을 파싱하는 방법은
 ``WITH x AS (...) DELETE ...`` 같은 CTE DML 을 읽기로 오판한다 — 그러면 DML 이 replica 로

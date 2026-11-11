@@ -1,4 +1,4 @@
-"""인증·인가 주입 경로 — core 하나만 의존하면 된다 (service-hardening ADR-017·C-11).
+"""인증·인가 주입 경로 — core 하나만 의존하면 된다.
 
 보안 부품 provider(``get_password_hasher``·``get_token_service``·``get_refresh_token_store``·
 ``get_admin_session_store``·``get_user_session_revoker``·``get_ownership_policy``)와 현재 주체 해석(``get_current_principal``)·슈퍼유저 강제
@@ -86,7 +86,7 @@ def get_admin_session_store(
     """관리 세션 저장소 — 사용자 비활성화·강등·삭제 시 그 사용자의 관리 세션을 지운다.
 
     관리 화면이 조립되지 않은 앱(``ADMIN_DISABLED=true``)에는 관리 세션이 없으므로 ``None`` 이다
-    (admin-session-hardening ADR-001 — 이때 저장소를 만들지 않는다).
+    (이때 저장소를 만들지 않는다).
     """
     if getattr(request.app.state, "admin", None) is None:
         return None
@@ -97,7 +97,7 @@ def get_user_session_revoker(
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
     admin_sessions: AdminSessionStore | None = Depends(get_admin_session_store),
 ) -> UserSessionRevoker:
-    """사용자 단위 폐기(refresh + 관리 세션) — 관리 화면 훅과 같은 집합이다(admin-session-hardening ADR-005)."""
+    """사용자 단위 폐기(refresh + 관리 세션) — 관리 화면 훅과 같은 집합이다."""
     return UserSessionRevoker(refresh_store, admin_sessions)
 
 
@@ -117,7 +117,7 @@ async def get_current_principal(
         UnauthorizedException: Authorization 헤더가 없음(401).
         InvalidTokenException: 서명·만료·claim·종류 중 하나라도 어긋남(401).
 
-    401 의 ``WWW-Authenticate: Bearer`` 는 전역 예외 핸들러가 붙인다(integration-e2e ADR-012 결정 3).
+    401 의 ``WWW-Authenticate: Bearer`` 는 전역 예외 핸들러가 붙인다.
     """
     if not token:
         raise UnauthorizedException()

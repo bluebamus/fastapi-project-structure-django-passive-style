@@ -1,4 +1,4 @@
-"""AC-01 — 등록 항목 정규화와 기본 config 선택 규칙 (FR-02·FR-03·CR-01·CR-02).
+"""등록 항목 정규화와 기본 config 선택 규칙.
 
 ``INSTALLED_APPS`` 항목은 package 경로든 explicit config class 경로든 **같은
 ``AppConfig`` 인스턴스**로 정규화되어야 한다. 이 파일은 Django 의 config 선택 규칙
@@ -27,7 +27,7 @@ def test_package_entry_and_class_entry_produce_equivalent_config():
 
 
 def test_config_exposes_django_public_attributes():
-    """FR-03: name·label·verbose_name·path·module 이 모두 채워진다."""
+    """name·label·verbose_name·path·module 이 모두 채워진다."""
     config = AppConfig.create(f"{PKG}.alpha")
 
     assert config.name == f"{PKG}.alpha"
@@ -39,7 +39,7 @@ def test_config_exposes_django_public_attributes():
 
 
 def test_package_without_apps_module_gets_base_config():
-    """CR-01: config 가 0개면 기본 ``AppConfig`` 를 만든다."""
+    """config 가 0개면 기본 ``AppConfig`` 를 만든다."""
     config = AppConfig.create(f"{PKG}.plain")
 
     assert type(config) is AppConfig
@@ -47,14 +47,14 @@ def test_package_without_apps_module_gets_base_config():
 
 
 def test_single_config_is_selected():
-    """CR-01: config 가 1개면 그것을 선택한다."""
+    """config 가 1개면 그것을 선택한다."""
     config = AppConfig.create(f"{PKG}.alpha")
 
     assert type(config).__name__ == "AlphaConfig"
 
 
 def test_multiple_configs_select_the_single_default_true():
-    """CR-01: 복수 config 중 ``default=True`` 하나만 선택한다."""
+    """복수 config 중 ``default=True`` 하나만 선택한다."""
     config = AppConfig.create(f"{PKG}.multi_default")
 
     assert type(config).__name__ == "PrimaryConfig"
@@ -62,7 +62,7 @@ def test_multiple_configs_select_the_single_default_true():
 
 
 def test_only_config_marked_default_false_falls_back_to_base():
-    """CR-01: ``default=False`` 는 자동 선택 후보에서 빠진다."""
+    """``default=False`` 는 자동 선택 후보에서 빠진다."""
     config = AppConfig.create(f"{PKG}.default_false")
 
     assert type(config) is AppConfig
@@ -70,7 +70,7 @@ def test_only_config_marked_default_false_falls_back_to_base():
 
 
 def test_ambiguous_configs_are_rejected():
-    """CR-01: 선택 규칙으로 결정할 수 없으면 실패한다."""
+    """선택 규칙으로 결정할 수 없으면 실패한다."""
     with pytest.raises(ImproperlyConfigured) as exc:
         AppConfig.create(f"{PKG}.ambiguous")
 
@@ -80,5 +80,5 @@ def test_ambiguous_configs_are_rejected():
 
 
 def test_router_attribute_defaults_to_label_router():
-    """§6.2: ``router_attribute`` 기본값은 ``<label>_router`` 다."""
+    """``router_attribute`` 기본값은 ``<label>_router`` 다."""
     assert AppConfig.create(f"{PKG}.alpha").router_attribute == "alpha_router"

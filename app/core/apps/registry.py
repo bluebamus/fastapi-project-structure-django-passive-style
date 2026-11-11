@@ -14,7 +14,7 @@ lifecycle 보호가 정확성의 핵심이다:
   registry 를 읽는 코드가 조용히 잘못된 답을 얻는 것보다 낫다.
 * **thread-safe** — ``RLock`` 으로 직렬화한다. 늦게 온 스레드는 완성된 registry 를 본다.
 * **실패 시 원복** — 중간에 터지면 상태를 전부 되돌린다. partially-ready registry 가
-  전역에 남아 다음 실행이 성공한 것처럼 보이면 안 된다(NFR-04).
+  전역에 남아 다음 실행이 성공한 것처럼 보이면 안 된다.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class Apps:
     """설치된 앱의 registry.
 
     전역 인스턴스는 ``app.core.apps.apps`` 이지만, 테스트와 app factory 는 독립
-    인스턴스를 만들어 상태를 격리할 수 있다(NFR-05).
+    인스턴스를 만들어 상태를 격리할 수 있다.
     """
 
     def __init__(self) -> None:
@@ -60,7 +60,7 @@ class Apps:
             run_ready: ``False`` 면 config·models 단계까지만 수행하고 ``ready()`` hook 을
                 건너뛴다. **Alembic adapter 와 Celery 워커 전용** 이다 — migration·워커가
                 앱의 API runtime 부수효과(접속 로그 sink 결선 등)를 실행하지 않게 한다
-                (§6.7). 애플리케이션 조립부는 쓰지 않는다.
+               애플리케이션 조립부는 쓰지 않는다.
 
         Raises:
             RuntimeError: population 도중 재진입했다.
@@ -188,7 +188,7 @@ class Apps:
         """설치 앱의 Celery 태스크 module 경로를 ``INSTALLED_APPS`` 순서로 돌려준다.
 
         Celery 워커의 ``include`` 가 이 목록이다 — 목록에서 앱을 빼면 그 앱의 태스크도
-        워커에서 빠진다(service-hardening C-14).
+        워커에서 빠진다.
         """
         self.check_apps_ready()
         return [

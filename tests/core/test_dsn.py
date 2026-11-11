@@ -1,4 +1,4 @@
-"""DSN 은 문자열 연결이 아니라 ``sqlalchemy.engine.URL`` 로 조립한다(service-hardening F-003).
+"""DSN 은 문자열 연결이 아니라 ``sqlalchemy.engine.URL`` 로 조립한다.
 
 문자열로 이어 붙이면 비밀번호의 ``@ : / # ?`` 가 구분자로 읽혀 **조용히 다른 호스트·계정**으로
 접속을 시도하고, ``%`` 는 Alembic 의 ConfigParser 보간에서 ``ValueError`` 로 터진다. 여기서는
@@ -105,7 +105,7 @@ def test_alembic_env_escapes_percent_for_configparser(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("password", [TRICKY_PASSWORD, "plain"])
 def test_redis_url_round_trips_password(password: str):
-    # 포트를 고정한다 — 테스트 실행은 REDIS_PORT 를 명시하므로(integration-e2e W0) 기본값에 기대면
+    # 포트를 고정한다 — 테스트 실행은 REDIS_PORT 를 명시하므로 기본값에 기대면
     # 환경에 따라 결과가 갈린다. 이 검사의 대상은 비밀번호 왕복이다.
     settings = RedisSettings(
         _env_file=None, REDIS_HOST="cache", REDIS_PORT=6379, REDIS_PASSWORD=password
@@ -126,7 +126,7 @@ def test_mysql_rsa_auth_dependency_is_declared_through_the_driver():
     """MySQL 8.4 ``caching_sha2_password`` 전체 인증(TLS 아닌 연결)의 RSA 암호화에 cryptography 가 필요하다.
 
     유일한 사용처가 드라이버라 드라이버의 공식 추가 옵션 ``aiomysql[rsa]``(= ``PyMySQL[rsa]``)로 선언한다 —
-    직접 적은 ``cryptography`` 는 사용처와 떨어져 낡는다(integration-e2e ADR-013 의존성 통일).
+    직접 적은 ``cryptography`` 는 사용처와 떨어져 낡는다.
     """
     import tomllib
     from pathlib import Path

@@ -1,4 +1,4 @@
-"""/admin 로그인의 자격 확인 계약과 등록 훅 (admin-login ADR-002).
+"""/admin 로그인의 자격 확인 계약과 등록 훅.
 
 core 는 사용자 모델을 모른다(계층 규칙 — core 는 features 를 import 하지 않는다). 그래서
 관리 화면 인증 백엔드(``app.core.security.admin_auth.AdminAuthBackend``)는 "이 사용자명·
@@ -9,7 +9,7 @@ core 는 사용자 모델을 모른다(계층 규칙 — core 는 features 를 i
 등록하는 것은 인스턴스가 아니라 **팩토리**다. ``ready()`` 는 Alembic·CLI·Celery 에서도 돌므로
 여기서 해시기(Argon2 더미 해시 생성)를 만들지 않고, 관리 화면(``ADMIN_DISABLED=false``)을 조립할 때만
 부른다. 이 모듈은 sqladmin 을 import 하지 않는다 — ``ADMIN_DISABLED=true`` 에서 sqladmin 이 로드되지
-않는 계약(SEC-01)을 지킨다.
+않는 계약을 지킨다.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""검수 게이트의 판정 규칙 — 로컬 게이트와 CI 가 같은 것을 막는가 (ADR-038)."""
+"""검수 게이트의 판정 규칙 — 로컬 게이트와 CI 가 같은 것을 막는가."""
 
 from __future__ import annotations
 
@@ -38,14 +38,14 @@ def test_local_pytest_steps_apply_the_same_rules_as_ci(tmp_path):
         assert {"skipped", "xfailed", "xpassed"} <= set(step.forbidden), step.name
     unit = steps[0]
     assert "--cov=app" in unit.argv
-    # 커버리지 리포트가 "files skipped due to complete coverage" 를 찍으면 skip 판정에 걸린다(F-026).
+    # 커버리지 리포트가 "files skipped due to complete coverage" 를 찍으면 skip 판정에 걸린다.
     assert not any("skip-covered" in arg for arg in unit.argv)
 
 
 def test_coverage_threshold_has_one_source():
     """하한은 pyproject 하나 — 명령줄에 따로 적으면 로컬과 CI 가 갈린다.
 
-    값은 사용자 결정으로 기본 0(하한 없음, log-redaction-fixes ADR-005)이고, 측정은 CI·로컬
+    값은 사용자 결정으로 기본 0(하한 없음)이고, 측정은 CI·로컬
     게이트 모두 한다. 하한을 올릴 때는 pyproject 의 값과 아래 기대값만 바꾼다.
     """
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")

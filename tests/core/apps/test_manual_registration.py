@@ -1,4 +1,4 @@
-"""AC-06 — 미등록 앱은 **어떤 결선에도 참여하지 않는다** (FR-01·FR-04·SEC-02).
+"""미등록 앱은 **어떤 결선에도 참여하지 않는다**.
 
 이 프로젝트의 존재 이유가 여기 걸려 있다. "디렉터리를 만들면 앱이 생긴다" 는
 자동 스캔 방식과 달리, passive 등록에서는 ``config.INSTALLED_APPS`` 에 없는 앱은
@@ -43,7 +43,7 @@ def test_removing_an_app_removes_its_routes():
 
 
 def test_routes_follow_installed_apps_order():
-    """NFR-01: router 설치 순서가 목록 순서를 따른다."""
+    """router 설치 순서가 목록 순서를 따른다."""
     registry = Apps()
     registry.populate(list(INSTALLED_APPS))
 
@@ -53,7 +53,7 @@ def test_routes_follow_installed_apps_order():
 
 
 def test_unregistered_fixture_app_is_never_imported(events: list[str]):
-    """SEC-02: allowlist 밖의 package 는 import 되지 않는다."""
+    """allowlist 밖의 package 는 import 되지 않는다."""
     registry = Apps()
     registry.populate([f"{PKG}.alpha"])
 
@@ -71,7 +71,7 @@ def test_unregistered_app_contributes_no_models():
 
 
 def test_directory_presence_alone_does_not_install(events: list[str]):
-    """FR-01: fixture 디렉터리가 존재해도 목록에 없으면 설치되지 않는다."""
+    """fixture 디렉터리가 존재해도 목록에 없으면 설치되지 않는다."""
     from pathlib import Path
 
     fixtures_dir = Path(__file__).parent / "_fixtures"
