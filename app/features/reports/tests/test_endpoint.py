@@ -11,7 +11,7 @@ Repository → DB, 그리고 조회는 커밋하지 않는다.
 
 .. note::
    SQLite 로 도는 테스트다. 집계 SQL 의 **MySQL 방언 정확성**은 여기서 보증하지
-   않는다(ADR-004) — `tests/integration/test_mysql_sales_report.py` 가 담당한다.
+   않는다.
 """
 
 from __future__ import annotations

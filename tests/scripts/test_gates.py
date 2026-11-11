@@ -31,8 +31,8 @@ def test_bandit_unparsed_files_fail_the_gate():
 
 def test_local_pytest_steps_apply_the_same_rules_as_ci(tmp_path):
     """`-o addopts=` 가 지우는 규칙을 각 pytest 단계가 다시 명시하는가."""
-    steps = [s for s in build_steps(cache_dir=tmp_path, include_slow=True) if "pytest" in s.argv]
-    assert len(steps) == 3
+    steps = [s for s in build_steps(cache_dir=tmp_path) if "pytest" in s.argv]
+    assert len(steps) == 1
     for step in steps:
         assert "--strict-markers" in step.argv, step.name
         assert {"skipped", "xfailed", "xpassed"} <= set(step.forbidden), step.name

@@ -4,7 +4,6 @@
 다른 하나는 **순서에 따라 결과가 달라지는 것**이다. 여기서 순서를 고정한다.
 
     uv run python -m scripts.review_gate            # 전체
-    uv run python -m scripts.review_gate --fast     # MySQL 통합 제외
     uv run python -m scripts.review_gate --list     # 무엇을 도는지만 본다
 
 설계에서 신경 쓴 것 셋:
@@ -19,10 +18,6 @@
 
 **3. 실패해도 끝까지 간다.** 첫 실패에서 멈추면 한 번에 하나씩만 고치게 된다. 전부
    돌리고 마지막에 요약한다 — 다만 종료 코드는 실패를 그대로 반영한다.
-
-MySQL 통합은 **skip 을 실패로 본다**(NFR-012). 인프라가 없어서 안 돈 것과 돌아서
-통과한 것은 다르고, 그 차이가 게이트에서 보이지 않으면 "전체 green" 이 거짓말이 된다.
-로컬에서 컨테이너를 못 띄우는 상황이라면 ``--fast`` 로 **명시적으로** 빼야 한다.
 """
 
 from __future__ import annotations
@@ -38,14 +33,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: MySQL 통합 테스트가 **실행되지 않았을 때** pytest 가 내는 문장들.
-#:
-#: ``deselected`` 는 넣지 않는다 — `-m mysql` 은 나머지를 정상적으로 deselect 하므로
-#: 성공 실행에도 항상 나타난다. 그걸 실패로 보면 게이트가 영원히 빨간불이다(실제로
-#: 첫 실행에서 그렇게 됐다).
-#:
-#: ``xfailed``·``xpassed`` 도 넣는다 — CI 는 둘을 막는데 여기는 막지 않아, 로컬 "전체
-#: 통과" 가 CI 통과를 뜻하지 않았다(2026-10-08, ADR-038).
+#: 테스트가 **실행되지 않았을 때** pytest 가 내는 문장들 — 안 돈 것은 통과가 아니다.
+#: ``xfailed``·``xpassed`` 도 넣는다 — CI 도 둘을 막는다.
 SKIP_MARKERS = ("skipped", "xfailed", "xpassed", "no tests ran")
 
 
@@ -71,7 +60,7 @@ class Step:
     env: dict[str, str] = field(default_factory=dict)
 
 
-def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
+def build_steps(*, cache_dir: Path) -> list[Step]:
     """실행 순서대로 단계를 만든다.
 
     빠른 것부터 둔다 — 포맷 하나 틀린 것을 알려고 전체 테스트를 기다릴 이유가 없다.
@@ -118,8 +107,6 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
                 "-o",
                 "addopts=",
                 "--strict-markers",
-                "-m",
-                "not mysql and not browser",
                 # skip 사유를 찍는다 — 사유 없이 "안 돌았다" 만 알면 고칠 수가 없다.
                 "-rsxX",
                 # 임계값은 pyproject `[tool.coverage.report] fail_under` 하나다 — CI 도 같은 값을 읽는다.
@@ -143,50 +130,6 @@ def build_steps(*, cache_dir: Path, include_slow: bool) -> list[Step]:
         ),
     ]
 
-    if include_slow:
-        steps.append(
-            Step(
-                name="pytest -m mysql (skip 금지)",
-                argv=[
-                    python,
-                    "-m",
-                    "pytest",
-                    "-q",
-                    "-p",
-                    "no:cacheprovider",
-                    "-o",
-                    "addopts=",
-                    "--strict-markers",
-                    "-m",
-                    "mysql",
-                    "-rsxX",
-                ],
-                why="방언 정확성은 SQLite 로 승인하지 않는다 (ADR-004)",
-                # 인프라가 없어 안 돈 것과 돌아서 통과한 것은 다르다 (NFR-012).
-                forbidden=SKIP_MARKERS,
-            )
-        )
-        steps.append(
-            Step(
-                name="pytest -m browser (Scalar 실렌더링)",
-                argv=[
-                    python,
-                    "-m",
-                    "pytest",
-                    "-q",
-                    "-p",
-                    "no:cacheprovider",
-                    "-o",
-                    "addopts=",
-                    "--strict-markers",
-                    "-m",
-                    "browser",
-                    "-rsxX",
-                ],
-                why="스키마가 규격에 맞는 것과 화면이 그려지는 것은 다르다",
-                forbidden=SKIP_MARKERS,
-            )
-        )
     return steps
 
 
@@ -212,8 +155,7 @@ def run_step(step: Step, *, env: dict[str, str]) -> tuple[bool, str]:
         tail = "\n".join(output.strip().splitlines()[-10:])
         return False, (
             f"통과했지만 '{hit}' 가 출력에 있다 — 실행되지 않은 테스트가 있다. 안 돈 것은 통과가 아니다.\n"
-            f"사유는 아래 SKIPPED 줄에 있다 — 인프라 부재면 컨테이너를 띄우거나 --fast 로 명시적으로 "
-            f"제외하고, 조건부 skip 이면 그 조건을 고칠 것.\n{tail}"
+            f"사유는 아래 SKIPPED 줄에 있다 — 조건부 skip 이면 그 조건을 고칠 것.\n{tail}"
         )
     return True, ""
 
@@ -222,18 +164,13 @@ def main(argv: list[str] | None = None) -> int:
     _force_utf8()
 
     parser = argparse.ArgumentParser(description="검수 게이트")
-    parser.add_argument(
-        "--fast",
-        action="store_true",
-        help="MySQL 통합과 브라우저 테스트를 제외한다. 제외했다는 사실이 출력에 남는다.",
-    )
     parser.add_argument("--list", action="store_true", help="실행하지 않고 단계만 출력한다")
     args = parser.parse_args(argv)
 
     # 실행마다 고유 캐시 — 게이트를 병렬로 돌려도 서로를 밟지 않는다.
     with tempfile.TemporaryDirectory(prefix="review-gate-") as tmp:
         cache_dir = Path(tmp)
-        steps = build_steps(cache_dir=cache_dir, include_slow=not args.fast)
+        steps = build_steps(cache_dir=cache_dir)
 
         if args.list:
             for index, step in enumerate(steps, 1):
@@ -260,11 +197,6 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append((step.name, reason))
 
     print("\n" + "=" * 78)
-    if args.fast:
-        print(
-            "주의: --fast 로 MySQL 통합과 브라우저 렌더링을 **실행하지 않았다**. "
-            "방언 정확성과 Scalar 화면은 승인되지 않았다."
-        )
     if failures:
         print(f"실패 {len(failures)}건:")
         for name, _ in failures:

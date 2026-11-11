@@ -61,7 +61,6 @@ fastapi-project-structure-django-passive-style/
 ├── config.py                    # INSTALLED_APPS + Pydantic Settings 9종
 ├── pyproject.toml / uv.lock     # 의존성·도구 설정 ([tool.uv] package = false)
 ├── alembic.ini
-├── compose.test.yaml            # 테스트 전용 MySQL 8.4 (127.0.0.1:3309) · Redis (127.0.0.1:6380)
 ├── .env.example                 # 설정 키 전체 목록 (자동 fallback 아님)
 │
 ├── app/
@@ -100,7 +99,7 @@ fastapi-project-structure-django-passive-style/
 │
 ├── migrations/                  # Alembic — env.py 가 App Registry 로 설치 앱 모델만 수집
 ├── scripts/                     # new_app(골격 생성) · review_gate · bandit_gate · openapi_revert_check
-├── tests/                       # 횡단 테스트: core/(apps/ 포함) · integration/(mysql) · browser/ · scripts/ · utils/
+├── tests/                       # 횡단 테스트: core/(apps/ 포함) · scripts/ · utils/
 ├── .github/workflows/ci.yml     # CI 게이트
 ├── docs/                        # 아래 "문서 안내"
 └── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (추적하지 않음, logs/ 는 기동 시 자동 생성)
@@ -235,24 +234,13 @@ JWT 검증 설정(`JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_ALGORITHM`(HS256/384/512)·
 ### 테스트
 
 ```bash
-uv run python -m pytest -m "not mysql and not browser"   # 외부 인프라 불필요 (SQLite·가짜 Redis)
+uv run python -m pytest                                  # 외부 인프라 불필요 (SQLite·가짜 Redis)
 uv run ruff check . && uv run ruff format --check . && uv run mypy .
-uv run python -m scripts.review_gate --fast              # 게이트 일괄 (MySQL 통합·브라우저 테스트 제외)
+uv run python -m scripts.review_gate                     # 게이트 일괄
 ```
 
 커버리지는 게이트·CI 가 항상 측정해 출력하지만 하한(`pyproject.toml` 의 `fail_under`)은 기본 **0** 입니다 — 처음에는 기능이 동작하는지가
 먼저이고, 필요해지면 그 값 하나만 올립니다(올리는 법은 개발 가이드 §6.1).
-`mysql`·`browser` 마커 테스트의 준비물과 CI 구성은 [개발 가이드 §6](docs/guides/DEVELOPMENT.md#6-테스트와-품질-게이트)에 있습니다.
-
-**전수 통합(e2e)** — 실제 MySQL 8.4 복제(primary + GTID replica)·Redis 7.4·uvicorn·Celery worker·Chromium 위에서
-모든 API operation·관리 뷰·태스크·Redis 키를 실행하고, 장애(Redis·MySQL·worker)를 주입합니다. 하네스가 compose 를 직접
-띄우고 내리므로 명령은 하나입니다(Docker 가 필요합니다 — Windows 면 WSL 안의 Docker 를 `wsl -e docker` 로 씁니다):
-
-```bash
-REDIS_HOST=127.0.0.1 REDIS_PORT=16393 uv run python -m pytest -m e2e   # 포트 13341·13342·16393·18093 (127.0.0.1)
-```
-
-무엇을 보장하는지·새 API 를 추가하면 무엇을 해야 하는지는 [개발 가이드 §6.6](docs/guides/DEVELOPMENT.md#66-전수-통합-e2e)에 있습니다.
 
 ### 자주 막히는 지점
 

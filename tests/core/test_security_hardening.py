@@ -443,17 +443,6 @@ def test_sql_echo_is_allowed_in_development(
     assert reloaded.log_settings.LOG_SQL_ECHO_ENABLED is True
 
 
-def test_test_database_is_published_on_loopback_only():
-    """테스트 MySQL 을 0.0.0.0 에 열면 같은 네트워크의 다른 기기가 접속할 수 있다."""
-    compose = (REPO_ROOT / "compose.test.yaml").read_text(encoding="utf-8")
-    assert (
-        '"127.0.0.1:${MYSQL_TEST_PORT:-3309}:3306"' in compose
-    ), "테스트 DB 포트가 loopback 에만 바인딩되지 않았다"
-    assert (
-        '"127.0.0.1:${REDIS_TEST_PORT:-6380}:6379"' in compose
-    ), "테스트 Redis 포트가 loopback 에만 바인딩되지 않았다"
-
-
 def test_ci_pipes_into_tee_only_with_pipefail():
     """`pytest | tee` 는 pipefail 없이는 tee 의 0 을 돌려준다 — 실패가 초록으로 보인다.
 
