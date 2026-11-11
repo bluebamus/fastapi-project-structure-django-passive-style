@@ -2,7 +2,7 @@
 기본 Repository 클래스
 
 모든 ORM Repository 의 기반이 되는 Generic 클래스입니다.
-공개 메서드는 최소 CRUD **정확히 8개**다(ADR-016) — create · get_by_id · get_one ·
+공개 메서드는 최소 CRUD **정확히 8개**다 — create · get_by_id · get_one ·
 get_all · count · exists · update · delete. 커밋하지 않는다(flush 까지).
 
 Eager loading·정렬 목록·집계 같은 도메인 쿼리는 Base 를 넓히지 않고 기능 Repository 에

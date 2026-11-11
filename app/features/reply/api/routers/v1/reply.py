@@ -37,7 +37,7 @@ router = APIRouter()
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
     404: {"model": ErrorResponse, "description": "댓글을 찾을 수 없음"}
 }
-#: 수정·삭제 — 소유자 또는 슈퍼유저만(ADR-018). 존재 확인(404)이 권한 확인(403)보다 먼저다.
+#: 수정·삭제 — 소유자 또는 슈퍼유저만. 존재 확인(404)이 권한 확인(403)보다 먼저다.
 _OWNER_ONLY = {**_NOT_FOUND, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE}
 
 

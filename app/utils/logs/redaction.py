@@ -1,4 +1,4 @@
-"""로그 비밀값 가리기 — 마스킹 규칙의 정본 (log-redaction-fixes ADR-001).
+"""로그 비밀값 가리기 — 마스킹 규칙의 정본.
 
 ``SecretRedactor`` 하나가 규칙을 갖고, :func:`install_record_redaction` 이 그것을
 ``logging`` 의 LogRecord factory 로 건다. factory 는 **어떤 로거·핸들러·포매터로 가든**

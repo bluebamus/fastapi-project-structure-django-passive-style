@@ -1,4 +1,4 @@
-"""``AdminAuthBackend`` — /admin 로그인·세션·레이트 리밋 (admin-login ADR-001·ADR-002).
+"""``AdminAuthBackend`` — /admin 로그인·세션·레이트 리밋.
 
 실물 SQLAdmin(``Admin``)에 백엔드를 주입하고 HTTP 로 시험한다. 자격 확인은 가짜(``FakeCredentials``)
 로 바꿔 백엔드의 판정만 본다 — 사용자 DB 쪽 구현은 ``app/features/auth/tests/test_admin_credentials.py``,
@@ -297,7 +297,7 @@ async def test_session_cookie_attributes(https_only: bool):
 
 
 # ---------------------------------------------------------------------------
-# CSRF 토큰 (security-ops-hardening ADR-004)
+# CSRF 토큰
 # ---------------------------------------------------------------------------
 class CountingCredentials(FakeCredentials):
     def __init__(self) -> None:

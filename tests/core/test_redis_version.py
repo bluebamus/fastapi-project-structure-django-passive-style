@@ -1,4 +1,4 @@
-"""Redis 최소 버전 (log-redaction-fixes ADR-004).
+"""Redis 최소 버전.
 
 - 기동 확인: ``INFO server`` 가 최소 버전 미만이면 기동을 멈추고, 이상이면 통과하며, INFO 를
   쓸 수 없으면(관리형 Redis·fakeredis) WARNING 후 계속한다.

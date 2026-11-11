@@ -1,4 +1,4 @@
-"""로그 설정(LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT·LOG_DATE_FORMAT·LOG_CONSOLE_ENABLED) 결선 (config-cleanup-2).
+"""로그 설정(LOG_CONSOLE_FORMAT·LOG_FILE_FORMAT·LOG_DATE_FORMAT·LOG_CONSOLE_ENABLED) 결선.
 
 각 값이 실제 출력 줄과 핸들러 구성에 닿는지 본다 — 앱 dictConfig·uvicorn 직접 실행·Celery 워커.
 """
@@ -255,7 +255,7 @@ def test_valid_custom_format_loads(monkeypatch):
 
 
 # =============================================================================
-# logging-overhaul — 필수 필드(L3) · 앱별 레벨(L4) · 보관일수(L6)
+# 필수 필드 · 앱별 레벨 · 보관일수
 # =============================================================================
 @pytest.mark.parametrize("key", ["LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT"])
 def test_format_without_required_fields_is_rejected(monkeypatch, key):

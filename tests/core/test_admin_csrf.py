@@ -1,4 +1,4 @@
-"""로그인 이후 관리 화면 CSRF · POST 로그아웃 · 관리 화면 쪽 세션 폐기 (admin-session-hardening ADR-001~003).
+"""로그인 이후 관리 화면 CSRF · POST 로그아웃 · 관리 화면 쪽 세션 폐기.
 
 조립은 운영과 같다(``create_app``) — 관리 뷰·세션 팩토리만 in-memory SQLite 로, Redis 는 fakeredis 로.
 
@@ -342,7 +342,7 @@ async def _boss_index(redis: FakeRedis) -> set[bytes]:
 @pytest.mark.parametrize(
     ("form", "refresh_revoked"),
     [
-        # 슈퍼유저 해제 — 관리 세션 + refresh(API 경로 UserService 와 같다, ADR-010)
+        # 슈퍼유저 해제 — 관리 세션 + refresh(API 경로 UserService 와 같다)
         ({"username": "boss", "email": "b@x.com", "is_active": "y"}, True),
         # 비활성화 — 관리 세션 + refresh
         ({"username": "boss", "email": "b@x.com", "is_superuser": "y"}, True),
@@ -376,7 +376,7 @@ async def test_admin_edit_that_drops_the_privilege_revokes_that_users_sessions(
 
 
 async def test_self_demotion_ends_the_current_session_too(env):
-    """자기 자신을 강등하면 지금 세션도 지워진다 — 의도(ADR-005)."""
+    """자기 자신을 강등하면 지금 세션도 지워진다 — 의도."""
     client, _, redis = env
 
     response = await client.post(
@@ -566,7 +566,7 @@ def test_our_base_template_extends_the_original_and_is_picked_first(env):
 
 
 # ---------------------------------------------------------------------------
-# 폼 본문 상한 (integration-e2e ADR-012 결정 7 · F-007)
+# 폼 본문 상한
 # ---------------------------------------------------------------------------
 MIB = 1024 * 1024
 

@@ -1,4 +1,4 @@
-"""예시 인가 정책 회귀 표 (service-hardening F2 · access-policy).
+"""예시 인가 정책 회귀 표.
 
 접근 수준의 정본은 **뷰 선언**이다(``app/core/security/access.py``). "모든 라우트가 수준을
 선언했는가" 는 기동 시 ``AccessPolicyGuard`` 가 막으므로 여기서 다시 세지 않는다. 이 표는
@@ -195,7 +195,7 @@ async def test_protected_operation_without_token_is_401(client, key):
 async def test_protected_operation_with_invalid_token_is_401_with_bearer_challenge(client, key):
     """토큰이 **있지만** 위조·만료면 401 에도 ``WWW-Authenticate: Bearer`` 가 붙는다(RFC 6750 §3).
 
-    없을 때만 붙고 틀렸을 때 빠지면 클라이언트는 다시 인증해야 한다는 신호를 받지 못한다(integration-e2e F-001).
+    없을 때만 붙고 틀렸을 때 빠지면 클라이언트는 다시 인증해야 한다는 신호를 받지 못한다.
     """
     resp = await _call(client, key, headers={"Authorization": "Bearer not-a-jwt"})
 
@@ -284,7 +284,7 @@ async def test_normal_user_token_claiming_superuser_needs_the_server_key(client)
 
 
 # ---------------------------------------------------------------------------
-# 접속 로그 user_id (ledger F-024)
+# 접속 로그 user_id
 # ---------------------------------------------------------------------------
 class _RecordingSink:
     def __init__(self) -> None:

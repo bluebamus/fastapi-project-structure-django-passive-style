@@ -82,9 +82,9 @@ class UserAdmin(ModelView, model=User):
     ]
 
     # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넘기면 sqladmin 0.32 목록 처리가
-    # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다(admin-login F-007).
+    # ``parameter_name`` 을 찾다 AttributeError(목록 500)로 죽는다.
     # 시각 컬럼(UTCDateTime)은 sqladmin 연산 필터 대신 ``LocalDateFilter`` 로 건다 — 연산 필터는
-    # UTCDateTime 을 날짜로 인식하지 못해 문자열을 바인딩한다(security-ops-hardening ADR-005).
+    # UTCDateTime 을 날짜로 인식하지 못해 문자열을 바인딩한다.
     column_filters = [
         BooleanFilter(User.is_active),
         LocalDateFilter(User.created_at, title="가입일"),
@@ -138,7 +138,7 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 세션 즉시 폐기 (admin-session-hardening ADR-008·ADR-010)
+    # 세션 즉시 폐기
     # =========================================================================
     # 무엇을 지울지는 API 서비스(UserService)와 같은 판정 함수가 정한다 — 비활성화·슈퍼유저 해제·비밀번호
     # 변경·삭제는 관리 세션과 refresh family 를 지운다(관리 화면 경로 = API 경로).

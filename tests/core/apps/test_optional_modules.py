@@ -1,4 +1,4 @@
-"""AC-05 — 선택 모듈 부재와 내부 import 실패의 구분 (NFR-03·SEC-07).
+"""선택 모듈 부재와 내부 import 실패의 구분.
 
 이 구분이 무너지면 오타 하나가 "그 앱은 라우터가 없나 보다" 로 조용히 흡수된다.
 판정 기준은 ``ModuleNotFoundError.name`` 이다 — 찾던 모듈 자신이 없으면 부재,
@@ -29,7 +29,7 @@ def test_app_without_router_or_admin_is_allowed():
 
 
 def test_internal_import_error_in_root_package_propagates(registry: Apps):
-    """SEC-07: root package 내부의 import 실패는 startup 실패다."""
+    """root package 내부의 import 실패는 startup 실패다."""
     with pytest.raises(ModuleNotFoundError) as exc:
         registry.populate([f"{PKG}.broken"])
 
@@ -37,7 +37,7 @@ def test_internal_import_error_in_root_package_propagates(registry: Apps):
 
 
 def test_internal_import_error_in_models_propagates(registry: Apps):
-    """SEC-07: models 모듈 내부의 import 실패도 startup 실패다."""
+    """models 모듈 내부의 import 실패도 startup 실패다."""
     with pytest.raises(ModuleNotFoundError) as exc:
         registry.populate([f"{PKG}.broken_models"])
 
@@ -45,7 +45,7 @@ def test_internal_import_error_in_models_propagates(registry: Apps):
 
 
 def test_internal_import_error_preserves_traceback(registry: Apps):
-    """NFR-03: 원래 예외의 type·cause·traceback 을 보존한다."""
+    """원래 예외의 type·cause·traceback 을 보존한다."""
     with pytest.raises(ModuleNotFoundError) as exc:
         registry.populate([f"{PKG}.broken"])
 

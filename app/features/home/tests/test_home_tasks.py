@@ -1,4 +1,4 @@
-"""home 태스크 — 세션은 background_session, 서비스 조립은 home provider (ADR-012)."""
+"""home 태스크 — 세션은 background_session, 서비스 조립은 home provider."""
 
 import asyncio
 from contextlib import asynccontextmanager

@@ -1,7 +1,7 @@
 """
 User v1 API 엔드포인트 — 사용자 CRUD.
 
-인가: 목록·생성·삭제는 슈퍼유저, 단건 조회·수정은 본인 또는 슈퍼유저(service-hardening F2).
+인가: 목록·생성·삭제는 슈퍼유저, 단건 조회·수정은 본인 또는 슈퍼유저.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services, 세션 선택·Service 조립은 dependencies 가 맡는다.
 쓰기 핸들러는 응답 DTO 를 먼저 검증한 뒤 `await service.commit()` 으로 한 번 커밋한다(별도 UnitOfWork 없음).

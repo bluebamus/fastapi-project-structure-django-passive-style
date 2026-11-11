@@ -144,8 +144,8 @@ def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
         assert handler["retention_days"] == logs_config.log_settings.LOG_RETENTION_DAYS
         assert handler["max_bytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
         # 핸들러마다 컨텍스트 필터가 붙어야 appname/classname 이 채워진다.
-        # 목록 전체를 고정하지 않는다 — SQL 유출 차단 필터(sql_noise)가 함께 붙는다(C-5).
-        # ADR-019 가 지키는 것은 "console + 회전 파일" 이라는 handler 구성이지
+        # 목록 전체를 고정하지 않는다 — SQL 유출 차단 필터(sql_noise)가 함께 붙는다.
+        # 지키는 것은 "console + 회전 파일" 이라는 handler 구성이지
         # 필터 개수가 아니다.
         assert "context" in handler["filters"]
         assert str(tmp_path) in handler["filename"]
@@ -177,17 +177,17 @@ def test_file_logging_can_be_disabled_in_production(monkeypatch, tmp_path):
 
 
 def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
-    """ADR-019 — 앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
+    """앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
 
     이 프로젝트는 Django 의 ``settings.LOGGING["loggers"]`` 식 등록을 쓰지 않고
-    소스 경로에서 앱을 판별한다. 앱별 레벨은 ``LOG_APP_LEVELS`` 필터가 맡는다(logging-overhaul).
+    소스 경로에서 앱을 판별한다. 앱별 레벨은 ``LOG_APP_LEVELS`` 필터가 맡는다.
     ``loggers`` 에 있는 것은 uvicorn 로거를 root 로 보내는 항목뿐이다 — 핸들러를 달지 않는다.
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
         assert set(cfg["loggers"]) == set(logs_config.UVICORN_LOGGERS), (
             f"ENV={env} 의 dictConfig 에 uvicorn 말고 다른 로거가 생겼습니다. "
-            "앱별 로거 등록은 ADR-019 의 비목표입니다 — 레벨은 LOG_APP_LEVELS 로 주세요."
+            "앱별 로거는 등록하지 않습니다 — 레벨은 LOG_APP_LEVELS 로 주세요."
         )
         for spec in cfg["loggers"].values():
             assert spec["handlers"] == [] and spec["propagate"] is True
@@ -195,7 +195,7 @@ def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
 
 
 def test_uvicorn_config_is_the_app_config():
-    """``python main.py`` 의 uvicorn 구성 = 앱 구성 — 접속 줄 전용 포매터·핸들러가 없다(logging-overhaul L1).
+    """``python main.py`` 의 uvicorn 구성 = 앱 구성 — 접속 줄 전용 포매터·핸들러가 없다.
 
     uvicorn 로거는 자기 핸들러 없이 root 로 전파되므로 줄이 한 번만 찍힌다(중복 없음).
     렌더 결과는 test_log_settings.test_uvicorn_direct_run_access_line_renders 가 본다.

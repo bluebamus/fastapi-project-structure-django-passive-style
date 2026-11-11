@@ -1,8 +1,8 @@
 """Reports v1 API — 일별 매출 리포트 (**Raw SQL 예제**).
 
 ORM 예제의 View(`app/features/catalog/api/routers/v1/products.py`)와 구조가 같다.
-데이터가 Raw SQL 에서 왔다는 사실은 이 파일 어디에도 나타나지 않는다 — 그것이
-ADR-002 가 요구하는 상태다.
+데이터가 Raw SQL 에서 왔다는 사실은 이 파일 어디에도 나타나지 않는다 — 두 예제는
+Repository 구현만 다르다.
 
 조회 전용이므로 커밋하지 않는다. 매출은 운영 정보라 슈퍼유저만 본다(뷰 선언 ``SuperuserRequired``).
 """
@@ -24,8 +24,8 @@ from app.features.reports.dependencies.reports_dependencies import (
 from app.features.reports.schemas.report_schema import DailySalesReportResponse
 from app.features.reports.services.report_service import ReportService
 
-#: 모든 엔드포인트가 슈퍼유저 전용이다(service-hardening F2) — 접근 수준은 뷰마다 선언한다
-#: (access-policy). 401/403 응답 문서만 라우터에서 한 번에 싣는다.
+#: 모든 엔드포인트가 슈퍼유저 전용이다 — 접근 수준은 뷰마다 선언한다.
+#: 401/403 응답 문서만 라우터에서 한 번에 싣는다.
 router = APIRouter(
     responses={**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE},
 )

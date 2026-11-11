@@ -1,4 +1,4 @@
-"""인증 보안 부품 (service-hardening ADR-013~ADR-016).
+"""인증 보안 부품.
 
 목적마다 클래스 하나다 — 비밀번호 해시(``PasswordHasher``), 토큰 발급·검증(``TokenService``),
 refresh 회전 기록(``RefreshTokenStore``), 고정 창 레이트 리밋(``RateLimiter``), 요청 주체

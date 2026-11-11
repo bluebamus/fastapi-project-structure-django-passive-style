@@ -1,4 +1,4 @@
-"""Redis 클라이언트 주입 지점 (service-hardening ADR-011).
+"""Redis 클라이언트 주입 지점.
 
 Redis 는 필수다. 클라이언트는 lifespan(:mod:`app.core.resources`)이 기동 시 ping 으로
 검증해 ``app.state.redis`` 에 두고 종료 시 닫는다. 요청 코드는 이 provider 하나로만
@@ -7,7 +7,7 @@ Redis 는 필수다. 클라이언트는 lifespan(:mod:`app.core.resources`)이 �
 ``app.dependency_overrides[get_redis]`` 로 바꾼다.
 
 최소 버전은 :data:`REDIS_MIN_VERSION` 하나이고, lifespan 이 연결 직후
-:func:`ensure_redis_version` 으로 확인한다(log-redaction-fixes ADR-004).
+:func:`ensure_redis_version` 으로 확인한다.
 """
 
 from __future__ import annotations

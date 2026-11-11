@@ -1,4 +1,4 @@
-"""Raw 쓰기 workflow 검증 (SCN-RAW-002).
+"""Raw 쓰기 workflow 검증.
 
 `sales_orders` 에 대한 Raw DML 은 **공개 API 가 아니다** — 리포트 기능은 조회 전용이고,
 원본 주문은 다른 시스템이 넣는다. 그래도 Raw 쓰기 경로는 검증해야 한다. 검증하지
@@ -220,6 +220,6 @@ async def test_raw_update_must_write_updated_at_itself(
 
 
 def test_sales_order_model_exists_for_schema_ownership():
-    """조회를 Raw 로 해도 테이블 소유는 ORM 모델이 선언한다 (SCN-RAW-001)."""
+    """조회를 Raw 로 해도 테이블 소유는 ORM 모델이 선언한다."""
     assert SalesOrder.__tablename__ == "sales_orders"
     assert "sales_orders" in Base.metadata.tables

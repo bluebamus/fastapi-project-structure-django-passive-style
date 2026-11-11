@@ -1,14 +1,13 @@
 """Reports Service — 집계 규칙과 DTO 경계.
 
 Raw Repository 가 돌려준 ``RowMapping`` 이 **여기서** Pydantic DTO 가 된다. View 는
-Row 를 보지 않는다(RAW-REP-005).
+Row 를 보지 않는다.
 
 기간 규칙도 여기 있다 — 뒤집힌 기간과 과도한 범위를 거부하고, 포함 종료일을
 **배타 상한**으로 바꿔 Repository 에 넘긴다. 그 계산을 SQL 의 방언 함수
 (``DATE_ADD``)에 맡기지 않는 이유는 repository 모듈 docstring 참조.
 
-날짜는 **설정 시간대(``TIME_ZONE``)의 영업일**이다. DB 는 UTC 로 저장하므로(service-hardening
-ADR-010) 지역 0시를 UTC 순간으로 바꿔 조회한다 — Asia/Seoul 의 1월 2일은
+날짜는 **설정 시간대(``TIME_ZONE``)의 영업일**이다. DB 는 UTC 로 저장하므로 지역 0시를 UTC 순간으로 바꿔 조회한다 — Asia/Seoul 의 1월 2일은
 ``[01-01T15:00Z, 01-02T15:00Z)`` 다.
 """
 
@@ -31,7 +30,7 @@ from config import TimezoneSettings
 MAX_RANGE_DAYS = 366
 
 #: 조회할 수 있는 날짜의 하한·상한. 상한을 ``date.max`` 보다 하루 이상 앞에 두어야 배타 상한
-#: (``end_date + 1일``)이 ``OverflowError`` 로 500 이 되지 않는다(service-hardening ADR-008).
+#: (``end_date + 1일``)이 ``OverflowError`` 로 500 이 되지 않는다.
 MIN_DATE = date(1970, 1, 1)
 MAX_DATE = date(9998, 12, 31)
 

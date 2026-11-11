@@ -181,7 +181,7 @@ async def counting_client():
 
     # 예외 경로의 rollback 은 세션의 ``__aexit__`` 가 한다 — 운영 의존성과 같다.
     async with sqlite_session_overrides(app, on_session=_count_commits) as maker:
-        # auth-register 의 레이트 리밋이 Redis 를 쓴다(service-hardening F1)
+        # auth-register 의 레이트 리밋이 Redis 를 쓴다
         redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: redis
         transport = ASGITransport(app=app, raise_app_exceptions=False)

@@ -1,13 +1,13 @@
-"""DB 예외 → 애플리케이션 예외 안전 변환기 (development-plan Phase 3 · ledger F-015).
+"""DB 예외 → 애플리케이션 예외 안전 변환기.
 
 SQLAlchemy 예외의 ``str()`` 에는 **실행된 SQL 과 바인딩된 값**이 들어 있다. 값에는
 비밀번호 해시·토큰·개인정보가 섞이고, DSN 이 통째로 들어오는 경우도 있다. 그런데
 그 예외는 두 방향으로 샌다.
 
-1. **응답** — ``detail`` 에 실어 보내면 API 클라이언트가 그대로 받는다(F-011 에서 차단).
+1. **응답** — ``detail`` 에 실어 보내면 API 클라이언트가 그대로 받는다.
 2. **로그** — ``raise ... from e`` 로 원인을 이어 두면, 위에서 누가 ``logger.exception``
    을 호출하는 순간 traceback 에 원본 메시지가 통째로 찍힌다. 로거 이름이 ``app.*``
-   이라 ``SqlNoiseFilter`` 도 통과한다(F-015).
+   이라 ``SqlNoiseFilter`` 도 통과한다.
 
 그래서 **경계에서 한 번** 변환한다. 여기서 안전한 것만 골라 로그에 남기고, 원본은
 ``raise ... from None`` 으로 끊는다. 원본을 이어 붙이지 않는 것이 핵심이다 — 이어
@@ -46,7 +46,7 @@ logger = get_logger("db.errors")
 #: MySQL 중복 키 에러 코드.
 MYSQL_DUPLICATE_ENTRY = 1062
 
-#: 무결성 위반의 종류. 클라이언트가 고칠 수 있는 오류라 4xx 로 답한다(service-hardening ADR-007).
+#: 무결성 위반의 종류. 클라이언트가 고칠 수 있는 오류라 4xx 로 답한다.
 _DUPLICATE = "duplicate"  # 409 — 같은 값이 이미 있다
 _MISSING_VALUE = "missing_value"  # 422 — NOT NULL 컬럼에 값이 없다
 _MISSING_REFERENCE = "missing_reference"  # 422 — 참조할 행이 없다

@@ -5,7 +5,7 @@
 "auth 를 뺀 앱", "관리 화면을 끈 앱", "다른 registry 를 쓴 앱" 을 만들 수 없고, 그러면
 수동 등록의 핵심 계약(등록 안 한 앱은 안 붙는다)을 실행으로 증명할 방법이 없다.
 
-조립 순서(§6.5)는 다음과 같고, 순서 자체가 계약이다.
+조립 순서는 다음과 같고, 순서 자체가 계약이다.
 
 1. 설치 앱 목록 결정 (``config.INSTALLED_APPS`` 또는 주입값)
 2. registry population — config → models → ``ready()``
@@ -17,7 +17,7 @@
 8. 접근 정책 검사 — 접근 수준을 선언하지 않은 API 라우트가 있으면 기동을 멈춘다
 
 2번이 3번보다 먼저인 이유는 startup 테이블 생성과 migration metadata 가 같은 모델
-집합을 봐야 하기 때문이다. 7번이 조립의 마지막인 이유는 SEC-01 — ``ADMIN_DISABLED=true`` 면 sqladmin
+집합을 봐야 하기 때문이다. 7번이 조립의 마지막인 이유는 ``ADMIN_DISABLED=true`` 면 sqladmin
 이 아예 import 되지 않아야 한다. 8번은 라우트가 모두 붙은 뒤여야 빠짐없이 본다.
 """
 
@@ -68,14 +68,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     여기에는 조립만 남긴다. startup 중간에 실패했을 때의 해제 경로와 종료 순서가
     자원 관리자 한 곳에 모여 있어야, "정상 종료에서는 닫는데 실패 경로에서는
-    새는" 상태가 생기지 않는다(development-plan §9.4·§9.5).
+    새는" 상태가 생기지 않는다.
     """
     async with manage_application_resources(app):
         yield
 
 
 def _challenge(status_code: int, headers: Mapping[str, str] | None) -> Mapping[str, str] | None:
-    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다(integration-e2e ADR-012 결정 3).
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 더한다 — 이 앱이 내는 모든 401 이 같다.
 
     보호 라우트·로그인·refresh·logout·비활성 사용자 어디서 던졌든 이 한 곳을 지난다(RFC 6750 §3).
     예외가 이미 도전 헤더를 들고 왔으면 그것을 쓴다.
@@ -89,7 +89,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     """글로벌 예외 핸들러를 등록합니다(앱 예외·검증·HTTP·Redis 연결 오류·그 밖의 예외)."""
 
     async def redis_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Redis 에 닿지 못함 → 503 ``SERVICE_UNAVAILABLE`` (integration-e2e F-004 · ADR-009).
+        """Redis 에 닿지 못함 → 503 ``SERVICE_UNAVAILABLE``.
 
         레이트 리밋·refresh 회전·세션 폐기는 Redis 가 없으면 진행할 수 없다 — 요청은 거부한다(fail-closed).
         **예외 클래스 전용** 핸들러라 ``ExceptionMiddleware`` 에서 끝난다. ``Exception`` 핸들러로 보내면 Starlette
@@ -124,7 +124,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         AppException 및 하위 예외들을 처리하여 일관된 에러 응답을 반환합니다.
         """
         # 4xx 는 클라이언트 입력 문제라 WARNING, detail(입력값이 섞일 수 있다)은 남기지 않는다.
-        # 5xx 만 ERROR 로 남겨 운영 경보가 클라이언트 실수로 울리지 않게 한다(F-013).
+        # 5xx 만 ERROR 로 남겨 운영 경보가 클라이언트 실수로 울리지 않게 한다.
         extra = {
             "path": request.url.path,
             "method": request.method,
@@ -205,7 +205,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=None,
             ).model_dump(mode="json"),
             # 405 의 Allow, 401 의 WWW-Authenticate, 429 의 Retry-After 같은 HTTP 의미 헤더는
-            # 예외가 들고 온다. 본문만 바꾸고 헤더를 버리면 그 의미가 사라진다(M-03).
+            # 예외가 들고 온다. 본문만 바꾸고 헤더를 버리면 그 의미가 사라진다.
             headers=_challenge(exc.status_code, exc.headers),
         )
 
@@ -221,7 +221,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         #
         # SQLAlchemy 예외의 str() 에는 실행된 SQL 과 바인딩된 값이 들어 있고,
         # traceback 은 그것을 그대로 출력한다. 이 로거 이름은 ``app.core.*`` 이라
-        # SqlNoiseFilter 도 통과한다 — 필터로 막아둔 값이 여기로 새던 경로다(F-015).
+        # SqlNoiseFilter 도 통과한다 — 필터로 막아둔 값이 여기로 새던 경로다.
         #
         # 정상 경로의 DB 예외는 이미 ``convert_db_error`` 가 경계에서 소독한다.
         # 여기 도달했다는 것은 변환기를 거치지 않은 경로가 있다는 뜻이므로,
@@ -251,7 +251,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         #
         # 잡히지 않은 예외의 대부분은 DB 계층에서 올라온다. SQLAlchemy 의
         # ``str(exc)`` 에는 실행된 SQL 과 **바인딩된 값**, 때로는 DSN 이 그대로 들어
-        # 있다 — 그것을 HTTP 응답으로 돌려주면 로그 필터(C-5)로 막아둔 것을 응답
+        # 있다 — 그것을 HTTP 응답으로 돌려주면 로그 필터로 막아둔 것을 응답
         # 경로로 새로 여는 셈이다. "DEBUG 니까 괜찮다"가 성립하려면 DEBUG 인 서버가
         # 절대 외부에 노출되지 않아야 하는데, 그 전제는 사고로 자주 깨진다.
         #
@@ -272,7 +272,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def answer_unhandled_exception(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다(integration-e2e ADR-012 결정 2).
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받아 응답을 끝낸다.
 
         ``ServerErrorMiddleware`` 는 ``Exception`` 처리기로 응답한 뒤 예외를 다시 던진다 — uvicorn 이 traceback 을
         한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기(로그 형식·마스킹·본문)로 끝내면 기록은 한 번,
@@ -288,7 +288,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _document_real_validation_error(app: FastAPI) -> None:
-    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다(integration-e2e ADR-012 결정 1, F-010).
+    """OpenAPI 의 422 를 실제 본문(``ErrorResponse``)으로 광고한다.
 
     FastAPI 는 모든 operation 의 422 를 기본 ``HTTPValidationError``(``detail[loc,msg,type]``)로 적지만, 이 앱의
     검증 핸들러는 ``ErrorResponse``(``detail[field,message,type]``)를 낸다. 응답은 그대로 두고 문서만 한 곳에서
@@ -384,7 +384,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
     async def readiness_check(redis: Redis = Depends(get_redis)) -> ReadyResponse:
         """writer DB 와 Redis 를 함께 확인하고 준비 상태를 반환한다.
 
-        Redis 는 필수다(service-hardening ADR-011) — 레이트 리밋·refresh 회전이 쓰므로
+        Redis 는 필수다 — 레이트 리밋·refresh 회전이 쓰므로
         Redis 가 없는 인스턴스는 DB 가 살아 있어도 요청을 제대로 처리하지 못한다.
         둘을 ``gather`` 로 동시에 보내 최악 지연이 합이 아니라 큰 쪽 하나가 되게 한다.
         """
@@ -441,7 +441,7 @@ def create_app(
     Args:
         installed_apps: 설치할 앱 목록. ``None`` 이면 ``config.INSTALLED_APPS``.
         registry: 사용할 registry. ``None`` 이면 프로세스 전역 registry 를 쓴다.
-            테스트는 격리 인스턴스를 주입해 서로의 상태를 오염시키지 않는다(NFR-05).
+            테스트는 격리 인스턴스를 주입해 서로의 상태를 오염시키지 않는다.
         admin_disabled: 관리 화면을 끌지 여부. ``None`` 이면 ``app_settings.ADMIN_DISABLED``.
             끄면 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두 생기지 않는다.
 
@@ -486,7 +486,7 @@ def create_app(
     # 6. 헬스체크 + Scalar 문서
     _add_health_and_docs(app)
 
-    # 7. Admin — 여기서만 sqladmin 을 부른다(SEC-01).
+    # 7. Admin — 여기서만 sqladmin 을 부른다.
     app.state.app_registry = app_registry
     if not disabled:
         app.state.admin = create_admin(
@@ -494,10 +494,10 @@ def create_app(
         )
         logger.info("SQLAdmin 관리자 페이지 활성화 (슈퍼유저 로그인 필요): /admin")
     else:
-        # 경로를 싣지 않는다 — 끈 관리 화면의 위치를 로그로도 알리지 않는다(admin-login ADR-005).
+        # 경로를 싣지 않는다 — 끈 관리 화면의 위치를 로그로도 알리지 않는다.
         logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
 
-    # 8. 기본 거부 — 모든 라우트가 붙은 뒤에 본다(access-policy ADR-002). /admin Mount 는
+    # 8. 기본 거부 — 모든 라우트가 붙은 뒤에 본다. /admin Mount 는
     # 자체 세션 인증이라 대상이 아니다.
     AccessPolicyGuard().verify(app)
 

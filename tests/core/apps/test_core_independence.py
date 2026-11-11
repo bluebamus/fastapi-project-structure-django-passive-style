@@ -1,11 +1,11 @@
-"""NFR-06 — registry core 는 웹 프레임워크에 의존하지 않는다.
+"""registry core 는 웹 프레임워크에 의존하지 않는다.
 
 Django lifecycle(``AppConfig``/``Apps``)과 FastAPI·SQLAdmin 결선을 분리해 둔 이유는
-CR-08 때문이다: 결선은 "Django 와 같은 동작" 이 아니라 이 프로젝트 전용 adapter 다.
+결선이 "Django 와 같은 동작" 이 아니라 이 프로젝트 전용 adapter 다.
 경계가 코드에도 남아 있는지 import 로 확인한다.
 
 부수 효과 하나가 더 있다 — ``ADMIN_DISABLED=true`` 에서 sqladmin 이 registry 결선 때문에
-eager-load 되지 않는다는 SEC-01 의 전제가 여기서부터 성립한다.
+eager-load 되지 않는다는 전제가 여기서부터 성립한다.
 """
 
 import subprocess  # noqa: S404 - 깨끗한 인터프리터에서 import 그래프를 관찰한다

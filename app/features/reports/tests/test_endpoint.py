@@ -1,4 +1,4 @@
-"""매출 리포트 엔드포인트 — Raw SQL 경로 (SCN-RAW-001).
+"""매출 리포트 엔드포인트 — Raw SQL 경로.
 
 ORM 예제의 대응 파일은 `app/features/catalog/tests/test_endpoint.py` 다. 검증하는
 성질이 같다: registry 등록 → 라우터 마운트 → View → Dependency → Service →
@@ -76,7 +76,7 @@ def test_sales_order_model_is_collected_by_the_registry():
     """Raw 로만 조회해도 원본 테이블은 registry 에 있어야 한다.
 
     없으면 `alembic check` 가 "지워야 할 테이블"로 보고 drift 를 만든다 — 그래서
-    스키마 모델을 둔다(SCN-RAW-001).
+    스키마 모델을 둔다.
     """
     from app.core.apps import apps
     from config import INSTALLED_APPS
@@ -160,7 +160,7 @@ async def test_reversed_range_is_rejected(client):
 
 
 async def test_excessive_range_is_rejected(client):
-    """무제한 집계는 replica 를 통째로 묶는다 (NFR-002)."""
+    """무제한 집계는 replica 를 통째로 묶는다."""
     resp = await client.get(
         _ENDPOINT, params={"start_date": "2020-01-01", "end_date": "2026-08-01"}
     )
@@ -171,7 +171,7 @@ async def test_excessive_range_is_rejected(client):
 @pytest.mark.parametrize(
     ("start_date", "end_date"),
     [
-        ("9999-12-01", "9999-12-31"),  # end_date + 1일 이 OverflowError → 500 이던 경로(F-010)
+        ("9999-12-01", "9999-12-31"),  # end_date + 1일 이 OverflowError → 500 이던 경로
         ("1969-12-31", "1970-01-05"),  # 하한 밖
     ],
 )
@@ -221,7 +221,7 @@ async def test_response_is_a_validated_dto_not_a_raw_row(client):
 
 
 def test_view_does_not_import_row_types():
-    """View 계층이 `Row`/`RowMapping`/`CursorResult` 를 다루지 않는다 (RAW-REP-005)."""
+    """View 계층이 `Row`/`RowMapping`/`CursorResult` 를 다루지 않는다."""
     from pathlib import Path
 
     source = Path("app/features/reports/api/routers/v1/sales_reports.py").read_text(

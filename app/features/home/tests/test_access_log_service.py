@@ -57,7 +57,7 @@ async def test_stats_counts_device_type(session):
 
 @pytest.mark.asyncio
 async def test_time_ordered_queries_break_ties_by_id(session):
-    """``created_at desc`` 만으로는 같은 시각의 행 순서가 정해지지 않는다(service-hardening F-002).
+    """``created_at desc`` 만으로는 같은 시각의 행 순서가 정해지지 않는다.
 
     동률이면 페이지마다 다른 행이 나와 offset 페이지가 겹치거나 빠진다. ``id desc`` 보조 키로
     순서를 고정한다 — 같은 시각의 행은 id 역순으로 나와야 하고 페이지가 겹치지 않아야 한다.
@@ -100,7 +100,7 @@ async def test_time_ordered_queries_break_ties_by_id(session):
 
 @pytest.mark.asyncio
 async def test_long_strings_are_cut_to_the_column_length(session):
-    """클라이언트가 정한 긴 헤더·쿠키는 컬럼 길이로 잘려 저장된다(service-hardening F-006).
+    """클라이언트가 정한 긴 헤더·쿠키는 컬럼 길이로 잘려 저장된다.
 
     SQLite 는 길이를 강제하지 않으므로 저장된 값의 길이로 확인한다. MySQL strict 에서는
     자르지 않으면 1406 으로 INSERT 가 거부돼 기록이 빠진다. 길이는 모델에서 읽는다.
@@ -135,7 +135,7 @@ async def test_long_strings_are_cut_to_the_column_length(session):
 async def test_date_range_is_read_as_local_days(session):
     """날짜 범위는 설정 시간대의 지역 일자(양끝 포함)다 — UTC 저장값을 지역 0시 경계로 고른다.
 
-    Asia/Seoul 의 10월 12일은 ``[10-11T15:00Z, 10-12T15:00Z)`` 다(service-hardening D3).
+    Asia/Seoul 의 10월 12일은 ``[10-11T15:00Z, 10-12T15:00Z)`` 다.
     """
     from datetime import UTC, date, datetime
 

@@ -1,4 +1,4 @@
-"""폐기 판정 ``revocation_for_change`` — 관리 세션·refresh 두 집합을 한 곳에서 (admin-session-hardening ADR-010)."""
+"""폐기 판정 ``revocation_for_change`` — 관리 세션·refresh 두 집합을 한 곳에서."""
 
 from __future__ import annotations
 

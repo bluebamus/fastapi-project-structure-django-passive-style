@@ -1,6 +1,6 @@
-"""ORM 예제와 Raw 예제가 **Repository 만 다르다** (ADR-002 · Phase 5 완료 조건).
+"""ORM 예제와 Raw 예제가 **Repository 만 다르다**.
 
-개발계획서의 Phase 5 완료 조건은 이렇다 — "사용자는 두 예제를 나란히 비교해 데이터
+이 저장소의 약속은 이렇다 — "사용자는 두 예제를 나란히 비교해 데이터
 접근 방식만 교체할 수 있다". 그건 문장으로 두면 다음 커밋에 조용히 무너진다. 누가
 `reports` 에만 편의 계층을 하나 얹거나, `catalog` 의 Dependency 를 다르게 만들면
 비교가 성립하지 않는데, 그 사실은 아무 테스트도 실패시키지 않는다.
@@ -91,7 +91,7 @@ def test_both_services_extend_the_same_base(feature: str):
 
 @pytest.mark.parametrize("feature", [ORM_FEATURE, RAW_FEATURE])
 def test_read_paths_use_the_read_only_session(feature: str):
-    """조회는 양쪽 모두 read-only 세션을 쓴다 (C-1·C-17)."""
+    """조회는 양쪽 모두 read-only 세션을 쓴다."""
     dependencies = {
         ORM_FEATURE: "dependencies/catalog_dependencies.py",
         RAW_FEATURE: "dependencies/reports_dependencies.py",
@@ -102,7 +102,7 @@ def test_read_paths_use_the_read_only_session(feature: str):
 
 @pytest.mark.parametrize("feature", [ORM_FEATURE, RAW_FEATURE])
 def test_no_feature_commits_outside_the_view(feature: str):
-    """Repository 도 Service 도 커밋하지 않는다 (ADR-008).
+    """Repository 도 Service 도 커밋하지 않는다.
 
     ``BaseService.commit`` 정의는 core 에 있고, 기능 코드는 그것을 **호출만** 한다.
     호출은 View 에서 일어나야 한다.
@@ -135,7 +135,7 @@ def test_views_return_pydantic_dtos(feature: str):
 # 달라야 하는 것 — 이 차이가 예제의 요점이다
 # =============================================================================
 def test_repositories_extend_different_bases():
-    """ORM 은 `BaseRepository`, Raw 는 `RawRepositoryBase` 다 (AR-003)."""
+    """ORM 은 `BaseRepository`, Raw 는 `RawRepositoryBase` 다."""
     orm_bases = _base_classes(
         ORM_FEATURE, "repositories/product_repository.py", "ProductRepository"
     )
@@ -198,7 +198,7 @@ def test_only_the_orm_response_uses_from_attributes():
 
 
 def test_raw_service_validates_rows_explicitly():
-    """Raw Service 가 `dict(row)` 를 명시적으로 검증한다 (RAW-REP-005)."""
+    """Raw Service 가 `dict(row)` 를 명시적으로 검증한다."""
     source = _source(RAW_FEATURE, "services/report_service.py")
 
     assert "model_validate(dict(row))" in source, "RowMapping 을 검증 없이 흘린다"

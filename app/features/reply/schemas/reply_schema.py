@@ -15,7 +15,7 @@ class ReplyBase(BaseModel):
 
 
 class ReplyCreate(ReplyBase):
-    """댓글 생성 요청. 작성자는 받지 않는다 — 서버가 인증 주체로 채운다(ADR-018)."""
+    """댓글 생성 요청. 작성자는 받지 않는다 — 서버가 인증 주체로 채운다."""
 
 
 class ReplyUpdate(PatchSchema):

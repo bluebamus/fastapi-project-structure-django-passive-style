@@ -7,10 +7,10 @@ ORM 대응물은 `app/features/catalog/repositories/product_repository.py` 다. 
 
 1. 외부 값은 전부 named bind parameter (``:start_date``). 문자열 보간 금지 —
    AST 검사가 f-string·``%``·``.format()``·문자열 연결을 실패시킨다.
-2. ``query_name`` 은 코드 상수. 요청값으로 만들지 않는다(ADR-018).
+2. ``query_name`` 은 코드 상수. 요청값으로 만들지 않는다.
 3. 결과는 ``RowMapping``. Service 가 Pydantic 으로 검증해서야 밖으로 나간다.
 
-시각 규칙(service-hardening ADR-010):
+시각 규칙:
     ``ordered_at`` 은 UTC 로 저장된다. 기간 경계는 **Service 가 지역 영업일을 UTC 순간으로
     바꾼 값**(``:start_at``·``:end_exclusive``)이고, ``UTCDateTime`` 으로 바인딩해 ORM 과
     같은 형식으로 비교한다. 일자 버킷은 UTC 값을 설정 시간대의 오프셋만큼 옮긴 뒤의
@@ -26,7 +26,7 @@ ORM 대응물은 `app/features/catalog/repositories/product_repository.py` 다. 
     다만 SQLite 와 MySQL 은 **반환 타입**이 다르다 — ``sales_date`` 가 각각 문자열과
     ``date``, ``gross_amount`` 가 float 과 ``Decimal`` 이다. 그래서 결과를 dict 로
     그냥 흘리지 않고 Pydantic 으로 검증한다. 실제 값 정확성은 MySQL 통합
-    테스트가 승인한다(ADR-004).
+    테스트가 승인한다.
 """
 
 from collections.abc import Sequence
@@ -37,12 +37,12 @@ from sqlalchemy import RowMapping, TextClause, bindparam, text
 from app.core.models.types import UTCDateTime
 from app.core.repositories.raw_repository_base import RawRepositoryBase
 
-#: 로그 라벨. `feature.use_case` 형식의 코드 상수여야 한다(ADR-018).
+#: 로그 라벨. `feature.use_case` 형식의 코드 상수여야 한다.
 QUERY_DAILY_SALES = "sales_report.daily_sales"
 QUERY_ORDER_COUNT = "sales_report.order_count"
 
 #: 집계 대상 주문 상태. 요청값이 아니라 코드가 소유한다 — 이 값을 밖에서 받으면
-#: 식별자/리터럴 주입 경로가 열린다(RAW-REP-004).
+#: 식별자/리터럴 주입 경로가 열린다.
 COUNTED_STATUS = "paid"
 
 #: 기간 경계는 UTC 순간이다 — 저장 형식(``UTCDateTime``)과 같은 변환을 태운다.

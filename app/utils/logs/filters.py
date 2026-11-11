@@ -133,10 +133,10 @@ _SQL_NOISE_MIN_LEVEL = logging.WARNING
 
 
 class SqlNoiseFilter(logging.Filter):
-    """SQL 본문·파라미터가 로그로 새는 것을 막는다 (design-baseline C-5).
+    """SQL 본문·파라미터가 로그로 새는 것을 막는다.
 
-    ``loggers`` 키를 추가해 레벨을 조정하는 대신 필터를 쓰는 이유는 ADR-019
-    (앱별 로거를 등록하지 않고 경로로 appname 을 판별한다)를 깨지 않기 위해서다.
+    ``loggers`` 키를 추가해 레벨을 조정하는 대신 필터를 쓰는 이유는 앱별 로거를
+    등록하지 않고 경로로 appname 을 판별하는 구성을 깨지 않기 위해서다.
     핸들러는 여전히 root 에만 붙는다.
 
     SQL 을 봐야 하는 개발자는 ``LOG_SQL_ECHO_ENABLED=true`` 로 명시적으로 연다.

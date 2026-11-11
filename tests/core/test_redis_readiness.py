@@ -1,4 +1,4 @@
-"""Redis 필수 — ``get_redis`` provider 와 ``/ready`` 의 DB·Redis 확인 (service-hardening ADR-011·C-10).
+"""Redis 필수 — ``get_redis`` provider 와 ``/ready`` 의 DB·Redis 확인.
 
 lifespan 없이 ``create_app()`` 만 만들고 ``app.state.redis`` 에 가짜를 넣는다 — 실제 Redis·DB 에
 닿지 않는다. DB ping 은 ``bootstrap.ping_writer_db`` 를 monkeypatch 한다.

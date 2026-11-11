@@ -13,8 +13,8 @@
    `.env.example` 에 문서화되지 않은 숨은 설정이 생긴다.
 
 3. **설정 필드는 운영 코드가 읽는다 — 지운 설정이 남아 있어도 기동은 깨지지 않는다.**
-   선언만 있는 설정은 값을 바꿔도 아무 일도 없다(config-cleanup 에서 ``SMTP_*``·``UPLOAD_*``·
-   ``SESSION_EXPIRE_SECONDS``, config-cleanup-2 에서 ``API_VERSION`` 을 지운 이유). 예외 목록은 없다.
+   선언만 있는 설정은 값을 바꿔도 아무 일도 없다(``SMTP_*``·``UPLOAD_*``·
+   ``SESSION_EXPIRE_SECONDS``·``API_VERSION`` 을 지운 이유). 예외 목록은 없다.
    지운 키가 `.env` 에 남아도 ``extra="ignore"`` 로 무시된다.
 """
 
@@ -148,7 +148,7 @@ REMOVED_KEYS = {
     "UPLOAD_ALLOWED_EXTENSIONS": '[".jpg"]',
     "SESSION_EXPIRE_SECONDS": "86400",
     "API_VERSION": "v1",
-    # logging-overhaul — 날짜·크기·보관일수 회전으로 바뀌며 지웠다(README 업그레이드 노트).
+    # 날짜·크기·보관일수 회전으로 바뀌며 지웠다.
     "LOG_APP_FILENAME": "{date}_app.log",
     "LOG_ERROR_FILENAME": "{date}_error.log",
     "LOG_BACKUP_COUNT": "5",
@@ -207,7 +207,7 @@ def test_removed_keys_left_in_environment_are_ignored(
 
 
 # =============================================================================
-# 4. 비밀 설정은 로그 가리기 목록에 있다 (logging-overhaul L7)
+# 4. 비밀 설정은 로그 가리기 목록에 있다
 # =============================================================================
 #: 이름이 이 모양이면 비밀 설정으로 본다 — 새 필드가 생기면 LOG_REDACTED_SETTINGS 에도 넣어야 한다.
 SECRET_FIELD_NAME = re.compile(r"PASSWORD|SECRET|_KEY$|_USER$")

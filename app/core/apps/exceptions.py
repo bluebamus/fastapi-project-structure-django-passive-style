@@ -9,7 +9,7 @@
 
 앱 package·module **내부** 의 import 실패는 여기서 감싸지 않는다. 원래
 ``ModuleNotFoundError`` 를 그대로 전파해 누락된 dependency 이름과 traceback 을
-보존한다(NFR-03·SEC-07).
+보존한다.
 """
 
 

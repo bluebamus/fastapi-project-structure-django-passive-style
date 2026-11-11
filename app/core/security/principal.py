@@ -1,9 +1,9 @@
-"""인가 판정 — 상태 없는 ``Principal`` 과 소유권 ``OwnershipPolicy`` (service-hardening ADR-017·ADR-018).
+"""인가 판정 — 상태 없는 ``Principal`` 과 소유권 ``OwnershipPolicy``.
 
 ``Principal`` 은 검증된 access 토큰의 claims 만으로 만든다(DB 조회 없음). 기능은 이 값과
-``OwnershipPolicy`` 만 알면 되므로 인가를 위해 user 기능을 import 하지 않는다(C-11).
+``OwnershipPolicy`` 만 알면 되므로 인가를 위해 user 기능을 import 하지 않는다.
 
-권한은 슈퍼유저/일반 2단계다(ADR-019). 소유자 판정은 ``OwnershipPolicy`` 한 곳에서만 한다 —
+권한은 슈퍼유저/일반 2단계다. 소유자 판정은 ``OwnershipPolicy`` 한 곳에서만 한다 —
 기능마다 같은 비교를 흩어 두면 하나가 빠진다.
 """
 

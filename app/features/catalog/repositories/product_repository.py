@@ -1,6 +1,6 @@
 """Product Repository — **ORM 데이터 접근**.
 
-`BaseRepository` 의 최소 CRUD 8개(ADR-016)를 그대로 쓴다. 도메인 전용 조회가
+`BaseRepository` 의 최소 CRUD 8개를 그대로 쓴다. 도메인 전용 조회가
 필요해지면 Base 를 넓히지 않고 **여기에** 추가한다 — Base 를 넓히면 Raw 쪽에서도
 같은 것을 다시 구현해야 한다.
 

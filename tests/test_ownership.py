@@ -1,4 +1,4 @@
-"""작성자 소유권 — blog·sns·reply 공통 (service-hardening ADR-018 · ledger F-022).
+"""작성자 소유권 — blog·sns·reply 공통.
 
 세 기능은 같은 정책을 따른다: 생성은 인증, 작성자(``author_id``·``author``)는 서버가 채우고,
 수정·삭제는 소유자 또는 슈퍼유저. 소유자 기록 이전의 행(``author_id`` NULL)은 슈퍼유저만

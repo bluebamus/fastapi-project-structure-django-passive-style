@@ -31,7 +31,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 인증(auth 도메인)용 비밀번호 해시(Argon2 — 이전 bcrypt 해시는 로그인 시 바뀐다). 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # 슈퍼유저/일반 2단계 권한(service-hardening ADR-019). 기존 행은 server_default 로 false.
+    # 슈퍼유저/일반 2단계 권한. 기존 행은 server_default 로 false.
     is_superuser: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )

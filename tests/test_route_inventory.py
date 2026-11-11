@@ -29,10 +29,10 @@ EXPECTED: dict[str, frozenset[str]] = {
     "/api/v1/auth/register": frozenset({"POST"}),
     "/api/v1/auth/login": frozenset({"POST"}),
     "/api/v1/auth/refresh": frozenset({"POST"}),
-    # service-hardening F1(ADR-015): refresh family 폐기 — 공개 API 추가(기존 경로 불변)
+    # refresh family 폐기 — 공개 API 추가(기존 경로 불변)
     "/api/v1/auth/logout": frozenset({"POST"}),
     "/api/v1/auth/me": frozenset({"GET"}),
-    # ORM/Raw 예제 (Phase 5) — 두 기능은 Repository 구현만 다르다.
+    # ORM/Raw 예제 — 두 기능은 Repository 구현만 다르다.
     "/api/v1/catalog/products": frozenset({"GET", "POST"}),
     "/api/v1/catalog/products/{product_id}": frozenset({"GET", "PATCH", "DELETE"}),
     "/api/v1/reports/daily-sales": frozenset({"GET"}),

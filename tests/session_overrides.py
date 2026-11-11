@@ -1,4 +1,4 @@
-"""엔드포인트 테스트용 세션 의존성 오버라이드 — **한 곳**에서만 만든다 (service-hardening C1).
+"""엔드포인트 테스트용 세션 의존성 오버라이드 — **한 곳**에서만 만든다.
 
 엔드포인트 테스트는 ``get_writer_db_session`` · ``get_read_only_db_session`` 을 in-memory
 SQLite 세션으로 바꿔 끼운다. 예전에는 파일마다 같은 픽스처를 손으로 썼고, 두 의존성을

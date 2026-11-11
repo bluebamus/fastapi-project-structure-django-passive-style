@@ -24,7 +24,7 @@ class AuthenticatedUserResponse(BaseModel):
     이름을 굳이 다르게 두는 이유는 OpenAPI 때문이다. 서로 다른 모듈의 같은 클래스
     이름은 schema key 가 ``app__features__auth__schemas__auth_schema__UserResponse``
     처럼 **모듈 경로**로 노출된다. 그 이름은 파일을 옮기는 순간 바뀌고, 그때 이
-    스키마로 생성한 클라이언트 코드가 통째로 깨진다(DOC-005).
+    스키마로 생성한 클라이언트 코드가 통째로 깨진다.
     """
 
     model_config = ConfigDict(from_attributes=True)

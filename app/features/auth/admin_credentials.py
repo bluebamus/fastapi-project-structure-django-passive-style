@@ -1,4 +1,4 @@
-"""/admin 로그인의 자격 확인 — 사용자 저장소를 아는 쪽 구현 (admin-login ADR-002).
+"""/admin 로그인의 자격 확인 — 사용자 저장소를 아는 쪽 구현.
 
 core 의 ``AdminAuthBackend`` 는 사용자 모델을 모른다. 이 클래스가 ``AdminCredentials`` 계약을
 구현하고, ``AuthConfig.ready()`` 가 그 팩토리를 core 훅에 등록한다. 비밀번호 확인과

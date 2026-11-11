@@ -2,7 +2,7 @@
 
 View 는 HTTP 역할만 한다: 파라미터 수신 → 주입된 Service 호출 → 응답 DTO 변환.
 인가: 조회는 ``Public``, 쓰기(생성·수정·삭제)는 ``SuperuserRequired`` — 뷰마다 선언한다.
-쓰기는 응답 DTO 를 검증한 **뒤**, 응답을 돌려주기 **전에** 한 번 커밋한다(ADR-008).
+쓰기는 응답 DTO 를 검증한 **뒤**, 응답을 돌려주기 **전에** 한 번 커밋한다.
 
 Raw 예제의 View(`app/features/reports/api/routers/v1/sales_reports.py`)와 이 파일을
 비교하면, 달라지는 것이 Repository 뿐임이 드러난다.
@@ -38,7 +38,7 @@ _NOT_FOUND: dict[int | str, dict[str, Any]] = {
 _CONFLICT: dict[int | str, dict[str, Any]] = {
     409: {"model": ErrorResponse, "description": "이미 존재하는 SKU"}
 }
-#: 쓰기는 슈퍼유저만(service-hardening F2). 조회는 공개다.
+#: 쓰기는 슈퍼유저만. 조회는 공개다.
 _ADMIN = {**UNAUTHORIZED_RESPONSE, **ADMIN_FORBIDDEN_RESPONSE}
 
 

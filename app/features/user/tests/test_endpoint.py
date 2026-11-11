@@ -4,7 +4,7 @@
 in-memory sqlite(get_writer_db_session 오버라이드)로 검증한다. 쓰기용 서비스는
 refresh 기록(Redis)을 주입받으므로 ``get_redis`` 를 fakeredis 로 바꾼다.
 
-인가(service-hardening F2): 목록·생성·삭제는 슈퍼유저, 단건 조회·수정은 본인 또는
+인가: 목록·생성·삭제는 슈퍼유저, 단건 조회·수정은 본인 또는
 슈퍼유저, 권한 필드(``is_active``·``is_superuser``)는 슈퍼유저만 바꾼다.
 """
 
@@ -77,7 +77,7 @@ async def test_create_and_get_user(client):
 
 
 async def test_create_stores_an_argon2_hash(env):
-    """생성은 비밀번호를 core ``PasswordHasher`` 로 해시해 저장한다(평문·무비밀번호 금지, F-023)."""
+    """생성은 비밀번호를 core ``PasswordHasher`` 로 해시해 저장한다(평문·무비밀번호 금지)."""
     client, maker, _ = env
     body = await _create(client, "hashme")
 
@@ -275,7 +275,7 @@ async def test_delete_revokes_refresh_families(env):
 
 
 # ---------------------------------------------------------------------------
-# 관리 화면 세션 즉시 폐기 (admin-session-hardening ADR-001) — refresh 폐기와 같은 지점이다.
+# 관리 화면 세션 즉시 폐기 — refresh 폐기와 같은 지점이다.
 # ---------------------------------------------------------------------------
 async def _seed_admin_sessions(redis: FakeRedis, user_id: str) -> list[str]:
     """그 사용자의 관리 세션 두 개(브라우저 두 곳)를 만든다."""

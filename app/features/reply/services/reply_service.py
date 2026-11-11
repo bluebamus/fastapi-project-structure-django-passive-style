@@ -29,7 +29,7 @@ class ReplyService(BaseService):
     async def create_reply(self, data: ReplyCreate, principal: Principal) -> Reply:
         """댓글을 생성한다(커밋은 호출자가 수행).
 
-        작성자(``author_id``·``author``)는 요청 본문이 아니라 인증 주체로 채운다(ADR-018).
+        작성자(``author_id``·``author``)는 요청 본문이 아니라 인증 주체로 채운다.
         """
         self.log.debug("댓글 생성: post_id=%s", data.post_id)
         return await self.repository.create(

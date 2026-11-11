@@ -1,7 +1,7 @@
-"""Phase 3a — DB 예외 안전 변환기와 F-015 (development-plan Phase 3).
+"""DB 예외 안전 변환기 — 응답·로그에 SQL·바인딩 값이 새지 않는다.
 
-여기서 닫는 것은 **로그 경유 유출**이다. Round 1 에서 `SqlNoiseFilter` 를 붙였지만
-그 필터는 *로거 이름*으로 거른다. 앱 로거(`app.*`)가 DB 예외를 traceback 과 함께
+여기서 닫는 것은 **로그 경유 유출**이다. `SqlNoiseFilter` 는
+*로거 이름*으로 거른다. 앱 로거(`app.*`)가 DB 예외를 traceback 과 함께
 남기면 그 줄은 필터를 그대로 통과하고, traceback 안에는 실행된 SQL 과 바인딩된 값이
 들어 있다.
 
@@ -78,7 +78,7 @@ def _sqlite_integrity_error(errorname: str) -> IntegrityError:
     ],
 )
 def test_mysql_integrity_codes_map_to_client_or_server_errors(code, expected_type, status):
-    """클라이언트가 고칠 수 있는 위반은 4xx 다 — 1048 이 500 이던 것이 F-009 였다."""
+    """클라이언트가 고칠 수 있는 위반은 4xx 다 — 1048 이 500 이던 결함이다."""
     converted = convert_db_error(_integrity_error(code=code), operation="UPDATE", model="Post")
 
     assert type(converted) is expected_type
@@ -170,7 +170,7 @@ def test_driver_error_code_extraction():
 
 
 # =============================================================================
-# F-015 — 카나리아가 응답에도 로그에도 나타나지 않는다
+# 카나리아가 응답에도 로그에도 나타나지 않는다
 # =============================================================================
 def test_converted_exception_carries_no_secret_in_its_payload():
     """응답으로 나가는 detail·message 에 원본이 없다."""
@@ -184,7 +184,7 @@ def test_converted_exception_drops_the_original_cause():
     """원본을 ``__cause__``/``__context__`` 로 이어두지 않는다.
 
     이어두면 위에서 누가 ``logger.exception`` 을 부르는 순간 traceback 에 원본이
-    통째로 찍힌다 — 그게 F-015 였다.
+    통째로 찍힌다.
     """
     try:
         try:
@@ -224,7 +224,7 @@ def test_converter_logs_only_safe_fields():
 
 
 def test_traceback_of_converted_exception_has_no_secret():
-    """최종 formatter 출력까지 확인한다 — F-015 의 실제 완료 조건."""
+    """최종 formatter 출력까지 확인한다."""
     from app.utils.logs import LOG_FORMAT
     from app.utils.logs.filters import ContextFilter, SqlNoiseFilter
     from app.utils.logs.formatters import TzFormatter
@@ -255,9 +255,8 @@ def test_traceback_of_converted_exception_has_no_secret():
 
     output = buffer.getvalue()
     assert "UnhandledException" in output, "로그가 안 나갔다 — 검사가 헛통과한다"
-    assert SECRET_CANARY not in output, (
-        "traceback 에 secret 이 남았다 — F-015 가 닫히지 않았다:\n"
-        + "\n".join(line for line in output.splitlines() if SECRET_CANARY in line)
+    assert SECRET_CANARY not in output, "traceback 에 secret 이 남았다:\n" + "\n".join(
+        line for line in output.splitlines() if SECRET_CANARY in line
     )
 
 
@@ -303,7 +302,7 @@ def test_unhandled_db_exception_is_logged_without_traceback():
 
 @pytest.mark.parametrize("relative", ["app/core/repositories/repository_base.py"])
 def test_no_raw_db_message_reaches_the_response(relative: str):
-    """응답 payload 로 원본 DB 메시지가 나가는 경로가 없다 (F-011 회귀 방지)."""
+    """응답 payload 로 원본 DB 메시지가 나가는 경로가 없다 (회귀 방지)."""
     source = (REPO_ROOT / relative).read_text(encoding="utf-8")
     code_lines = [line for line in source.splitlines() if not line.lstrip().startswith("#")]
     offenders = [line.strip() for line in code_lines if "str(e)" in line or "str(e.orig)" in line]

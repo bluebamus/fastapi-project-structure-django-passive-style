@@ -2,18 +2,18 @@
 
 **여기부터는 Django 가 아니다.** ``app/core/apps/{config,registry}.py`` 는 Django 의
 app loading lifecycle 을 옮긴 것이고, 이 모듈은 그 결과를 이 프로젝트의 웹 계층에
-붙이는 확장이다(CR-08). 경계를 파일로 나눠 둔 이유는 두 가지다.
+붙이는 확장이다. 경계를 파일로 나눠 둔 이유는 두 가지다.
 
-* registry core 가 FastAPI·SQLAdmin 에 의존하지 않는다(NFR-06). Alembic 이나 CLI 가
+* registry core 가 FastAPI·SQLAdmin 에 의존하지 않는다. Alembic 이나 CLI 가
   registry 를 쓸 때 웹 스택이 딸려오지 않는다.
-* ``ADMIN_DISABLED=true`` 에서 sqladmin 이 로드되지 않는다(SEC-01). 아래 admin 함수는 호출될
+* ``ADMIN_DISABLED=true`` 에서 sqladmin 이 로드되지 않는다. 아래 admin 함수는 호출될
   때 비로소 ``sqladmin`` 을 import 한다 — module 최상단에 두면 registry 를 쓰는 모든
   진입점이 sqladmin 을 끌고 들어온다.
 
 결선 규칙은 앱의 ``AppConfig`` 가 선언한다. module 이 없는 앱은 그 기능을 제공하지
 않는 것으로 보고 건너뛴다. 반면 **module 은 있는데 공개 이름이 없거나 내부 import 가
 실패하면 기동을 실패시킨다** — 조용히 건너뛰면 "라우트가 사라졌는데 아무도 모르는"
-상태가 된다(SEC-07).
+상태가 된다.
 """
 
 from __future__ import annotations
@@ -101,18 +101,18 @@ def install_admin(admin: Admin, registry: Apps) -> list[str]:
 def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Admin:
     """SQLAdmin 을 만들어 ``/admin`` 에 마운트하고 설치 앱의 뷰를 등록한다.
 
-    ``sqladmin`` import 가 함수 안에 있는 것이 핵심이다(SEC-01) — ``ADMIN_DISABLED=true`` 인
+    ``sqladmin`` import 가 함수 안에 있는 것이 핵심이다 — ``ADMIN_DISABLED=true`` 인
     프로세스는 이 함수를 부르지 않으므로 sqladmin 도, 앱별 ``admin.py`` 도,
     거기 딸린 ModelView 들도 메모리에 올라오지 않는다.
 
-    ``/admin`` 은 활성 슈퍼유저 로그인이 필요하다(admin-login ADR-001). 인증 백엔드
+    ``/admin`` 은 활성 슈퍼유저 로그인이 필요하다. 인증 백엔드
     (``AdminAuthBackend``)는 여기서 조립해 ``Admin(authentication_backend=...)`` 로 주입한다.
     자격 확인 구현은 설치 앱이 ``ready()`` 에서 등록한 팩토리다(core 는 사용자 모델을 모른다) —
     등록한 앱이 없으면 인증 없는 관리 화면을 여는 대신 기동을 멈춘다. 로그인 화면은
     ``app/templates/admin/sqladmin/login.html`` 이 sqladmin 기본 템플릿을 덮어쓴다
     (``templates_dir`` 의 ``FileSystemLoader`` 가 패키지 템플릿보다 먼저다). 로그인 이후 화면의
     CSRF meta·스크립트는 ``sqladmin/base.html`` 이 원본(``sqladmin_original/base.html``)을 확장해
-    더한다. 세션은 Redis 서버 세션이고, 로그아웃은 POST 전용이다(admin-session-hardening ADR-001~003).
+    더한다. 세션은 Redis 서버 세션이고, 로그아웃은 POST 전용이다.
 
     Args:
         app: FastAPI 인스턴스. ``Admin(...)`` 생성 시 SQLAdmin 이 ``/admin`` 을 직접
@@ -166,7 +166,7 @@ def create_admin(app: FastAPI, engine: Any, registry: Apps, *, title: str) -> Ad
             per_ip=jwt_settings.AUTH_LOGIN_IP_MAX_ATTEMPTS,
             window_seconds=jwt_settings.AUTH_LOGIN_WINDOW_SECONDS,
         ),
-        # 관리 세션도 같은 Redis 에 둔다(admin-session-hardening ADR-001) — 같은 이유로 요청 때 꺼낸다.
+        # 관리 세션도 같은 Redis 에 둔다 — 같은 이유로 요청 때 꺼낸다.
         session_store=lambda: default_admin_session_store(app.state.redis),
         cookie=cookie,
     )

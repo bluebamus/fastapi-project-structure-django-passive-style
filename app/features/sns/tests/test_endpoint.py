@@ -46,7 +46,7 @@ async def test_create_and_get_post(client):
 
     got = await client.get(f"/api/v1/sns/posts/{post_id}")
     assert got.status_code == 200
-    # 본문의 author 는 무시되고 서버가 인증 주체(관리자 헤더)의 username 으로 채운다(ADR-018).
+    # 본문의 author 는 무시되고 서버가 인증 주체(관리자 헤더)의 username 으로 채운다.
     assert got.json()["author"] == "admin"
 
 

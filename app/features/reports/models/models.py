@@ -11,7 +11,7 @@
 왜 조회에 쓰지 않는가:
     이 예제의 요점이 **Raw 집계**다. 집계 결과(일자별 합계)는 어떤 테이블의 행도
     아니다 — 그것을 ORM entity 로 표현하려면 실재하지 않는 모델을 지어내야 한다.
-    그래서 결과는 ``RowMapping`` 으로 받아 Pydantic DTO 로 검증한다(RAW-REP-005).
+    그래서 결과는 ``RowMapping`` 으로 받아 Pydantic DTO 로 검증한다.
 
 .. note::
    Raw UPDATE 는 ``UpdatedAtMixin.onupdate`` 를 발동시키지 않는다 — 그건 ORM 이

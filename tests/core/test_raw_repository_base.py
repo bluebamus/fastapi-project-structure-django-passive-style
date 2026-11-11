@@ -1,4 +1,4 @@
-"""Phase 4 — Raw Base 계약 (requirements RAW-REP-001~005, TEST-001).
+"""Raw Base 계약.
 
 여기서 고정하는 것은 셋이다.
 
@@ -7,7 +7,7 @@
 * **입력 통제** — ``query_name`` 은 코드 상수여야 하고, SQL 에 값을 보간할 수 없다.
 
 SQLite in-memory 로 실제 실행한다. 방언별 SQL 정확성은 여기서 보증하지 않는다
-(ADR-004) — 이 파일이 보는 것은 Base 계약이고, 그건 방언과 무관해야 한다.
+ — 이 파일이 보는 것은 Base 계약이고, 그건 방언과 무관해야 한다.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ async def test_fetch_does_not_commit(repo: ProbeRawRepository, session: AsyncSes
 
 
 # =============================================================================
-# 계층 분리 (AR-003)
+# 계층 분리
 # =============================================================================
 def test_raw_base_is_not_an_orm_repository():
     """하나의 Base 가 ORM 모델과 Raw row 를 함께 돌려주면 호출부가 타입으로 구분할 수 없다."""
@@ -341,7 +341,7 @@ async def test_logs_carry_query_name_but_not_sql_or_params(repo: ProbeRawReposit
 
 
 # =============================================================================
-# named parameter 강제 (RAW-REP-003)
+# named parameter 강제
 # =============================================================================
 async def test_injection_payload_is_bound_not_interpolated(repo: ProbeRawRepository):
     """대표 injection 입력이 값으로만 취급된다."""
@@ -396,7 +396,7 @@ def test_no_interpolated_sql_in_text_calls():
     """``text()`` 인자에 f-string·``%``·``.format()``·문자열 연결이 없다.
 
     리뷰로는 놓친다. AST 로 본다. 식별자를 동적으로 골라야 하면 allowlist 에서 고른
-    상수로 SQL 을 구성하고, 그때 이 규칙을 ADR 로 다시 연다.
+    상수로 SQL 을 구성하고, 그때 이 규칙을 다시 검토한다.
     """
     total = 0
     offenders: list[str] = []
@@ -411,7 +411,7 @@ def test_no_interpolated_sql_in_text_calls():
 
 
 # =============================================================================
-# 읽기 전용 세션 차단 (RAW-REP-007)
+# 읽기 전용 세션 차단
 # =============================================================================
 async def test_execute_is_refused_on_a_read_only_session(session: AsyncSession):
     """라우터가 꺼져 있어도 막힌다 — 설정을 끄면 보안도 꺼지는 상태를 만들지 않는다."""

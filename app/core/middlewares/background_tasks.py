@@ -8,7 +8,7 @@
   증가해 백그라운드 풀(pool_timeout) 대기가 누적된다.
 - **Drain**: 앱 종료(lifespan shutdown)에서 in-flight 태스크를 기다린 뒤
   엔진을 정리하도록 ``drain()`` 을 제공한다. 이걸 빠뜨리면 진행 중이던 로그
-  쓰기가 ``dispose_engine()`` 과 경합해 유실될 수 있다(검수 W1/REQ-009).
+  쓰기가 ``dispose_engine()`` 과 경합해 유실될 수 있다.
 
 전역 싱글턴 ``access_log_tasks`` 를 미들웨어(spawn)와 main lifespan(drain)이
 공유한다.

@@ -1,4 +1,4 @@
-"""검수 게이트 — 흩어진 검사를 한 번에, 같은 순서로 돌린다 (requirements TEST-008).
+"""검수 게이트 — 흩어진 검사를 한 번에, 같은 순서로 돌린다.
 
 여러 명령을 손으로 나눠 돌리면 두 가지가 조용히 생긴다. 하나는 **빠뜨리는 것**이고,
 다른 하나는 **순서에 따라 결과가 달라지는 것**이다. 여기서 순서를 고정한다.
@@ -112,15 +112,14 @@ def build_steps(*, cache_dir: Path) -> list[Step]:
                 # 임계값은 pyproject `[tool.coverage.report] fail_under` 하나다 — CI 도 같은 값을 읽는다.
                 "--cov=app",
                 # `:skip-covered` 는 쓰지 않는다 — "N files skipped due to complete coverage" 줄이
-                # SKIP_MARKERS 의 `skipped` 에 걸려 테스트 skip 0건인데도 단계가 실패했다(F-026).
+                # SKIP_MARKERS 의 `skipped` 에 걸려 테스트 skip 0건인데도 단계가 실패했다.
                 "--cov-report=term-missing",
             ],
             why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 측정(하한은 pyproject, 기본 0)이 여기 있다",
             # 저장소 루트의 `.coverage` 를 쓰면 병렬 실행끼리 데이터가 섞인다.
             env={"COVERAGE_FILE": str(cache_dir / ".coverage")},
-            # 단위 단계에도 skip 을 실패로 본다(2026-10-07). 전에는 mysql·browser 단계에만 있어서
-            # `tests/test_docs_secret_examples.py` 처럼 조건부로 skip 하는 테스트가 **조용히
-            # 빠진 채** 게이트가 초록일 수 있었다 — 문서가 사라지면 비밀값 검사가 통째로 안 돈다.
+            # skip 을 실패로 본다 — 조건부로 skip 하는 테스트가 **조용히 빠진 채** 게이트가
+            # 초록이 되지 않게 한다.
             forbidden=SKIP_MARKERS,
         ),
         Step(

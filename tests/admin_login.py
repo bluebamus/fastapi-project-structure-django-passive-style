@@ -1,9 +1,9 @@
 """테스트용 /admin 로그인·로그아웃 — 브라우저가 하는 그대로 CSRF 토큰을 싣는다.
 
-로그인: GET 이 세션(Redis)에 토큰을 두고 hidden 입력으로 싣는다(security-ops-hardening ADR-004).
+로그인: GET 이 세션(Redis)에 토큰을 두고 hidden 입력으로 싣는다.
 로그인 이후: 관리 화면의 ``<meta name="csrf-token">`` 을 읽어 POST·DELETE 에 싣는다 — 브라우저에서는
-덮어쓴 ``sqladmin/base.html`` 의 스크립트가 하는 일이다(admin-session-hardening ADR-002).
-로그아웃은 POST 전용이다(ADR-003).
+덮어쓴 ``sqladmin/base.html`` 의 스크립트가 하는 일이다.
+로그아웃은 POST 전용이다.
 """
 
 from __future__ import annotations

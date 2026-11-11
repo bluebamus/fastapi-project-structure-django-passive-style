@@ -1,4 +1,4 @@
-"""애플리케이션 프로세스 수명 자원의 생성·해제 단일 지점 (development-plan §9).
+"""애플리케이션 프로세스 수명 자원의 생성·해제 단일 지점.
 
 ``bootstrap.lifespan`` 은 이 컨텍스트를 열고 yield 하는 **조립만** 담당한다.
 자원별 startup/shutdown 코드를 lifespan 에 나열하면 종료 순서가 암묵적이 되고,
@@ -14,8 +14,8 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 등록한다. 각 cleanup 은 :func:`_run_cleanup` 이 감싸서 실패·timeout 을 로깅만 하고
 삼킨다 — 하나가 실패했다고 뒤따르는 cleanup 을 건너뛰면 자원이 새기 때문이다.
 
-logging 은 여기서 다루지 않는다. 이 저장소는 ADR-019(console + 회전 파일 — logging-overhaul 의 DailySizeRotatingFileHandler)
-를 유지하고 queue listener 를 두지 않기로 했다(ADR-003) — 닫을 자원이 없다.
+logging 은 여기서 다루지 않는다. 로깅은 console + 회전 파일(``DailySizeRotatingFileHandler``)이고
+queue listener 를 두지 않는다 — 닫을 자원이 없다.
 
 테이블 자동 생성은 파일 존재 여부가 아니라 **App Registry 가 소유한 테이블 수**로
 판정한다. 소유 테이블이 0개면 DB 에 접속조차 하지 않는다. 그 registry 는 ``create_app`` 이
@@ -88,7 +88,7 @@ async def _run_cleanup(
         logger.error("[shutdown] %s 정리 timeout (%.1fs 초과)", name, timeout)
     except Exception as exc:
         # 예외 **메시지**는 남기지 않는다 — DB 예외의 str() 에는 SQL 과 바인딩
-        # 값이 들어 있고 이 로거는 sql_noise 필터를 통과한다 (C-13).
+        # 값이 들어 있고 이 로거는 sql_noise 필터를 통과한다.
         logger.error("[shutdown] %s 정리 실패: %s", name, type(exc).__name__)
     else:
         elapsed = (time.perf_counter() - started) * 1000
@@ -137,7 +137,7 @@ async def _prepare_database(resources: ApplicationResources, registry: Apps) -> 
 
     ``registry`` 는 ``create_app`` 이 이미 채운 그 인스턴스다. 여기서 전역 registry 를
     ``config.INSTALLED_APPS`` 로 다시 채우면 ``create_app(installed_apps=..., registry=...)``
-    로 조립한 앱이 설치하지 않은 앱의 테이블까지 만든다(service-hardening F-012).
+    로 조립한 앱이 설치하지 않은 앱의 테이블까지 만든다.
     """
     resources.table_count = len(owned_tables(registry))
     logger.info("[startup] registry 소유 테이블 %d개", resources.table_count)

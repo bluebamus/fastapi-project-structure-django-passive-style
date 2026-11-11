@@ -1,4 +1,4 @@
-"""관리 화면(``/admin``) 세션 — Redis 서버 세션 (admin-session-hardening ADR-001).
+"""관리 화면(``/admin``) 세션 — Redis 서버 세션.
 
 쿠키(``admin_session``)에는 무작위 세션 ID 만 담고, 내용은 Redis 에 둔다. 그래서 로그아웃·강등·
 비활성화·삭제·비밀번호 변경 때 **서버에서 즉시 폐기**할 수 있다 — 서명 쿠키 시절에는 복사해 둔
@@ -16,7 +16,7 @@
 ``request.session`` 인터페이스를 그대로 유지한다(인증 백엔드는 세션 저장 방식을 모른다).
 
 이 모듈은 sqladmin 을 import 하지 않는다 — 사용자 기능의 폐기 훅이 ``ADMIN_DISABLED=true`` 에서도
-sqladmin 없이 import 한다(SEC-01).
+sqladmin 없이 import 한다.
 """
 
 from __future__ import annotations
@@ -216,7 +216,7 @@ class RedisSessionMiddleware:
     * 세션이 비면(로그아웃) Redis 키를 지우고 쿠키를 지운다.
     * ``rotate`` 가 요청되면(로그인 성공) 새 세션 ID 를 발급하고 이전 키를 지운다(세션 고정 방지).
     * Redis 를 쓸 수 없으면 통과시키지 않는다 — 503(fail-closed). 응답 직전 저장(쿠키 없는 첫 요청의 세션
-      생성 등)이 실패해도 앱이 만든 응답 대신 같은 503 을 낸다(integration-e2e ADR-012 결정 6) — 응답 시작 전이라 바꿀 수 있다.
+      생성 등)이 실패해도 앱이 만든 응답 대신 같은 503 을 낸다 — 응답 시작 전이라 바꿀 수 있다.
 
     Args:
         store: 요청 시점에 저장소를 돌려주는 provider — Redis 는 lifespan 이 기동 때 만든다.

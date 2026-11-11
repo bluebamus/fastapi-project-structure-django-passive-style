@@ -1,4 +1,4 @@
-"""엔드포인트 테스트의 세션 오버라이드 계약 (service-hardening C1).
+"""엔드포인트 테스트의 세션 오버라이드 계약.
 
 ``tests/session_overrides.py`` 가 운영 의존성과 같은 표시(``using_writer`` /
 ``mark_read_only``)를 붙인 세션을 넣는지, 그리고 다른 테스트가 그 헬퍼를 건너뛰고 세션

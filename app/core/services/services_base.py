@@ -45,7 +45,7 @@ class BaseService(LoggerMixin):
 
         커밋 시점에도 DB 예외가 난다 — 지연된 제약 검사, 커넥션 유실 등. Repository
         안에서만 변환기를 거치면 **이 경로가 그대로 뚫린다**: 원본 예외가 그대로
-        올라가 500 핸들러의 traceback 에 SQL 과 바인딩 값이 찍힌다(F-015).
+        올라가 500 핸들러의 traceback 에 SQL 과 바인딩 값이 찍힌다.
         """
         try:
             await self.session.commit()

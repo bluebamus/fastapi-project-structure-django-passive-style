@@ -1,4 +1,4 @@
-"""RateLimiter — Redis 고정 창 (service-hardening ADR-016). 실물 클래스를 fakeredis 로 시험한다."""
+"""RateLimiter — Redis 고정 창. 실물 클래스를 fakeredis 로 시험한다."""
 
 import asyncio
 

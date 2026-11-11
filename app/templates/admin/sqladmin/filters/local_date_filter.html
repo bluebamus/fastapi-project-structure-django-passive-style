@@ -1,8 +1,8 @@
 {#-
-  관리 목록 날짜 필터 — app/core/admin_filters.py 의 LocalDateFilter 가 쓴다(security-ops-hardening ADR-005).
+  관리 목록 날짜 필터 — app/core/admin_filters.py 의 LocalDateFilter 가 쓴다.
   sqladmin 의 operation_filter.html 과 같은 쿼리 형식(<이름>=값, <이름>_op=연산)이다. 날짜는 TIME_ZONE 기준이다.
   sqladmin 은 필터 값을 하나만 넘긴다 — 그래서 날짜 입력 두 개(시작일·종료일, 이름 없음)를 제출 직전에
-  hidden <이름> 하나로 합친다(admin-session-hardening ADR-004):
+  hidden <이름> 하나로 합친다:
     같은 날·이후·이전 → 시작일 하나 / 기간 → "시작일~종료일"(한쪽만 넣으면 열린 구간, 양 끝 포함).
 -#}
 {% extends "sqladmin/filters/base_filter.html" %}

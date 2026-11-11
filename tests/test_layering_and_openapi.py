@@ -1,4 +1,4 @@
-"""E 게이트 — 계층 규칙과 OpenAPI 비공허성 (development-plan §10.1 E).
+"""계층 규칙과 OpenAPI 비공허성.
 
 README 의 "의존은 한 방향으로만 흐른다(features → core → utils)" 는 **문장**이었다.
 문장은 리뷰에서 놓친다. 여기서 AST 로 실제 import 를 읽어 규칙으로 만든다.
@@ -73,10 +73,10 @@ def test_core_does_not_depend_on_features():
 
 def test_celery_does_not_depend_on_features():
     """``app/celery`` 는 기능을 모른다 — 태스크는 기능의 ``tasks`` module 에 있고, 워커는
-    ``INSTALLED_APPS`` 로 그 module 을 찾는다(service-hardening ADR-012·C-14).
+    ``INSTALLED_APPS`` 로 그 module 을 찾는다.
 
     중앙 파일이 기능을 import 하면 ``INSTALLED_APPS`` 에서 앱을 빼도 워커가 그 앱을 계속
-    끌어온다(F-018).
+    끌어온다.
     """
     violations = [
         f"{path.relative_to(REPO_ROOT)} → {module}"
@@ -159,7 +159,7 @@ def test_openapi_component_schemas_exist(openapi_schema: dict):
 
 
 # =============================================================================
-# 검수 게이트 stdio 고정 (C-7)
+# 검수 게이트 stdio 고정
 # =============================================================================
 def test_ci_pins_utf8_stdio():
     """CI 가 검수 도구의 stdio 를 UTF-8 로 고정한다.

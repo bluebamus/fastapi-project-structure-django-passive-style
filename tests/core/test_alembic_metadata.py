@@ -1,4 +1,4 @@
-"""AC-06·AC-09 — 런타임과 Alembic 이 **같은 registry** 로 model 을 모은다 (FR-06).
+"""런타임과 Alembic 이 **같은 registry** 로 model 을 모은다.
 
 예전에는 `app/features/*` 디렉터리를 훑어 `models/models.py` 가 있으면 등록했다.
 그러면 등록하지 않은 앱(실험용 디렉터리, 다른 브랜치의 잔재)의 테이블이
@@ -31,7 +31,7 @@ def test_installed_apps_populate_metadata():
 
 
 def test_metadata_contains_only_installed_app_tables():
-    """SEC-02: 등록하지 않은 앱의 테이블은 metadata 에 없다."""
+    """등록하지 않은 앱의 테이블은 metadata 에 없다."""
     registry = _registry()
 
     collected = {model.__tablename__ for model in registry.get_models()}
@@ -50,7 +50,7 @@ def test_app_without_models_is_not_an_error():
 
 
 def test_runtime_and_migration_collect_the_same_models():
-    """AC-09: 두 경로가 서로 다른 import 경로를 갖지 않는다."""
+    """두 경로가 서로 다른 import 경로를 갖지 않는다."""
     from_migration = {model.__tablename__ for model in _registry().get_models()}
 
     runtime = Apps()

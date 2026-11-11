@@ -1,4 +1,4 @@
-"""Celery worker 프로세스의 자원 수명 관리 (development-plan §9.4·§9.7).
+"""Celery worker 프로세스의 자원 수명 관리.
 
 FastAPI 의 lifespan 은 **worker 프로세스에서 실행되지 않는다.** worker 는 첫 async
 태스크에서 영속 event loop 를 만들고 그 루프에 DB 커넥션 pool 을 바인딩하는데,
@@ -48,7 +48,7 @@ def shutdown_worker_resources(
     except TimeoutError:
         logger.error("[celery] DB dispose timeout (%.1fs 초과)", timeout)
     except Exception as exc:
-        # 예외 메시지는 남기지 않는다 — DB 예외의 str() 에 SQL·DSN 이 들어간다(C-13).
+        # 예외 메시지는 남기지 않는다 — DB 예외의 str() 에 SQL·DSN 이 들어간다.
         logger.error("[celery] DB dispose 실패: %s", type(exc).__name__)
 
     # dispose 가 실패해도 루프는 반드시 닫는다 — 안 닫으면 프로세스가 종료되지 않는다.

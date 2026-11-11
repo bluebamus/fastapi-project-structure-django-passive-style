@@ -1,4 +1,4 @@
-"""logging-overhaul — 모든 경로 같은 형식(L1)·헤더(L2)·앱별 레벨(L4)·파일 분할(L5)·회전·보관(L6)·비밀값 원문(L7).
+"""모든 경로 같은 형식·헤더·앱별 레벨·파일 분할·회전·보관·비밀값 원문.
 
 경로는 실제 구성으로 재현한다 — 앱 ``build_dictconfig()``, ``python main.py`` 의 ``setup_uvicorn_logging()``,
 ``uvicorn main:app`` CLI(uvicorn ``LOGGING_CONFIG`` 적용 뒤 앱 import 가 ``configure_logging()``),
@@ -61,7 +61,7 @@ def _flush() -> None:
 
 
 # =============================================================================
-# L2 — 헤더: 우리 코드는 경로, 외부 라이브러리는 로거 이름
+# 헤더: 우리 코드는 경로, 외부 라이브러리는 로거 이름
 # =============================================================================
 @pytest.mark.parametrize(
     ("logger", "expected"),
@@ -88,7 +88,7 @@ def test_our_code_header_ignores_logger_name():
 
 
 # =============================================================================
-# L1 — 모든 경로 · 모든 출력처가 같은 형식
+# 모든 경로 · 모든 출력처가 같은 형식
 # =============================================================================
 ACCESS_ARGS = ("1.2.3.4:5", "GET", "/p", "1.1", 200)
 ACCESS_MSG = '%s - "%s %s HTTP/%s" %d'
@@ -170,7 +170,7 @@ def test_celery_logfile_is_respected_with_project_format(restore_logging, monkey
 
 
 # =============================================================================
-# L5 — 파일 분할: 프로세스별 + 에러
+# 파일 분할: 프로세스별 + 에러
 # =============================================================================
 @pytest.mark.parametrize(
     ("process", "files"),
@@ -208,7 +208,7 @@ def test_web_and_worker_write_their_own_files(restore_logging, monkeypatch, tmp_
 
 
 # =============================================================================
-# L4 — 헤더별 레벨
+# 헤더별 레벨
 # =============================================================================
 def test_app_levels_filter_by_header(restore_logging, monkeypatch, tmp_path):
     _set(
@@ -251,7 +251,7 @@ def test_unknown_header_in_app_levels_warns_once(restore_logging, monkeypatch, t
 
 
 # =============================================================================
-# L6 — 날짜 + 크기 회전 · 보관일수
+# 날짜 + 크기 회전 · 보관일수
 # =============================================================================
 def _today() -> datetime:
     return datetime.now(UTC)
@@ -324,7 +324,7 @@ def test_retention_deletes_only_older_files(tmp_path, retention):
 
 
 # =============================================================================
-# L7 — DSN 의 id·비밀번호, 설정 비밀값 원문
+# DSN 의 id·비밀번호, 설정 비밀값 원문
 # =============================================================================
 @pytest.mark.parametrize(
     ("text", "expected"),

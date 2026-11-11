@@ -1,7 +1,7 @@
 """
 공통 요청 스키마 기반 클래스
 
-모든 기능의 부분 수정(PATCH) 스키마가 상속한다(service-hardening ADR-007).
+모든 기능의 부분 수정(PATCH) 스키마가 상속한다.
 """
 
 from typing import ClassVar, Self

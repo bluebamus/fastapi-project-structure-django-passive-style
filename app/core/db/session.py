@@ -234,12 +234,12 @@ def owned_tables(registry: "Apps") -> list[Table]:
     ``Base.metadata`` 는 전역이라, 한 번이라도 import 된 모델은 registry 에 없어도
     거기 남는다 — 테스트가 정의한 임시 모델까지 섞인다. 그 전체를 create_all 에
     넘기면 **설치하지 않은 앱의 테이블이 개발 DB 에 생긴다**. 그래서 registry 가
-    실제로 소유한 것만 골라 ``tables=`` 로 명시한다 (C-3).
+    실제로 소유한 것만 골라 ``tables=`` 로 명시한다.
 
     Args:
         registry: 테이블을 소유한 registry. 앱을 조립한 **그** registry 를 넘긴다 —
             전역 registry 를 몰래 읽으면 ``create_app(registry=...)`` 로 주입한 앱 구성이
-            무시된다(service-hardening F-012).
+            무시된다.
     """
     # registry 는 매핑 클래스를 ``type`` 으로 돌려준다(프레임워크 중립). 여기서
     # 우리 Base 하위임을 아는 지점이므로 좁혀 쓴다.
@@ -328,7 +328,7 @@ async def get_routed_db_session() -> AsyncGenerator[AsyncSession]:
             await session.rollback()
             # 예외 **메시지**는 남기지 않는다 — DB 예외의 str() 에는 실행된 SQL 과
             # 바인딩된 값이 들어 있고, 이 로거 이름(app.core.*)은 sql_noise 필터를
-            # 통과한다(C-5). 타입과 소요시간만으로 어디서 굴렀는지는 충분히 좁혀진다.
+            # 통과한다. 타입과 소요시간만으로 어디서 굴렀는지는 충분히 좁혀진다.
             # 추적이 필요한 debug 모드에서는 바로 아래 debug 레코드가 전문을 남긴다.
             logger.error(
                 "[get_routed_db_session] ROLLBACK - error: %s, duration: %.1fms",
@@ -486,7 +486,7 @@ async def dispose_engine() -> None:
     )
     for (name, _), result in zip(targets, results, strict=True):
         if isinstance(result, BaseException):
-            # 예외 **원문**은 남기지 않는다 — DSN 에 자격증명이 실려 온다(C-5와 같은 기준).
+            # 예외 **원문**은 남기지 않는다 — DSN 에 자격증명이 실려 온다(SQL 로그 필터와 같은 기준).
             logger.error(
                 "[dispose_engine] %s engine dispose FAILED - error: %s",
                 name,

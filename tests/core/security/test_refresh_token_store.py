@@ -1,4 +1,4 @@
-"""RefreshTokenStore — 1회 소비·family 폐기 (service-hardening ADR-015). 실물 클래스를 fakeredis 로 시험한다."""
+"""RefreshTokenStore — 1회 소비·family 폐기. 실물 클래스를 fakeredis 로 시험한다."""
 
 import json
 

@@ -1,4 +1,4 @@
-"""``UserAdminCredentials`` — /admin 로그인의 사용자 DB 쪽 판정 (admin-login ADR-002).
+"""``UserAdminCredentials`` — /admin 로그인의 사용자 DB 쪽 판정.
 
 활성 슈퍼유저만 관리자다. 비밀번호 확인·bcrypt → Argon2 재해시는 API 로그인과 같은
 ``verify_credentials`` 를 쓴다. 세션 팩토리는 in-memory SQLite 로 바꿔 끼운다.

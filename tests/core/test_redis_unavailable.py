@@ -1,4 +1,4 @@
-"""Redis 연결 오류 → 503 (integration-e2e F-004 · 사용자 결정 1).
+"""Redis 연결 오류 → 503.
 
 Redis 를 필수로 쓰는 API 경로(가입·로그인의 레이트 리밋, refresh·logout 의 회전 기록, 사용자 비활성화·삭제의 세션
 폐기)가 Redis 에 닿지 못하면 처리되지 않은 예외 500 이 아니라 503 ``SERVICE_UNAVAILABLE`` 이다(fail-closed —

@@ -1,8 +1,8 @@
-"""접속 로그 수집 — 클라이언트 IP 해석과 미들웨어 기록 (service-hardening ADR-005·ADR-006).
+"""접속 로그 수집 — 클라이언트 IP 해석과 미들웨어 기록.
 
-* F-007: ``X-Forwarded-For`` 를 무조건 믿어 기록 IP 를 위조할 수 있었다 → ``ClientIPResolver``
-* F-008: 처리되지 않은 예외로 끝난 요청(500)이 기록되지 않았다
-* F-011: query string 원문(토큰 등)이 그대로 저장됐다
+* ``X-Forwarded-For`` 를 무조건 믿어 기록 IP 를 위조할 수 있었다 → ``ClientIPResolver``
+* 처리되지 않은 예외로 끝난 요청(500)이 기록되지 않았다
+* query string 원문(토큰 등)이 그대로 저장됐다
 * 세션 쿠키 이름이 ``session_id`` 로 하드코딩돼 ``SESSION_COOKIE_NAME`` 과 어긋났다
 """
 

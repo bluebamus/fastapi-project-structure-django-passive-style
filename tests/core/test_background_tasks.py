@@ -1,4 +1,4 @@
-"""BackgroundTaskRunner 회귀 테스트 (검수 W1/REQ-009).
+"""BackgroundTaskRunner 회귀 테스트.
 
 미들웨어 접속로그 저장을 fire-and-forget 로 던지되,
 - 동시 실행 태스크 수에 상한을 두어(백프레셔) 고부하 시 무제한 증가를 막고,

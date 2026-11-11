@@ -1,4 +1,4 @@
-"""``create_app()`` 조립과 lifespan 계약 (FR-07·BC-03·NFR-05).
+"""``create_app()`` 조립과 lifespan 계약.
 
 lifespan 은 지금까지 어떤 테스트도 실행하지 않던 구간이다 — ``TestClient`` 를 context
 manager 로 쓰지 않으면 startup/shutdown 이 돌지 않기 때문이다. 그런데 여기 있는 두
@@ -201,7 +201,7 @@ async def test_cleanup_failure_does_not_stop_the_rest(calls: list[str], monkeypa
 
 
 def test_create_app_accepts_an_isolated_registry():
-    """NFR-05: 주입한 registry 를 쓰고 전역 상태를 건드리지 않는다."""
+    """주입한 registry 를 쓰고 전역 상태를 건드리지 않는다."""
     isolated = Apps()
 
     app = bootstrap.create_app(registry=isolated, admin_disabled=True)
@@ -221,7 +221,7 @@ def test_create_app_accepts_an_isolated_registry():
 
 
 def test_create_app_installs_health_and_baseline_middleware():
-    """BC-03: health · CORS · user-info 가 보존된다."""
+    """health · CORS · user-info 가 보존된다."""
     app = bootstrap.create_app(registry=Apps(), admin_disabled=True)
 
     assert "/health" in app.openapi()["paths"]
@@ -230,7 +230,7 @@ def test_create_app_installs_health_and_baseline_middleware():
 
 
 def test_create_app_can_run_a_subset_of_apps():
-    """FR-01: 주입한 목록만 설치된다 — 전역 설정과 무관하게."""
+    """주입한 목록만 설치된다 — 전역 설정과 무관하게."""
     subset = [entry for entry in INSTALLED_APPS if "blog" not in entry]
 
     app = bootstrap.create_app(installed_apps=subset, registry=Apps(), admin_disabled=True)
@@ -241,7 +241,7 @@ def test_create_app_can_run_a_subset_of_apps():
 
 
 async def test_lifespan_creates_only_the_injected_registrys_tables(monkeypatch, tmp_path):
-    """lifespan 은 ``create_app`` 이 조립에 쓴 registry 의 테이블만 만든다(service-hardening F-012).
+    """lifespan 은 ``create_app`` 이 조립에 쓴 registry 의 테이블만 만든다.
 
     예전에는 ``_prepare_database`` 가 전역 registry 를 ``config.INSTALLED_APPS`` 로 채워 셌다 —
     blog 를 뺀 앱도 ``posts`` 테이블을 만들었다. 실제 DDL 을 SQLite 파일에 실행해 확인한다.
@@ -315,7 +315,7 @@ def _app_exception_log_records(status_code: int) -> list[logging.LogRecord]:
 
 
 def test_client_error_app_exception_is_logged_as_warning_without_detail():
-    """4xx 는 클라이언트 입력 문제다 — ERROR 로 남기면 운영 경보가 클라이언트 실수로 울린다(F-013)."""
+    """4xx 는 클라이언트 입력 문제다 — ERROR 로 남기면 운영 경보가 클라이언트 실수로 울린다."""
     (record,) = _app_exception_log_records(404)
 
     assert record.levelno == logging.WARNING

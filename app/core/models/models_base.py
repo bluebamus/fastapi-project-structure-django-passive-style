@@ -1,7 +1,7 @@
 """SQLAlchemy Base 와 공통 필드 Mixin.
 
 모든 ORM 모델의 기반이다. 공통 필드는 **책임 단위로 쪼갠 Mixin** 으로 제공하고,
-모델은 필요한 것만 조합한다(development-plan Phase 2).
+모델은 필요한 것만 조합한다.
 
 쪼갠 이유는 실제 모델이 그렇게 생겼기 때문이다. 대부분은 생성·수정 시각을 모두
 갖지만, 접속 로그처럼 **한 번 쓰고 고치지 않는** 테이블은 ``updated_at`` 이 없다.
@@ -51,7 +51,7 @@ class Base(DeclarativeBase):
         # 타입 체크를 위한 선언만 둔다(TYPE_CHECKING 가드로 런타임 매핑에는 영향 없음).
         id: Mapped[str]
 
-    # ``Mapped[datetime]`` 은 UTC·마이크로초 저장 타입이 된다(service-hardening ADR-010).
+    # ``Mapped[datetime]`` 은 UTC·마이크로초 저장 타입이 된다.
     type_annotation_map = {
         datetime: UTCDateTime(),
     }
@@ -100,7 +100,7 @@ class UpdatedAtMixin:
     """수정 시각 ``updated_at``.
 
     ``onupdate`` 는 ORM 이 UPDATE 를 낼 때만 동작한다. Raw SQL 로 갱신하면 갱신되지
-    않는다 — Raw 경로에서는 이 컬럼을 명시적으로 써야 한다(Phase 4 계약).
+    않는다 — Raw 경로에서는 이 컬럼을 명시적으로 써야 한다.
     """
 
     updated_at: Mapped[datetime] = mapped_column(
