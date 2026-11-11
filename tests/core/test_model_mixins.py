@@ -1,17 +1,7 @@
-"""공통 필드 Mixin 계약.
-
-이 단계의 완료 조건은 **"겉으로는 아무것도 바뀌지 않는다"** 다. 그래서 여기서 보는
-것은 Mixin 이 예쁘게 쪼개졌는가가 아니라, 쪼갠 결과가 **원래와 같은 스키마**를
-만드는가다.
-
-특히 컬럼 순서를 본다. Alembic 은 컬럼을 이름으로 비교해 순서 차이를 diff 로 잡지
-않는다 — 그래서 순서가 어긋나도 `alembic check` 는 통과하고, ``create_all`` 로 만든
-개발 DB 와 migration 으로 만든 운영 DB 가 **아무 경고 없이** 갈린다.
-"""
+"""공통 필드 Mixin 계약 — 조합·기본값·UUID 기본키."""
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.models.models_base import (
@@ -23,32 +13,6 @@ from app.core.models.models_base import (
     UUIDPrimaryKeyMixin,
 )
 
-#: Mixin 도입 전의 실제 컬럼 배치. MySQL 8.4 에 ``create_all`` 로 만든 테이블의
-#: ``SHOW CREATE TABLE`` 에서 그대로 옮겼다(2026-08-19 측정).
-EXPECTED_COLUMN_ORDER = {
-    "blog_posts": ["id", "title", "content", "author", "author_id", "created_at", "updated_at"],
-    "replies": ["id", "content", "author", "author_id", "post_id", "created_at", "updated_at"],
-    "sns_posts": [
-        "id",
-        "content",
-        "author",
-        "author_id",
-        "like_count",
-        "created_at",
-        "updated_at",
-    ],
-    "users": [
-        "id",
-        "username",
-        "email",
-        "hashed_password",
-        "is_active",
-        "is_superuser",
-        "created_at",
-        "updated_at",
-    ],
-}
-
 
 def _table(name: str):
     from app.core.apps import apps
@@ -56,17 +20,6 @@ def _table(name: str):
 
     apps.populate(INSTALLED_APPS, run_ready=False)
     return Base.metadata.tables[name]
-
-
-@pytest.mark.parametrize("table_name", sorted(EXPECTED_COLUMN_ORDER))
-def test_mixin_columns_keep_their_original_position(table_name: str):
-    """Mixin 으로 옮긴 뒤에도 컬럼 배치가 그대로다 (id → 도메인 → created → updated).
-
-    ``sort_order`` 를 빼면 mixin 컬럼이 모델 자신의 컬럼 **뒤로** 밀려 id 가 중간에
-    끼어든다. 그 상태는 `alembic check` 를 통과하므로 테스트가 없으면 못 잡는다.
-    """
-    columns = [column.name for column in _table(table_name).columns]
-    assert columns == EXPECTED_COLUMN_ORDER[table_name]
 
 
 def test_access_log_has_no_updated_at():

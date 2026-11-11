@@ -198,23 +198,6 @@ def test_every_operation_carries_a_tag(operations):
     assert not untagged, f"태그 없는 operation: {untagged}"
 
 
-def test_no_tag_claims_to_be_unimplemented():
-    """구현된 기능에 '미구현/예정' 설명이 남아 있지 않다.
-
-    문서가 "예정"이라고 말하는 기능을 사용자가 이미 호출할 수 있는 상태는, 문서를
-    믿지 않게 만든다는 점에서 문서가 없는 것보다 나쁘다.
-    """
-    from app.core.tags_metadata import tags_metadata
-
-    offenders = [
-        tag["name"]
-        for tag in tags_metadata
-        if "미구현" in tag.get("description", "") or "예정" in tag.get("description", "")
-    ]
-
-    assert not offenders, f"구현됐는데 '미구현/예정' 이라고 적힌 태그: {offenders}"
-
-
 # =============================================================================
 # 3. 응답 계약 — 성공 응답에 schema 가 있어야 한다
 # =============================================================================

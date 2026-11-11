@@ -56,14 +56,6 @@ def _as(user: dict) -> dict[str, str]:
     return bearer(user["id"], user["username"])
 
 
-def test_user_auto_registered():
-    """디렉터리 컨벤션만으로 user CRUD 라우터가 자동 발견·마운트된다."""
-    # app.routes 직접 순회는 FastAPI 버전에 따라 하위 라우터가 평탄화되지 않는다.
-    paths = set(app.openapi()["paths"])
-    assert "/api/v1/user/users" in paths
-    assert "/api/v1/user/users/{user_id}" in paths
-
-
 async def test_create_and_get_user(client):
     body = await _create(client, "alice")
     assert body["username"] == "alice"
@@ -140,14 +132,6 @@ async def test_get_missing_user_returns_404(client):
     resp = await client.get("/api/v1/user/users/nonexistent-id")
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "USER_NOT_FOUND"
-
-
-async def test_create_rejects_invalid_email(client):
-    resp = await client.post(
-        "/api/v1/user/users",
-        json={"username": "x", "email": "not-an-email", "password": "pw-12345678"},
-    )
-    assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

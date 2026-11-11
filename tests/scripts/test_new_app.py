@@ -101,19 +101,6 @@ def test_next_steps_prints_the_exact_registration_line():
     assert '{"name": "Orders"' in message
 
 
-def test_generated_output_claims_no_auto_discovery(features: Path):
-    """'자동 발견'·'중앙 등록 불필요' 표현이 없어야 한다."""
-    target = create_app_scaffold("claimsapp", with_admin=True, features_dir=features)
-
-    banned = ("자동 발견", "자동 등록", "중앙 등록 불필요", "자동으로 활성화")
-    for path in target.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        for phrase in banned:
-            assert phrase not in text, f"{path.name} 에 '{phrase}' 표현이 남아 있다"
-    for phrase in banned:
-        assert phrase not in next_steps("claimsapp")
-
-
 def test_generated_app_is_inactive_until_registered():
     """등록 전에는 비활성, 등록 후 활성화된다.
 

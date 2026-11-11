@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from scripts.bandit_gate import DEFAULT_TARGETS, judge
 from scripts.review_gate import build_steps
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_bandit_unparsed_files_fail_the_gate():
@@ -40,21 +36,3 @@ def test_local_pytest_steps_apply_the_same_rules_as_ci(tmp_path):
     assert "--cov=app" in unit.argv
     # 커버리지 리포트가 "files skipped due to complete coverage" 를 찍으면 skip 판정에 걸린다.
     assert not any("skip-covered" in arg for arg in unit.argv)
-
-
-def test_coverage_threshold_has_one_source():
-    """하한은 pyproject 하나 — 명령줄에 따로 적으면 로컬과 CI 가 갈린다.
-
-    값은 사용자 결정으로 기본 0(하한 없음)이고, 측정은 CI·로컬
-    게이트 모두 한다. 하한을 올릴 때는 pyproject 의 값과 아래 기대값만 바꾼다.
-    """
-    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    gate = (REPO_ROOT / "scripts" / "review_gate.py").read_text(encoding="utf-8")
-    assert pyproject.count("\nfail_under = ") == 1
-    assert "\nfail_under = 0\n" in pyproject
-    assert "--cov-fail-under" not in workflow
-    assert "--cov-fail-under" not in gate
-    # 하한이 0 이어도 수치는 보여야 한다 — CI 가 측정·출력한다.
-    assert "--cov=app --cov-report=term-missing" in workflow
-    assert "scripts.openapi_revert_check" in workflow

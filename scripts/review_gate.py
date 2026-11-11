@@ -96,7 +96,7 @@ def build_steps(*, cache_dir: Path) -> list[Step]:
             why="코드가 그대로여도 권고는 새로 뜬다 — 그날 빨개져야 한다",
         ),
         Step(
-            name="pytest (단위 + 계층 불변식 + 공개 API + OpenAPI 규칙)",
+            name="pytest (전체 + 커버리지)",
             argv=[
                 python,
                 "-m",
@@ -115,7 +115,7 @@ def build_steps(*, cache_dir: Path) -> list[Step]:
                 # SKIP_MARKERS 의 `skipped` 에 걸려 테스트 skip 0건인데도 단계가 실패했다.
                 "--cov-report=term-missing",
             ],
-            why="계층 불변식·공개 API baseline·OpenAPI 규칙·커버리지 측정(하한은 pyproject, 기본 0)이 여기 있다",
+            why="행위 테스트 전체와 커버리지 측정(하한은 pyproject `fail_under`)",
             # 저장소 루트의 `.coverage` 를 쓰면 병렬 실행끼리 데이터가 섞인다.
             env={"COVERAGE_FILE": str(cache_dir / ".coverage")},
             # skip 을 실패로 본다 — 조건부로 skip 하는 테스트가 **조용히 빠진 채** 게이트가

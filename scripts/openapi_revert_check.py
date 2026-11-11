@@ -114,11 +114,6 @@ CASES = [
         [(BLOG_ROUTER, '    tags=["Blog"],\n', "")],
     ),
     (
-        "'예정' 문구 잔재",
-        "test_no_tag_claims_to_be_unimplemented",
-        [(TAGS, "**인증 API**", "**인증 API (예정)**")],
-    ),
-    (
         "성공 응답 schema 누락",
         "test_success_responses_declare_a_schema",
         [

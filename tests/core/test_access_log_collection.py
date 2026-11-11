@@ -209,3 +209,28 @@ async def test_only_enabled_and_not_excluded_requests_are_stored(
     await _get(_app(), url)
 
     assert [entry["request_path"] for entry in sink.saved] == ([url] if recorded else [])
+
+
+async def test_sink_registration_roundtrip():
+    """set_access_log_sink / get_access_log_sink roundtrip works and delegates calls."""
+    from app.core.middlewares.access_log_sink import (
+        get_access_log_sink,
+        set_access_log_sink,
+    )
+
+    original = get_access_log_sink()
+
+    calls = []
+
+    class StubSink:
+        async def save(self, data: dict) -> None:
+            calls.append(data)
+
+    stub = StubSink()
+    try:
+        set_access_log_sink(stub)
+        assert get_access_log_sink() is stub
+        await get_access_log_sink().save({"x": 1})
+        assert calls == [{"x": 1}]
+    finally:
+        set_access_log_sink(original)

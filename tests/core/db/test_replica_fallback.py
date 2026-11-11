@@ -17,7 +17,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.db.router import DatabaseRouter, create_routing_sessionmaker, mark_read_only
-from tests.core.test_db_router import Probe, _make_engine, _origins
+from tests.core.db.test_router import Probe, _make_engine, _origins
 
 DEAD_REPLICA_URL = "mysql+aiomysql://nobody:nothing@127.0.0.1:1/nowhere"
 

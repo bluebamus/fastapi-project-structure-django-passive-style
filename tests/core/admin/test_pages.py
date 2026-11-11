@@ -2,7 +2,7 @@
 
 ``column_filters`` 에 모델 컬럼을 그대로 넘기면 sqladmin 0.32 의 목록 처리(``filter_.parameter_name``)가
 ``AttributeError`` 로 죽는다 — 목록 페이지가 500 이 된다. ModelView 정의 검사
-(``tests/core/test_admin_views.py``)는 클래스 속성만 보므로 이것을 잡지 못했다. 여기서는 실제 조립
+(``tests/core/admin/test_views.py``)는 클래스 속성만 보므로 이것을 잡지 못했다. 여기서는 실제 조립
 (``create_app``)에 슈퍼유저로 로그인해 등록된 뷰 전부를 HTTP 로 연다.
 
 DB 는 in-memory SQLite 다 — 뷰마다 행 하나를 넣고, 관리 화면의 세션 팩토리와 로그인 자격 확인을

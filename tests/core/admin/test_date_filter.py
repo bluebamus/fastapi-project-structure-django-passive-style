@@ -4,7 +4,7 @@
 
 실제 SQLite 에 ``UTCDateTime`` 컬럼(접속 로그 ``created_at``)을 두고 필터가 만든 질의를 돌린다.
 시간대는 Asia/Seoul(UTC+9)로 고정한다 — 2026-10-12 의 지역 0시는 2026-10-11T15:00Z 다.
-모든 관리 뷰의 목록에 이 필터를 건 HTTP 확인은 ``tests/core/test_admin_pages.py`` 가 한다.
+모든 관리 뷰의 목록에 이 필터를 건 HTTP 확인은 ``tests/core/admin/test_pages.py`` 가 한다.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""Redis 필수 — ``get_redis`` provider 와 ``/ready`` 의 DB·Redis 확인.
+"""``/health``·``/ready`` 와 Redis 주입.
 
-lifespan 없이 ``create_app()`` 만 만들고 ``app.state.redis`` 에 가짜를 넣는다 — 실제 Redis·DB 에
-닿지 않는다. DB ping 은 ``bootstrap.ping_writer_db`` 를 monkeypatch 한다.
+``/health`` 는 DB 를 보지 않는다. ``/ready`` 는 DB·Redis 를 함께 확인한다. lifespan 없이 ``create_app()`` 만 만들고
+``app.state.redis`` 에 가짜를 넣는다 — 실제 Redis·DB 에 닿지 않는다. DB ping 은 ``bootstrap.ping_writer_db`` 를 monkeypatch 한다.
 """
 
 from __future__ import annotations
@@ -148,3 +148,32 @@ def test_ready_is_503_without_a_redis_client(monkeypatch: pytest.MonkeyPatch):
     response = _ready_client(monkeypatch, redis=None).get("/ready")
 
     assert response.status_code == 503
+
+
+def test_liveness_does_not_touch_the_database(monkeypatch: pytest.MonkeyPatch):
+    """`/health` 는 DB 를 보지 않는다.
+
+    liveness 가 DB 에 의존하면, DB 가 잠깐 흔들릴 때 오케스트레이터가 **멀쩡한
+    프로세스를 죽인다**. 그건 복구가 아니라 장애 증폭이다.
+    """
+    from app.core import bootstrap
+
+    called: list[str] = []
+
+    async def spy(timeout: float = 0.0) -> None:
+        called.append("ping")
+
+    monkeypatch.setattr(bootstrap, "ping_writer_db", spy)
+
+    app = bootstrap.create_app()
+    client = TestClient(app)
+    assert client.get("/health").status_code == 200
+    assert called == [], "liveness 가 DB 를 확인했다"
+
+
+def test_readiness_is_in_the_openapi_contract():
+    from app.core.bootstrap import create_app
+
+    schema = create_app().openapi()
+    assert "/ready" in schema["paths"]
+    assert "503" in schema["paths"]["/ready"]["get"]["responses"]

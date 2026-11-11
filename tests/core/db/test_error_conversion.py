@@ -29,7 +29,7 @@ from app.core.exception import (
     ValidationException,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: 실제 유출을 흉내내는 값. DB 예외 메시지에 넣고 어디에도 안 나타나는지 본다.
 SECRET_CANARY = "s3cr3t-canary-do-not-log-9f2b"

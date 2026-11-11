@@ -23,9 +23,25 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECRET_KEYS = ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY")
+
+# 설정 검증(.env 출처·placeholder·길이)을 통과하는 값 — 로컬 `.env` 와 무관하게 결과를 고정한다.
+_VALID_SECRETS = {
+    "ACCESS_TOKEN_SECRET_KEY": "k7Qe2mZ9vX1pL4rT8wY3nB6cH0sD5fGa-access",
+    "REFRESH_TOKEN_SECRET_KEY": "Jm3Nq8Rt1Vw6Xy9Za2Bc5De0Fg4Hi7Kl-refresh",
+    "SESSION_SECRET_KEY": "Pq9Rs2Tu5Vw8Xy1Za4Bc7De0Fg3Hi6Jk-session",
+    "MYSQL_HOST": "127.0.0.1",
+    "MYSQL_USER": "app",
+    "MYSQL_PASSWORD": "Wz4Xa7Bc0De3Fg6Hi9Jk2Lm5No8Pq1Rs-mysql",
+    "MYSQL_DATABASE": "app",
+    "REDIS_PASSWORD": "",
+}
+
+#: 제거된 설정 이름.
+_REMOVED_ACK = "ADMIN_UNAUTHENTICATED" + "_ACK"
 
 # 비밀번호 2종. MySQL 은 빈 값도 위반이고, Redis 는 빈 값이 정당한 구성이다.
 PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD")
@@ -406,3 +422,81 @@ def test_deployed_admin_boots_with_login_backend_and_ignores_the_removed_ack():
     output = result.stdout + result.stderr
     assert "__BACKEND__AdminAuthBackend" in output
     assert "인증 없이" not in output
+
+
+def test_env_example_only_asks_to_fill_secrets(monkeypatch: pytest.MonkeyPatch, restore_config):
+    """`.env.example` 을 그대로 `.env` 로 쓰면 **비밀값을 채우라는 오류 하나만** 난다.
+
+    Settings 의 타입·조합 검증(CORS wildcard + credentials 등)은 통과해야 한다 — 실제로
+    그 조합이 막혀 "복사해서 시작하세요" 가 엉뚱한 오류로 이어진 적이 있다. 반면 예시
+    비밀키·비밀번호는 개발 환경에서도 거부된다(그대로 쓰지 말고 채우라는 신호).
+    """
+    values = _env_example_values()
+    assert values, ".env.example 파싱 결과가 비었다 — 검사가 헛통과한다"
+
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+    # 끝나면 restore_config 가 원래 설정 객체로 되돌린다 — 다시 reload 하면 객체가 또 바뀐다.
+    with pytest.raises(ValueError) as excinfo:
+        importlib.reload(restore_config)
+    assert not isinstance(excinfo.value, ValidationError), "타입·조합 검증에서 막혔다"
+    message = str(excinfo.value)
+    for key in ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY"):
+        assert key in message
+
+
+@pytest.mark.parametrize("env", ["production", "staging"])
+def test_admin_is_allowed_in_deployment_without_an_ack(env: str):
+    """``/admin`` 에 슈퍼유저 로그인이 붙었으므로 배포 환경에서 관리 화면을 켜도 거부하지 않는다."""
+    from config import AppSettings
+
+    assert AppSettings(ENV=env, ADMIN_DISABLED=False).ADMIN_DISABLED is False
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_development_default_is_untouched(env: str):
+    """개발 기본값은 그대로다 — 받자마자 /admin 을 쓸 수 있어야 한다(2026-08-12 결정)."""
+    from config import AppSettings
+
+    assert AppSettings(ENV=env).ADMIN_DISABLED is False
+
+
+def test_leftover_ack_in_environment_is_ignored(monkeypatch: pytest.MonkeyPatch):
+    """`.env`·환경에 예전 승인 플래그가 남아 있어도 설정 로드가 깨지지 않는다(``extra="ignore"``)."""
+    from config import AppSettings
+
+    monkeypatch.setenv(_REMOVED_ACK, "true")
+    settings = AppSettings(ENV="production")
+
+    assert not hasattr(settings, _REMOVED_ACK)
+
+
+@pytest.mark.parametrize("env", ["production", "staging"])
+def test_sql_echo_is_rejected_in_production(
+    env: str, monkeypatch: pytest.MonkeyPatch, restore_config
+):
+    """운영에서 ``LOG_SQL_ECHO_ENABLED=true`` 는 기동을 거부한다."""
+    monkeypatch.setenv("ENV", env)
+    monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "true")
+    # 관리 화면 조립을 빼 이 테스트가 보려는 SQL echo 검증만 남긴다.
+    monkeypatch.setenv("ADMIN_DISABLED", "true")
+
+    # 오염된 설정은 restore_config 가 원래 객체로 되돌린다.
+    with pytest.raises(ValueError, match="LOG_SQL_ECHO_ENABLED"):
+        importlib.reload(restore_config)
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_sql_echo_is_allowed_in_development(
+    env: str, monkeypatch: pytest.MonkeyPatch, restore_config
+):
+    """개발·테스트에서는 열 수 있다 — 디버깅 경로를 없애지는 않는다."""
+    monkeypatch.setenv("ENV", env)
+    monkeypatch.setenv("LOG_SQL_ECHO_ENABLED", "true")
+    # 개발 환경도 비밀값을 검증한다 — 로컬 `.env` 내용·유무와 무관하게 통과할 값을 준다.
+    for key, value in _VALID_SECRETS.items():
+        monkeypatch.setenv(key, value)
+
+    reloaded = importlib.reload(restore_config)
+    assert reloaded.log_settings.LOG_SQL_ECHO_ENABLED is True

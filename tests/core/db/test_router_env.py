@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # 자식 프로세스에서 실행할 관찰 스크립트.
 # import 된 세션 모듈의 배선(엔진·세션 클래스)과, SELECT / INSERT 각각이 바인딩되는
