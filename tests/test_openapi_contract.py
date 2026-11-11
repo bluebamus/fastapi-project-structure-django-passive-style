@@ -492,7 +492,7 @@ def test_every_422_schema_accepts_the_real_422_body(operations):
     (``ErrorResponse``: ``error_code``·``message``·``detail[field,message,type]``)과 다르다 — 클라이언트
     생성기가 만든 타입이 실제 응답을 읽지 못한다.
     """
-    from tests.e2e.openapi_check import errors
+    from tests.openapi_check import errors
 
     body = _real_422_body()
     documented = [

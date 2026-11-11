@@ -3,8 +3,6 @@
 DB 는 UTC 로 저장한다. 그래서 입력 날짜(지역 일자)를 UTC 순간으로 바꿔 조회하고, 일자
 버킷은 UTC 값을 지역 오프셋만큼 옮긴 날짜다. 2026-01-01T15:30Z 주문은 Asia/Seoul 로
 1월 2일 00:30 이므로 **1월 2일** 매출이다.
-
-MySQL 의 ``CONVERT_TZ`` 버킷은 ``tests/integration/test_mysql_time_policy.py`` 가 본다.
 """
 
 from __future__ import annotations
