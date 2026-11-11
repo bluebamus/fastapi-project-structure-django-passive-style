@@ -29,7 +29,7 @@ from app.core.db.router import ReadOnlyRoutingError, mark_read_only
 from app.core.db.session import Base
 from app.core.exception import DuplicateException
 from app.core.models.types import UTCDateTime
-from app.features.reports.models.models import SalesOrder
+from app.features.reports.models.models import SalesOrder  # noqa: F401  (register table)
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
 )
@@ -217,9 +217,3 @@ async def test_raw_update_must_write_updated_at_itself(
     assert row is not None
     assert row["status"] == "paid"
     assert str(row["updated_at"]).startswith("2026-08-05"), "Raw UPDATE 가 updated_at 을 남겼다"
-
-
-def test_sales_order_model_exists_for_schema_ownership():
-    """조회를 Raw 로 해도 테이블 소유는 ORM 모델이 선언한다."""
-    assert SalesOrder.__tablename__ == "sales_orders"
-    assert "sales_orders" in Base.metadata.tables

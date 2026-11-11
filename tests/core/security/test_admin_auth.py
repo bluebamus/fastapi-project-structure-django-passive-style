@@ -2,9 +2,9 @@
 
 실물 SQLAdmin(``Admin``)에 백엔드를 주입하고 HTTP 로 시험한다. 자격 확인은 가짜(``FakeCredentials``)
 로 바꿔 백엔드의 판정만 본다 — 사용자 DB 쪽 구현은 ``app/features/auth/tests/test_admin_credentials.py``,
-create_superuser 부터 이어지는 전체 흐름은 ``tests/core/test_admin_login_flow.py`` 가 본다.
+create_superuser 부터 이어지는 전체 흐름은 ``tests/core/admin/test_login_flow.py`` 가 본다.
 레이트 리밋·관리 세션은 실물 ``RateLimiter``·``AdminSessionStore`` 를 fakeredis 위에서 돌린다
-(세션 저장소·미들웨어 자체는 ``test_admin_session.py``, 로그인 이후 CSRF 는 ``tests/core/test_admin_csrf.py``).
+(세션 저장소·미들웨어 자체는 ``test_admin_session.py``, 로그인 이후 CSRF 는 ``tests/core/admin/test_csrf.py``).
 """
 
 from __future__ import annotations

@@ -79,7 +79,7 @@ logger = get_logger("database")
 #: **바인드 값**(비밀번호 해시·토큰·이메일 같은 개인정보)을 빼고 SQL 문만 남긴다. 없으면 고유 제약
 #: 위반 하나로 값이 예외 문자열에 실려 traceback·로그 수집기로 흘러간다. 엔진을 새로 만드는 곳
 #: (writer·reader·background·Alembic)은 모두 이것을 펼쳐 넣는다
-#: (계약 테스트: ``tests/core/test_engine_hide_parameters.py``).
+#: (계약 테스트: ``tests/core/db/test_hide_parameters.py``).
 ENGINE_SAFETY_OPTIONS: Final[dict[str, Any]] = {"hide_parameters": True}
 
 

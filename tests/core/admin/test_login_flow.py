@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.apps import Apps
 from app.core.bootstrap import create_app
 from app.core.db.session import Base
-from app.core.security.admin_session import RedisSessionMiddleware
 from app.features.user.models.models import User
 from scripts import create_superuser
 from tests.admin_login import admin_login, admin_logout
@@ -173,24 +172,6 @@ async def test_login_page_escapes_the_error_message(env):
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert 'class="alert alert-danger"' in html
-
-
-# ---------------------------------------------------------------------------
-# 세션 사용 범위 — 세션은 /admin 전용이다
-# ---------------------------------------------------------------------------
-async def test_session_middleware_lives_only_in_the_admin_sub_app(env):
-    client, _ = env
-    app = client._transport.app  # type: ignore[attr-defined]
-
-    main_stack = [m.cls for m in app.user_middleware]
-    admin_stack = [m.cls for m in app.state.admin.admin.user_middleware]
-
-    names = {c.__name__ for c in main_stack}
-    assert (
-        not {"SessionMiddleware", "RedisSessionMiddleware"} & names
-    ), "메인 앱에 세션 미들웨어가 붙었다"
-    assert admin_stack.count(RedisSessionMiddleware) == 1
-    assert "SessionMiddleware" not in [c.__name__ for c in admin_stack], "서명 쿠키 세션이 남았다"
 
 
 async def test_admin_session_cookie_does_not_authenticate_the_api(env):

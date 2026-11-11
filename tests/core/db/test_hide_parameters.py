@@ -25,7 +25,7 @@ from app.core.db.session import ENGINE_SAFETY_OPTIONS
 from app.utils.logs import configure_logging
 from app.utils.logs.formatters import TzFormatter
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 ENGINE_FACTORIES = {"create_async_engine", "create_engine", "engine_from_config"}
 
 _metadata = sa.MetaData()

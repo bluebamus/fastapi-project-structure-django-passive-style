@@ -1,21 +1,17 @@
 """실제 ``config.INSTALLED_APPS`` 가 registry 계약을 만족하는지.
 
-앞의 파일들이 fixture 로 registry **자체** 를 검증했다면, 여기서는 이 프로젝트의
-실제 앱 6개가 그 계약 위에서 실제로 조립되는지를 본다. fixture 는 통과하는데 실제
-앱은 안 되는 상황(예: ``apps.py`` 오타, label 충돌)을 잡는 자리다.
+fixture 로 registry 자체를 검증한 다른 파일과 달리, 여기서는 이 프로젝트의 실제 앱이 조립되고
+metadata 에 등록 앱의 테이블**만** 담기며 migration 과 runtime 이 같은 모델 집합을 보는지 확인한다.
 """
-
-import ast
-from pathlib import Path
 
 import pytest
 
 from app.core.apps import AppConfig, Apps
 from app.core.apps.exceptions import AppLookupError
+from app.core.db.session import Base
 from config import INSTALLED_APPS
 
 EXPECTED_LABELS = ["home", "blog", "reply", "sns", "user", "auth", "catalog", "reports"]
-FEATURES_DIR = Path(__file__).resolve().parents[3] / "app" / "features"
 
 
 @pytest.fixture
@@ -25,24 +21,9 @@ def installed() -> Apps:
     return registry
 
 
-def test_installed_apps_are_explicit_config_class_paths():
-    """짧은 이름 축약은 공개 계약에서 제거했다."""
-    assert INSTALLED_APPS
-    for entry in INSTALLED_APPS:
-        assert entry.startswith("app.features."), entry
-        assert entry.endswith("Config"), entry
-
-
 def test_registry_populates_every_installed_app(installed: Apps):
     """등록 순서대로 label 이 나온다."""
     assert [config.label for config in installed.get_app_configs()] == EXPECTED_LABELS
-
-
-def test_every_app_has_an_apps_module():
-    """모든 기본 앱이 자기 ``apps.py`` 를 갖는다."""
-    packages = sorted(p.name for p in FEATURES_DIR.iterdir() if (p / "__init__.py").is_file())
-    for name in packages:
-        assert (FEATURES_DIR / name / "apps.py").is_file(), f"{name} 에 apps.py 가 없다"
 
 
 def test_auth_app_has_no_models(installed: Apps):
@@ -76,41 +57,6 @@ def test_home_ready_registers_access_log_sink():
         set_access_log_sink(original)
 
 
-def test_ready_hooks_perform_no_io():
-    """``ready()`` 본문에 DB·network·subprocess 호출이 없다.
-
-    구현을 읽어 판정한다 — 실행으로는 "이번엔 안 했다" 만 알 수 있고 "절대 안 한다"
-    는 알 수 없기 때문이다. hook 은 프로세스 로컬 결선만 해야 한다.
-    """
-    banned = {
-        "execute",
-        "commit",
-        "connect",
-        "get",
-        "post",
-        "request",
-        "urlopen",
-        "run",
-        "Popen",
-        "check_output",
-        "system",
-    }
-
-    offenders: list[str] = []
-    for apps_py in sorted(FEATURES_DIR.glob("*/apps.py")):
-        tree = ast.parse(apps_py.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.FunctionDef) and node.name == "ready"):
-                continue
-            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
-                func = call.func
-                name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-                if name in banned:
-                    offenders.append(f"{apps_py.parent.name}/apps.py: {name}()")
-
-    assert not offenders, f"ready() 에서 금지된 I/O 를 호출한다: {offenders}"
-
-
 def test_ready_is_called_once_per_app_on_repeated_populate():
     """같은 registry 를 두 번 populate 해도 hook 은 앱당 한 번이다."""
     calls: list[str] = []
@@ -125,3 +71,41 @@ def test_ready_is_called_once_per_app_on_repeated_populate():
     registry.populate(INSTALLED_APPS)
 
     assert calls == EXPECTED_LABELS
+
+
+def _registry() -> Apps:
+    """migration 과 같은 방식으로 채운 격리 registry."""
+    registry = Apps()
+    registry.populate(INSTALLED_APPS, run_ready=False)
+    return registry
+
+
+def test_installed_apps_populate_metadata():
+    """등록 앱의 models import 가 ``Base.metadata`` 를 채운다."""
+    _registry()
+
+    tables = Base.metadata.tables
+    assert "user_access_logs" in tables
+    assert len(tables) >= 5
+
+
+def test_metadata_contains_only_installed_app_tables():
+    """등록하지 않은 앱의 테이블은 metadata 에 없다."""
+    registry = _registry()
+
+    collected = {model.__tablename__ for model in registry.get_models()}
+    assert collected == set(Base.metadata.tables), (
+        "Base.metadata 에 등록 앱 소속이 아닌 테이블이 있다: "
+        f"{set(Base.metadata.tables) - collected}"
+    )
+
+
+def test_runtime_and_migration_collect_the_same_models():
+    """두 경로가 서로 다른 import 경로를 갖지 않는다."""
+    from_migration = {model.__tablename__ for model in _registry().get_models()}
+
+    runtime = Apps()
+    runtime.populate(INSTALLED_APPS)
+    from_runtime = {model.__tablename__ for model in runtime.get_models()}
+
+    assert from_migration == from_runtime

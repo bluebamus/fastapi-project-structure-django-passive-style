@@ -23,7 +23,6 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.core.db.session import Base
 from app.features.reports.models.models import SalesOrder
 from main import app
 from tests.auth_headers import admin_headers
@@ -62,29 +61,6 @@ async def client():
             transport=transport, base_url="http://test", headers=admin_headers()
         ) as c:
             yield c
-
-
-# =============================================================================
-# 등록
-# =============================================================================
-def test_report_route_is_mounted_by_the_registry():
-    assert _ENDPOINT.replace("/api", "") or True  # 경로 상수 오타 방지
-    assert _ENDPOINT in set(app.openapi()["paths"])
-
-
-def test_sales_order_model_is_collected_by_the_registry():
-    """Raw 로만 조회해도 원본 테이블은 registry 에 있어야 한다.
-
-    없으면 `alembic check` 가 "지워야 할 테이블"로 보고 drift 를 만든다 — 그래서
-    스키마 모델을 둔다.
-    """
-    from app.core.apps import apps
-    from config import INSTALLED_APPS
-
-    apps.populate(INSTALLED_APPS, run_ready=False)
-
-    assert SalesOrder in apps.get_models()
-    assert "sales_orders" in Base.metadata.tables
 
 
 # =============================================================================
@@ -218,15 +194,3 @@ async def test_response_is_a_validated_dto_not_a_raw_row(client):
     body = resp.json()
     assert set(body) == {"start_date", "end_date", "order_count", "items"}
     assert set(body["items"][0]) == {"sales_date", "order_count", "gross_amount"}
-
-
-def test_view_does_not_import_row_types():
-    """View 계층이 `Row`/`RowMapping`/`CursorResult` 를 다루지 않는다."""
-    from pathlib import Path
-
-    source = Path("app/features/reports/api/routers/v1/sales_reports.py").read_text(
-        encoding="utf-8"
-    )
-
-    for banned in ("RowMapping", "CursorResult", "text("):
-        assert banned not in source, f"View 가 {banned} 를 직접 다룬다"

@@ -1,7 +1,7 @@
 """관리 세션 — ``AdminSessionStore`` + ``RedisSessionMiddleware``.
 
 미들웨어를 작은 Starlette 앱에 걸고 fakeredis 위에서 HTTP 로 시험한다. 로그인 백엔드와의 결합은
-``test_admin_auth.py``, 실제 조립(``create_app``)은 ``tests/core/test_admin_csrf.py`` 가 본다.
+``test_admin_auth.py``, 실제 조립(``create_app``)은 ``tests/core/admin/test_csrf.py`` 가 본다.
 """
 
 from __future__ import annotations

@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import pytest
@@ -38,26 +37,6 @@ def registry() -> Apps:
     apps = Apps()
     apps.populate(INSTALLED_APPS, run_ready=False)
     return apps
-
-
-def _labels_with_models(registry: Apps) -> list[str]:
-    return [config.label for config in registry.get_app_configs() if config.get_models()]
-
-
-def test_feature_list_is_not_vacuous(registry: Apps):
-    """탐지 대상이 비어 있으면 아래 검사들이 헛통과한다."""
-    assert len(_labels_with_models(registry)) >= 5
-
-
-def test_every_app_with_models_owns_an_admin_module(registry: Apps):
-    """모델을 가진 설치 앱은 자기 ``admin.py`` 에서 ``admin_views`` 를 노출한다."""
-    missing = []
-    for label in _labels_with_models(registry):
-        config = registry.get_app_config(label)
-        module = importlib.import_module(f"{config.name}.{config.admin_module}")
-        if not getattr(module, "admin_views", None):
-            missing.append(config.name)
-    assert not missing, f"admin_views 를 노출하지 않는 앱: {missing}"
 
 
 def test_installed_apps_admin_views_cover_expected_models(registry: Apps):

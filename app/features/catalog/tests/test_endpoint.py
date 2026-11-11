@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.core.db.session import Base
 from app.features.catalog.models.models import Product  # noqa: F401  (register table)
 from main import app
 from tests.auth_headers import admin_headers
@@ -41,28 +40,6 @@ async def client():
             transport=transport, base_url="http://test", headers=admin_headers()
         ) as c:
             yield c
-
-
-# =============================================================================
-# 등록
-# =============================================================================
-def test_catalog_routes_are_mounted_by_the_registry():
-    """`INSTALLED_APPS` 등록만으로 라우터가 붙는다 — main.py 는 건드리지 않았다."""
-    paths = set(app.openapi()["paths"])
-
-    assert "/api/v1/catalog/products" in paths
-    assert "/api/v1/catalog/products/{product_id}" in paths
-
-
-def test_product_model_is_collected_by_the_registry():
-    """migration 과 runtime 이 같은 모델 집합을 본다."""
-    from app.core.apps import apps
-    from config import INSTALLED_APPS
-
-    apps.populate(INSTALLED_APPS, run_ready=False)
-
-    assert Product in apps.get_models()
-    assert "catalog_products" in Base.metadata.tables
 
 
 # =============================================================================

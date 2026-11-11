@@ -1,15 +1,19 @@
 """``ADMIN_DISABLED`` — 관리 화면을 끄면 흔적도 없다.
 
 끈 관리 화면은 "막혀 있는" 것이 아니라 "없는" 것이어야 한다. 경로가 응답·헤더·로그 어디에도
-나오지 않아야 공격자가 위치를 알 수 없다. sqladmin 이 import 되지 않는 것은
-``tests/core/test_admin_lazy_loading.py`` 가 깨끗한 프로세스로 본다.
+나오지 않아야 공격자가 위치를 알 수 없다. sqladmin·앱별 admin 모듈이 import 조차 되지 않는 것은
+다른 테스트가 이미 admin 을 import 한 이 프로세스로는 판별할 수 없어 깨끗한 인터프리터를 띄워 본다.
 
 예전 ``ADMIN`` 설정은 뜻이 뒤집혀 이름이 바뀌었다 — 남아 있으면 기동이 멈춘다.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
+import subprocess  # noqa: S404 - 깨끗한 인터프리터에서 import 그래프를 관찰한다
+import sys
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -151,3 +155,69 @@ def test_check_runs_at_config_import(monkeypatch: pytest.MonkeyPatch, restore_co
 
     with pytest.raises(ValueError, match="ADMIN_DISABLED"):
         importlib.reload(restore_config)
+
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+_PROBE = """
+import json, os, sys
+
+os.environ["ADMIN_DISABLED"] = "{disabled}"
+os.environ["DEBUG"] = "false"
+
+import main
+
+print("__RESULT__" + json.dumps({{
+    "sqladmin": "sqladmin" in sys.modules,
+    "feature_admin_modules": sorted(
+        m for m in sys.modules
+        if m.startswith("app.features.") and m.endswith(".admin")
+    ),
+    "admin_routes": sorted(
+        p for p in (getattr(r, "path", "") for r in main.app.routes) if p.startswith("/admin")
+    ),
+}}))
+"""
+
+
+def _boot(disabled: str) -> dict:
+    proc = subprocess.run(  # noqa: S603 - 인터프리터·스크립트가 이 파일에 고정돼 있다
+        [sys.executable, "-X", "utf8", "-c", _PROBE.format(disabled=disabled)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        cwd=_REPO_ROOT,
+        timeout=300,
+        check=False,
+    )
+    assert (
+        proc.returncode == 0
+    ), f"ADMIN_DISABLED={disabled} 로 앱을 띄우지 못했습니다:\n{proc.stderr[-3000:]}"
+    line = next(x for x in proc.stdout.splitlines() if x.startswith("__RESULT__"))
+    return json.loads(line.removeprefix("__RESULT__"))
+
+
+def test_admin_layer_is_not_loaded_when_disabled():
+    """sqladmin 과 앱별 admin 모듈이 sys.modules 에 없다."""
+    result = _boot("true")
+
+    assert result["sqladmin"] is False, (
+        "ADMIN_DISABLED=true 인데 sqladmin 이 로드됐습니다. registry adapter 나 앱 패키지가 "
+        "admin 모듈을 eager import 하고 있지 않은지 확인하세요."
+    )
+    assert (
+        result["feature_admin_modules"] == []
+    ), f"ADMIN_DISABLED=true 인데 앱 admin 모듈이 로드됐습니다: {result['feature_admin_modules']}"
+    assert result["admin_routes"] == []
+
+
+def test_admin_layer_loads_when_enabled():
+    """대조군 — 위 검사가 '어차피 안 붙는 구조' 라서 통과하는 것이 아님을 보인다."""
+    result = _boot("false")
+
+    assert result["sqladmin"] is True
+    assert result[
+        "feature_admin_modules"
+    ], "ADMIN_DISABLED=false 인데 앱 admin 모듈이 로드되지 않았다"
+    assert "/admin" in result["admin_routes"]

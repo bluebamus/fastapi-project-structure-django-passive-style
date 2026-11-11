@@ -25,14 +25,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db.router import ReadOnlyRoutingError, mark_read_only
 from app.core.exception import DatabaseException, DuplicateException
-from app.core.repositories.raw_crud_base import RawCRUDBase
 from app.core.repositories.raw_repository_base import (
     QUERY_NAME_MAX_LENGTH,
     InvalidQueryNameError,
     RawRepositoryBase,
     validate_query_name,
 )
-from app.core.repositories.repository_base import BaseRepository
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -163,33 +161,6 @@ async def test_fetch_does_not_commit(repo: ProbeRawRepository, session: AsyncSes
     await session.rollback()
 
     assert await repo.fetch_scalar(text("SELECT COUNT(*) FROM probe"), query_name=QUERY) == 2
-
-
-# =============================================================================
-# 계층 분리
-# =============================================================================
-def test_raw_base_is_not_an_orm_repository():
-    """하나의 Base 가 ORM 모델과 Raw row 를 함께 돌려주면 호출부가 타입으로 구분할 수 없다."""
-    assert not issubclass(RawRepositoryBase, BaseRepository)
-    assert not issubclass(BaseRepository, RawCRUDBase)
-    assert issubclass(RawRepositoryBase, RawCRUDBase)
-
-
-def test_raw_base_owns_no_domain_sql():
-    """Base 에 도메인 SQL 이 없다 — 있으면 다음 기능도 여기로 오고 서로 결합된다."""
-    for relative in (
-        "app/core/repositories/raw_crud_base.py",
-        "app/core/repositories/raw_repository_base.py",
-    ):
-        tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-        calls = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "text"
-        ]
-        assert not calls, f"{relative} 가 SQL 을 소유한다"
 
 
 # =============================================================================

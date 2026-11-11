@@ -16,7 +16,7 @@ SQLAdmin 을 사용한 User 모델의 관리자 인터페이스를 정의한다.
     ``can_create = False`` 도 같은 이유다. 폼에서 비밀번호를 제외한 채 생성을 허용하면
     ``hashed_password`` 가 비어 있는 계정이 만들어지고, auth 는 그런 계정을 영구히
     거부하므로(로그인 불가) 조용히 깨진 데이터가 쌓인다.
-    구조 증거: ``tests/core/test_admin_views.py``.
+    구조 증거: ``tests/core/admin/test_views.py``.
 
 Note:
     SQLAdmin 은 ADMIN_DISABLED 설정으로 제어된다 (DEBUG 와 독립적).
@@ -161,5 +161,5 @@ class UserAdmin(ModelView, model=User):
 # registry adapter(app/core/apps/wiring.py)가 설치 앱의 이 이름을 읽어 SQLAdmin 에 등록한다.
 # 앱이 config.INSTALLED_APPS 에 없으면 이 파일이 있어도 등록되지 않는다.
 # 패키지 __init__.py 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
-# sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다(가드: tests/core/test_admin_wiring.py).
+# sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다(가드: tests/core/admin/test_disabled.py).
 admin_views: list[type] = [UserAdmin]

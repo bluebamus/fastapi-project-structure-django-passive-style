@@ -207,3 +207,29 @@ def test_coverage_is_not_vacuous():
     assert (
         len(_write_routes()) >= 15
     ), f"쓰기 라우트가 {len(_write_routes())}개뿐 — 검사가 비었을 수 있다"
+
+
+def test_write_dependencies_use_the_writer_session():
+    """쓰기 경로는 routed 가 아니라 **writer** 세션에 고정된다.
+
+    routed 세션은 첫 SELECT 가 replica 로 샐 수 있다. 쓰기 핸들러가 방금 쓴 것을
+    다시 읽으면 복제 지연만큼 과거를 본다.
+    """
+    import ast
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    offenders: list[str] = []
+    for path in (repo_root / "app" / "features").rglob("*_dependencies.py"):
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Depends":
+                target = getattr(node.args[0], "id", "") if node.args else ""
+                if target == "get_routed_db_session":
+                    offenders.append(f"{path.relative_to(repo_root)}:{node.lineno}")
+
+    assert not offenders, (
+        f"기능 dependency 가 routed 세션을 쓴다: {offenders} — "
+        "쓰기는 get_writer_db_session, 조회는 get_read_only_db_session 이다"
+    )

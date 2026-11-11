@@ -109,7 +109,7 @@ def convert_db_error(
             raise convert_db_error(exc, operation="CREATE", model="User") from None
 
     ``from None`` 이 빠지면 원본이 ``__context__`` 로 남아 traceback 에 다시 나타난다.
-    :func:`tests.core.test_db_error_conversion` 이 그 누락을 잡는다.
+    :func:`tests.core.db.test_error_conversion` 이 그 누락을 잡는다.
     """
     code = driver_error_code(exc)
     payload: dict[str, Any] = {"model": model, **detail}
