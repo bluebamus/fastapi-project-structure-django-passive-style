@@ -336,7 +336,7 @@ DROP TABLE 을 **제안할 수 있다**. 데이터를 보존해야 하면 생성
 | AC-06 미등록 앱 비노출 | `tests/core/apps/test_manual_registration.py` |
 | AC-07 Admin 지연 로드 | `tests/core/test_admin_lazy_loading.py` |
 | AC-08 Admin 결선 | `tests/core/test_admin_wiring.py` |
-| AC-09 runtime·Alembic 모델 동일 | `tests/core/test_alembic_metadata.py`, `tests/core/test_migration_chain.py` |
+| AC-09 runtime·Alembic 모델 동일 | `tests/core/test_alembic_metadata.py`, `tests/core/test_migrations.py` |
 | AC-10 / AC-11 생성기 동작·경계 | `tests/scripts/test_new_app.py` |
 
 ---
@@ -1118,7 +1118,7 @@ config.set_main_option(                                              # URL → �
 - **배포 전**: `e5a7c2d9f310` 은 기존 MySQL 시각 값이 `+09:00` 으로 저장됐다고 가정한다 — 다른 시간대로 운영했다면 적용 전에 리비전의
   `LEGACY_OFFSET` 상수를 바꾸고, 적용 전에 백업한다(값을 UPDATE 문으로 다시 쓴다).
 - revision 체인: `f4adf0ae24ea` baseline → `b2f1a9c0d3e4` user hashed_password → `c7d3e91b5a20` catalog_products → `d1f8c4a70b93` sales_orders → `e5a7c2d9f310` 시각 UTC·`DATETIME(6)`(MySQL 만 변환, 기존 KST 벽시계를 `CONVERT_TZ(col, '+09:00', '+00:00')` 로 UTC 로 옮긴다. SQLite 는 no-op) → `a3c9e8f1b274` `users.is_superuser`·blog/sns/reply `author_id`(head).
-- 검증: `tests/core/test_migration_chain.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.
+- 검증: `tests/core/test_migrations.py`(체인·스키마 = metadata), CI 의 단일 head 검사·SQLite `upgrade head` + `alembic check`, MySQL job 의 upgrade → downgrade -1 → 재-upgrade → check.
 
 ---
 

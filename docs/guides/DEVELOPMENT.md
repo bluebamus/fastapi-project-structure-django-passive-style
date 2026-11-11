@@ -611,7 +611,7 @@ Endpoint 테스트는 `dependency_overrides` 로 세션·Service 를 바꾸고 �
 | 읽기 전용 세션의 쓰기 거부가 `DB_ROUTER_ENABLED` 와 무관 (태그 없는 `text()` 포함) | `tests/core/test_read_only_guard.py` |
 | 쓰기 핸들러는 응답 DTO 검증 후 커밋 | `tests/test_validate_before_commit.py` |
 | ORM·Raw 예제는 Repository 만 다르다 | `tests/test_orm_raw_parity.py` |
-| migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migration_chain.py` |
+| migration metadata == 등록 모델, 체인·스키마 일치 | `tests/core/test_alembic_metadata.py` · `tests/core/test_migrations.py` |
 | 설정 계약·`.env.example` 일치 | `tests/core/test_settings_contract.py` |
 | `.env` 출처, 비밀키 placeholder·32자 미만·access=refresh 거부(test 외 모든 ENV, import 시점), 배포 환경 debug 거부, 배포 환경 관리 화면 허용(로그인 백엔드) | `tests/core/test_deployment_safety.py` |
 | 자원 수명(Redis·DDL·종료 순서) | `tests/core/test_bootstrap.py` · `tests/core/test_runtime_lifecycle.py` |
