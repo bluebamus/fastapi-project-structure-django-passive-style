@@ -113,6 +113,11 @@ Router(View) ── Depends ──> Service ──> Repository ──> AsyncSess
 
 PATCH 스키마는 `PatchSchema`(`app/core/schemas.py`)를 상속한다 — NOT NULL 컬럼에 명시적 `null` 을 보내면 422 다.
 
+**패키지 의존은 한 방향이다: `features → core → utils`.** `app/utils` 는 `core`·`features` 를, `app/core`·`app/celery` 는
+`features` 를 import 하지 않는다. 기능이 core 에 자신을 연결할 때는 등록 훅(`AppConfig.ready()`, `register_sink()` 등)을 쓴다.
+기능끼리는 서로 import 하지 않으며, 유일한 예외는 `auth → user`(인증이 사용자 모델·리포지토리를 쓴다)다.
+`tests/test_layering.py` 가 실제 import 를 읽어 이 규칙을 강제한다.
+
 ## 5. DB 세션과 읽기/쓰기 라우팅
 
 엔진(`app/core/db/session.py`):
