@@ -73,6 +73,14 @@ uv run python -m pytest --cov=app --cov-report=term-missing
 테스트는 in-memory SQLite(aiosqlite)와 fakeredis 로만 돈다. `DeprecationWarning` 은 실패로 취급하고(`filterwarnings`),
 skip·xfail 은 게이트가 실패로 본다 — 조건부로 건너뛰는 테스트를 만들지 않는다.
 
+**MySQL 테스트(`tests/mysql`)는 CI 전용**이다(`mysql` 잡이 `mysql:8.4` 서비스로 돈다). 평소 `pytest`·게이트는 이 폴더를
+수집하지 않는다(pyproject `norecursedirs`). 로컬에서 돌리려면 **자기 소유의 빈 MySQL** 을 주고 경로를 직접 지정한다 —
+테스트가 DB·사용자를 만들고 지우므로 그 권한이 필요하다. 변수가 없으면 접속 시도 없이 실패한다.
+
+```bash
+MYSQL_TEST_URL=mysql+aiomysql://root:<pw>@<host>:<port> uv run python -m pytest tests/mysql
+```
+
 ### 구조
 
 | 위치 | 대상 |
@@ -127,4 +135,5 @@ pytest(커버리지 측정, skip·xfail·xpass 가 있으면 실패) → OpenAPI
 CI(`.github/workflows/ci.yml`)는 push·PR·주 1회 일정으로 같은 검사를 단계별로 돈다:
 `uv sync --locked` → ruff(lint·format) → mypy → bandit gate → pip-audit → pytest(커버리지) → skip·xfail 0건 확인 →
 OpenAPI fail-on-revert → alembic 단일 head → 빈 SQLite 에 `alembic upgrade head` + `alembic check`.
+별도 `mysql` 잡이 `tests/mysql` 을 MySQL 8.4 서비스 컨테이너에서 돌리고 skip·xfail 0건을 확인한다(로컬 게이트에는 없다).
 의존성을 바꾸면 `uv lock` 으로 `uv.lock` 을 함께 갱신한다(`--locked` 가 어긋나면 실패한다).
