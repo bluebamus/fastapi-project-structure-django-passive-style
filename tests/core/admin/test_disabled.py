@@ -146,7 +146,7 @@ def test_check_runs_at_config_import(monkeypatch: pytest.MonkeyPatch, restore_co
     """모듈 import 경로에 검사가 걸려 있다 — 함수만 있고 안 불리면 의미가 없다."""
     import importlib
 
-    from tests.core.test_deployment_safety import SOURCE, STRONG
+    from tests.config_values import SOURCE, STRONG
 
     monkeypatch.setenv("ENV", "development")
     for key, value in {**SOURCE, **STRONG}.items():

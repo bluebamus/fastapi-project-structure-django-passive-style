@@ -6,11 +6,8 @@
 """
 
 import pytest
-from sqlalchemy import String, insert, select
+from sqlalchemy import insert, select
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.pool import StaticPool
 
 from app.core.db.router import (
     DatabaseRouter,
@@ -20,35 +17,7 @@ from app.core.db.router import (
     using_writer,
 )
 from config import DatabaseSettings
-
-
-class ProbeBase(DeclarativeBase):
-    """테스트 전용 메타데이터 (앱 Base 를 오염시키지 않는다)."""
-
-
-class Probe(ProbeBase):
-    __tablename__ = "routing_probe"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    origin: Mapped[str] = mapped_column(String(16))
-
-
-async def _make_engine(origin: str) -> AsyncEngine:
-    """`origin` 행 하나가 들어있는 독립 in-memory SQLite 엔진을 만든다."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,  # 커넥션 1개 유지 → :memory: DB 가 살아있다
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(ProbeBase.metadata.create_all)
-        await conn.execute(insert(Probe).values(id=1, origin=origin))
-    return engine
-
-
-async def _origins(session) -> list[str]:
-    result = await session.execute(select(Probe.origin).order_by(Probe.id))
-    return list(result.scalars().all())
+from tests.core.db.routing_probe import Probe, make_engine, origins
 
 
 # =============================================================================
@@ -56,12 +25,12 @@ async def _origins(session) -> list[str]:
 # =============================================================================
 async def test_select_is_served_by_reader():
     """SELECT 는 replica(reader) 엔진으로 나간다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
-        assert await _origins(session) == ["reader"]
+        assert await origins(session) == ["reader"]
 
     await writer.dispose()
     await reader.dispose()
@@ -69,8 +38,8 @@ async def test_select_is_served_by_reader():
 
 async def test_flush_is_served_by_writer():
     """ORM 쓰기(flush)는 primary(writer) 엔진으로 나간다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
@@ -90,8 +59,8 @@ async def test_flush_is_served_by_writer():
 
 async def test_dml_statement_is_served_by_writer():
     """Core DML(insert/update/delete)도 writer 로 라우팅된다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
@@ -111,14 +80,14 @@ async def test_locking_select_is_served_by_writer():
     replica 에서 잡은 잠금은 primary 의 행을 보호하지 못한다. 잠금 이후의 읽기도 같은
     트랜잭션이므로 writer 에 고정된다.
     """
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
         locked = await session.execute(select(Probe.origin).with_for_update())
         assert list(locked.scalars().all()) == ["writer"]
-        assert await _origins(session) == ["writer"]
+        assert await origins(session) == ["writer"]
 
     await writer.dispose()
     await reader.dispose()
@@ -126,14 +95,14 @@ async def test_locking_select_is_served_by_writer():
 
 async def test_read_after_write_sticks_to_writer():
     """쓰기가 발생한 세션의 이후 SELECT 는 writer 로 고정된다(복제 지연 회피)."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
         session.add(Probe(id=2, origin="written"))
         await session.flush()
-        assert await _origins(session) == ["writer", "written"]
+        assert await origins(session) == ["writer", "written"]
 
     await writer.dispose()
     await reader.dispose()
@@ -141,8 +110,8 @@ async def test_read_after_write_sticks_to_writer():
 
 async def test_sticky_disabled_returns_to_reader_after_write():
     """sticky_after_write=False 면 쓰기 이후 SELECT 도 reader 로 돌아간다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(
         DatabaseRouter(writer=writer, readers=[reader], sticky_after_write=False)
     )
@@ -150,7 +119,7 @@ async def test_sticky_disabled_returns_to_reader_after_write():
     async with maker() as session:
         session.add(Probe(id=2, origin="written"))
         await session.flush()
-        assert await _origins(session) == ["reader"]
+        assert await origins(session) == ["reader"]
         await session.rollback()
 
     await writer.dispose()
@@ -159,13 +128,13 @@ async def test_sticky_disabled_returns_to_reader_after_write():
 
 async def test_reader_is_pinned_for_session_lifetime():
     """한 세션 안의 여러 SELECT 는 같은 replica 를 재사용한다."""
-    writer = await _make_engine("writer")
-    readers = [await _make_engine("reader-1"), await _make_engine("reader-2")]
+    writer = await make_engine("writer")
+    readers = [await make_engine("reader-1"), await make_engine("reader-2")]
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=readers))
 
     async with maker() as session:
-        first = await _origins(session)
-        second = await _origins(session)
+        first = await origins(session)
+        second = await origins(session)
         assert first == second
 
     await writer.dispose()
@@ -175,14 +144,14 @@ async def test_reader_is_pinned_for_session_lifetime():
 
 async def test_readers_are_round_robined_across_sessions():
     """세션마다 replica 를 라운드로빈으로 분산한다."""
-    writer = await _make_engine("writer")
-    readers = [await _make_engine("reader-1"), await _make_engine("reader-2")]
+    writer = await make_engine("writer")
+    readers = [await make_engine("reader-1"), await make_engine("reader-2")]
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=readers))
 
     served = []
     for _ in range(4):
         async with maker() as session:
-            served.extend(await _origins(session))
+            served.extend(await origins(session))
 
     assert served == ["reader-1", "reader-2", "reader-1", "reader-2"]
 
@@ -193,11 +162,11 @@ async def test_readers_are_round_robined_across_sessions():
 
 async def test_no_replica_routes_everything_to_writer():
     """replica 가 없으면 읽기도 writer 로 간다(라우터 켜짐 + 복제 꺼짐)."""
-    writer = await _make_engine("writer")
+    writer = await make_engine("writer")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[]))
 
     async with maker() as session:
-        assert await _origins(session) == ["writer"]
+        assert await origins(session) == ["writer"]
 
     await writer.dispose()
 
@@ -207,13 +176,13 @@ async def test_no_replica_routes_everything_to_writer():
 # =============================================================================
 async def test_using_writer_forces_select_to_writer():
     """using_writer() 로 표시한 세션은 SELECT 도 writer 로 보낸다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
         using_writer(session)
-        assert await _origins(session) == ["writer"]
+        assert await origins(session) == ["writer"]
 
     await writer.dispose()
     await reader.dispose()
@@ -221,13 +190,13 @@ async def test_using_writer_forces_select_to_writer():
 
 async def test_read_only_session_rejects_writes():
     """읽기 전용으로 표시한 세션에서 쓰기를 시도하면 즉시 실패한다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
+    writer = await make_engine("writer")
+    reader = await make_engine("reader")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
 
     async with maker() as session:
         mark_read_only(session)
-        assert await _origins(session) == ["reader"]
+        assert await origins(session) == ["reader"]
 
         session.add(Probe(id=2, origin="written"))
         with pytest.raises(ReadOnlyRoutingError):

@@ -17,7 +17,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.db.router import DatabaseRouter, create_routing_sessionmaker, mark_read_only
-from tests.core.db.test_router import Probe, _make_engine, _origins
+from tests.core.db.routing_probe import Probe, make_engine, origins
 
 DEAD_REPLICA_URL = "mysql+aiomysql://nobody:nothing@127.0.0.1:1/nowhere"
 
@@ -27,14 +27,14 @@ def _dead_replica():
 
 
 async def test_read_only_session_falls_back_to_primary_when_replica_is_unreachable(caplog):
-    writer = await _make_engine("writer")
+    writer = await make_engine("writer")
     replica = _dead_replica()
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[replica]))
     try:
         async with maker() as session:
             mark_read_only(session)
             with caplog.at_level(logging.WARNING):
-                assert await _origins(session) == ["writer"]
+                assert await origins(session) == ["writer"]
                 # 같은 세션의 다음 읽기도 primary 다 — 죽은 replica 를 다시 두드리지 않는다.
                 assert (await session.execute(select(Probe.origin))).scalar_one() == "writer"
         warnings = [r for r in caplog.records if "replica" in r.getMessage()]
@@ -49,13 +49,13 @@ async def test_read_only_session_falls_back_to_primary_when_replica_is_unreachab
 
 async def test_routed_session_does_not_retry_on_primary():
     """읽기 전용이 아닌 세션은 쓰기와 같은 트랜잭션일 수 있다 — 재시도 대상이 아니다."""
-    writer = await _make_engine("writer")
+    writer = await make_engine("writer")
     replica = _dead_replica()
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[replica]))
     try:
         async with maker() as session:
             with pytest.raises(OperationalError):
-                await _origins(session)
+                await origins(session)
     finally:
         await writer.dispose()
         await replica.dispose()
@@ -63,14 +63,14 @@ async def test_routed_session_does_not_retry_on_primary():
 
 async def test_query_error_on_replica_is_not_retried():
     """연결은 됐는데 쿼리가 실패하면(여기서는 replica 에 테이블이 없다) primary 로 숨기지 않는다."""
-    writer = await _make_engine("writer")
+    writer = await make_engine("writer")
     replica = create_async_engine("sqlite+aiosqlite:///:memory:")
     maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[replica]))
     try:
         async with maker() as session:
             mark_read_only(session)
             with pytest.raises(OperationalError):
-                await _origins(session)
+                await origins(session)
     finally:
         await writer.dispose()
         await replica.dispose()
@@ -84,7 +84,7 @@ async def test_single_database_has_no_fallback(caplog):
         async with maker() as session:
             mark_read_only(session)
             with caplog.at_level(logging.WARNING), pytest.raises(OperationalError):
-                await _origins(session)
+                await origins(session)
         assert not [r for r in caplog.records if "replica" in r.getMessage()]
     finally:
         await writer.dispose()
