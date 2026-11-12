@@ -60,6 +60,7 @@ production/staging 에서는 `DEBUG=true`·`LOG_LEVEL=DEBUG`·`LOG_SQL_ECHO_ENAB
 ## 테스트
 
 테스트는 SQLite(in-memory)와 fakeredis 로만 돌며 외부 인프라가 필요 없습니다.
+MySQL 전용 검증(`tests/mysql`)은 CI 전용입니다 — 로컬에서 돌리려면 자기 소유의 빈 MySQL 을 `MYSQL_TEST_URL` 로 주세요([docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
 
 ```bash
 uv run python -m pytest                    # 전체
